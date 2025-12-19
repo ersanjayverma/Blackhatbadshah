@@ -20,6 +20,7 @@ builder.Services.AddOidcAuthentication(options =>
 });
 builder.Services.AddAuthorizationCore();
 builder.Services.AddScoped(_ =>
-    new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
-
+    new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress)
+    });
+    
 await builder.Build().RunAsync();

@@ -1,9 +1,11 @@
 @page "/login"
 @inject NavigationManager Nav
 
-<h1>Sign in</h1>
-<p>You must authenticate to continue.</p>
+<h1>Signing in</h1>
+@code {
+        protected override void OnInitialized(){
 
-<button class="btn-primary" @onclick='() => Nav.NavigateTo("authentication/login")'>
-    Continue
-</button>
+            Nav.NavigateTo("authentication/login");
+        }
+
+}

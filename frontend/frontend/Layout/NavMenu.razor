@@ -3,25 +3,18 @@
 <nav class="nav">
     <div class="nav-brand">Blackhatbadshah</div>
 
-    <NavLink href="/" Match="NavLinkMatch.All" class="nav-link">Home</NavLink>
+    <NavLink href="" Match="NavLinkMatch.All" class="nav-link">Home</NavLink>
 
     <AuthorizeView>
         <Authorized>
-            <NavLink href="/audit" class="nav-link">Run Audit</NavLink>
-            <NavLink href="/reports" class="nav-link">Reports</NavLink>
-            <NavLink href="/security" class="nav-link">Security</NavLink>
-            <button class="nav-link" @onclick="Logout">Logout</button>
+            <NavLink href="audit" class="nav-link">Run Audit</NavLink>
+            <NavLink href="reports" class="nav-link">Reports</NavLink>
+            <NavLink href="security" class="nav-link">Security</NavLink>
+            <NavLink class="nav-link" href="logout">Logout</NavLink>
         </Authorized>
         <NotAuthorized>
-            <NavLink href="authentication/login">Login</NavLink>
+            <NavLink class="NavLink" href="login">Login</NavLink>
         </NotAuthorized>
     </AuthorizeView>
     
 </nav>
-
-@code {
-    private void Logout()
-    {
-        Nav.NavigateTo("/logout");
-    }
-}

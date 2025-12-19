@@ -1,34 +1,52 @@
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using Scalar.AspNetCore;
 
-namespace backend
-{
-    public class Program
+var builder = WebApplication.CreateBuilder(args);
+
+// -------------------- Services --------------------
+builder.Services.AddControllers();
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
     {
-        public static void Main(string[] args)
+        options.Authority = "https://auth.blackhatbadshah.com/realms/blackhatbadshah";
+        options.Audience = "blackhatbadshahapi";
+        options.RequireHttpsMetadata = true;
+
+        options.TokenValidationParameters = new TokenValidationParameters
         {
-            var builder = WebApplication.CreateBuilder(args);
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true
+        };
+    });
 
-            // Add services to the container.
+builder.Services.AddAuthorization();
 
-            builder.Services.AddControllers();
-            // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-            builder.Services.AddOpenApi();
+// OpenAPI (doc only)
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddOpenApi();
 
-            var app = builder.Build();
+var app = builder.Build();
 
-            // Configure the HTTP request pipeline.
-            if (app.Environment.IsDevelopment())
-            {
-                app.MapOpenApi();
-            }
+app.UseAuthentication();
+app.UseAuthorization();
 
-            app.UseHttpsRedirection();
+app.MapControllers();
 
-            app.UseAuthorization();
+// -------------------- OpenAPI + Scalar --------------------
+if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi(); // /openapi/v1.json
 
-
-            app.MapControllers();
-
-            app.Run();
-        }
-    }
+   app.MapScalarApiReference(options =>
+    {
+        options
+            .WithTitle("Blackhatbadshah API")
+            .WithTheme(ScalarTheme.BluePlanet)               // ✅ string, not enum
+            .EnablePersistentAuthentication(); // ✅ new API
+    });
 }
+
+app.Run();

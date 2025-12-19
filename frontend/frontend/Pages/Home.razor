@@ -13,11 +13,14 @@
         We perform AI-assisted root-cause analysis and return
         actionable, engineering-grade fixes.
     </p>
-
-    <div class="hero-actions">
-        <a class="btn-primary" href="/audit">Run an Audit</a>
-        <a class="btn-secondary" href="/security">Security & Privacy</a>
-    </div>
+  <AuthorizeView>
+        <Authorized>
+            <div class="hero-actions">
+                <a class="btn-primary" href="/audit">Run an Audit</a>
+                <a class="btn-secondary" href="/security">Security & Privacy</a>
+            </div>
+            </Authorized>
+    </AuthorizeView>
 </section>
 
 <section class="features">

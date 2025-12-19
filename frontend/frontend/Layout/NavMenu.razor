@@ -1,21 +1,27 @@
-﻿<nav class="nav">
-    <div class="nav-brand">
-        Blackhatbadshah
-    </div>
+﻿@inject NavigationManager Nav
 
-    <NavLink href="/" Match="NavLinkMatch.All" class="nav-link">
-        Home
-    </NavLink>
+<nav class="nav">
+    <div class="nav-brand">Blackhatbadshah</div>
 
-    <NavLink href="/audit" class="nav-link">
-        Run Audit
-    </NavLink>
+    <NavLink href="/" Match="NavLinkMatch.All" class="nav-link">Home</NavLink>
 
-    <NavLink href="/reports" class="nav-link">
-        Reports
-    </NavLink>
-
-    <NavLink href="/security" class="nav-link">
-        Security
-    </NavLink>
+    <AuthorizeView>
+        <Authorized>
+            <NavLink href="/audit" class="nav-link">Run Audit</NavLink>
+            <NavLink href="/reports" class="nav-link">Reports</NavLink>
+            <NavLink href="/security" class="nav-link">Security</NavLink>
+            <button class="nav-link" @onclick="Logout">Logout</button>
+        </Authorized>
+        <NotAuthorized>
+            <NavLink href="authentication/login">Login</NavLink>
+        </NotAuthorized>
+    </AuthorizeView>
+    
 </nav>
+
+@code {
+    private void Logout()
+    {
+        Nav.NavigateTo("/logout");
+    }
+}

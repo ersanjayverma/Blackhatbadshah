@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "dgSpecHash": "DkmGdYOHFlc=",
+  "dgSpecHash": "l1VtlA8w15A=",
   "success": true,
   "projectFilePath": "/home/sj/code/vscode/frontend/frontend/frontend.csproj",
   "expectedPackageFiles": [
@@ -8,9 +8,11 @@
     "/home/sj/.nuget/packages/microsoft.aspnetcore.authorization/10.0.1/microsoft.aspnetcore.authorization.10.0.1.nupkg.sha512",
     "/home/sj/.nuget/packages/microsoft.aspnetcore.components/10.0.1/microsoft.aspnetcore.components.10.0.1.nupkg.sha512",
     "/home/sj/.nuget/packages/microsoft.aspnetcore.components.analyzers/10.0.1/microsoft.aspnetcore.components.analyzers.10.0.1.nupkg.sha512",
+    "/home/sj/.nuget/packages/microsoft.aspnetcore.components.authorization/10.0.1/microsoft.aspnetcore.components.authorization.10.0.1.nupkg.sha512",
     "/home/sj/.nuget/packages/microsoft.aspnetcore.components.forms/10.0.1/microsoft.aspnetcore.components.forms.10.0.1.nupkg.sha512",
     "/home/sj/.nuget/packages/microsoft.aspnetcore.components.web/10.0.1/microsoft.aspnetcore.components.web.10.0.1.nupkg.sha512",
     "/home/sj/.nuget/packages/microsoft.aspnetcore.components.webassembly/10.0.1/microsoft.aspnetcore.components.webassembly.10.0.1.nupkg.sha512",
+    "/home/sj/.nuget/packages/microsoft.aspnetcore.components.webassembly.authentication/10.0.1/microsoft.aspnetcore.components.webassembly.authentication.10.0.1.nupkg.sha512",
     "/home/sj/.nuget/packages/microsoft.aspnetcore.components.webassembly.devserver/10.0.1/microsoft.aspnetcore.components.webassembly.devserver.10.0.1.nupkg.sha512",
     "/home/sj/.nuget/packages/microsoft.aspnetcore.metadata/10.0.1/microsoft.aspnetcore.metadata.10.0.1.nupkg.sha512",
     "/home/sj/.nuget/packages/microsoft.dotnet.hotreload.webassembly.browser/10.0.100/microsoft.dotnet.hotreload.webassembly.browser.10.0.100.nupkg.sha512",

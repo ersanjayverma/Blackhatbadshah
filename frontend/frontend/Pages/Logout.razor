@@ -1,0 +1,11 @@
+@page "/logout"
+@inject NavigationManager Nav
+
+<p>Signing you out…</p>
+
+@code {
+    protected override void OnInitialized()
+    {
+        Nav.NavigateTo("authentication/logout");
+    }
+}

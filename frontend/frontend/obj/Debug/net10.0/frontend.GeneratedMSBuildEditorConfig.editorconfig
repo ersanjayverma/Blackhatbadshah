@@ -17,45 +17,65 @@ build_property.EnforceExtendedAnalyzerRules =
 build_property._SupportedPlatformList = browser
 build_property.RootNamespace = frontend
 build_property.RootNamespace = frontend
-build_property.ProjectDir = C:\Users\Sanjar.Verma\Documents\frontend\frontend\
+build_property.ProjectDir = /home/sj/code/vscode/frontend/frontend/
 build_property.EnableComHosting = 
 build_property.EnableGeneratedComInterfaceComImportInterop = false
 build_property.RazorLangVersion = 9.0
 build_property.SupportLocalizedComponentNames = 
 build_property.GenerateRazorMetadataSourceChecksumAttributes = 
-build_property.MSBuildProjectDirectory = C:\Users\Sanjar.Verma\Documents\frontend\frontend
+build_property.MSBuildProjectDirectory = /home/sj/code/vscode/frontend/frontend
 build_property._RazorSourceGeneratorDebug = 
 build_property.EffectiveAnalysisLevelStyle = 10.0
 build_property.EnableCodeStyleSeverity = 
 
-[C:/Users/Sanjar.Verma/Documents/frontend/frontend/App.razor]
+[/home/sj/code/vscode/frontend/frontend/App.razor]
 build_metadata.AdditionalFiles.TargetPath = QXBwLnJhem9y
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/Sanjar.Verma/Documents/frontend/frontend/Pages/Counter.razor]
-build_metadata.AdditionalFiles.TargetPath = UGFnZXNcQ291bnRlci5yYXpvcg==
+[/home/sj/code/vscode/frontend/frontend/Pages/Assets/Audit.razor]
+build_metadata.AdditionalFiles.TargetPath = UGFnZXMvQXNzZXRzL0F1ZGl0LnJhem9y
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/Sanjar.Verma/Documents/frontend/frontend/Pages/Home.razor]
-build_metadata.AdditionalFiles.TargetPath = UGFnZXNcSG9tZS5yYXpvcg==
+[/home/sj/code/vscode/frontend/frontend/Pages/Assets/Report.razor]
+build_metadata.AdditionalFiles.TargetPath = UGFnZXMvQXNzZXRzL1JlcG9ydC5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/Sanjar.Verma/Documents/frontend/frontend/Pages/NotFound.razor]
-build_metadata.AdditionalFiles.TargetPath = UGFnZXNcTm90Rm91bmQucmF6b3I=
+[/home/sj/code/vscode/frontend/frontend/Pages/Assets/Security.razor]
+build_metadata.AdditionalFiles.TargetPath = UGFnZXMvQXNzZXRzL1NlY3VyaXR5LnJhem9y
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/Sanjar.Verma/Documents/frontend/frontend/Pages/Weather.razor]
-build_metadata.AdditionalFiles.TargetPath = UGFnZXNcV2VhdGhlci5yYXpvcg==
+[/home/sj/code/vscode/frontend/frontend/Pages/Authentication.razor]
+build_metadata.AdditionalFiles.TargetPath = UGFnZXMvQXV0aGVudGljYXRpb24ucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/Sanjar.Verma/Documents/frontend/frontend/_Imports.razor]
+[/home/sj/code/vscode/frontend/frontend/Pages/Login.razor]
+build_metadata.AdditionalFiles.TargetPath = UGFnZXMvTG9naW4ucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[/home/sj/code/vscode/frontend/frontend/Pages/Logout.razor]
+build_metadata.AdditionalFiles.TargetPath = UGFnZXMvTG9nb3V0LnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[/home/sj/code/vscode/frontend/frontend/Pages/NotFound.razor]
+build_metadata.AdditionalFiles.TargetPath = UGFnZXMvTm90Rm91bmQucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[/home/sj/code/vscode/frontend/frontend/Shared/RedirectToLogin.razor]
+build_metadata.AdditionalFiles.TargetPath = U2hhcmVkL1JlZGlyZWN0VG9Mb2dpbi5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[/home/sj/code/vscode/frontend/frontend/_Imports.razor]
 build_metadata.AdditionalFiles.TargetPath = X0ltcG9ydHMucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/Sanjar.Verma/Documents/frontend/frontend/Layout/MainLayout.razor]
-build_metadata.AdditionalFiles.TargetPath = TGF5b3V0XE1haW5MYXlvdXQucmF6b3I=
-build_metadata.AdditionalFiles.CssScope = b-u2zsuelyp6
+[/home/sj/code/vscode/frontend/frontend/Layout/MainLayout.razor]
+build_metadata.AdditionalFiles.TargetPath = TGF5b3V0L01haW5MYXlvdXQucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = b-6v5ebjb4ko
 
-[C:/Users/Sanjar.Verma/Documents/frontend/frontend/Layout/NavMenu.razor]
-build_metadata.AdditionalFiles.TargetPath = TGF5b3V0XE5hdk1lbnUucmF6b3I=
-build_metadata.AdditionalFiles.CssScope = b-2rjwgzqnxx
+[/home/sj/code/vscode/frontend/frontend/Layout/NavMenu.razor]
+build_metadata.AdditionalFiles.TargetPath = TGF5b3V0L05hdk1lbnUucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = b-jycib1kc17
+
+[/home/sj/code/vscode/frontend/frontend/Pages/Home.razor]
+build_metadata.AdditionalFiles.TargetPath = UGFnZXMvSG9tZS5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = b-hboqhq4ey5

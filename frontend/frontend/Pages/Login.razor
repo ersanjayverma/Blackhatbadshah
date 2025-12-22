@@ -1,0 +1,11 @@
+@page "/login"
+@inject NavigationManager Nav
+
+<h1>Signing in</h1>
+@code {
+        protected override void OnInitialized(){
+
+            Nav.NavigateTo("authentication/login");
+        }
+
+}

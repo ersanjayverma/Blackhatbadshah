@@ -1,7 +1,65 @@
 ﻿@page "/"
-
+@inject HttpClient Http
 <PageTitle>Home</PageTitle>
 
-<h1>Hello, world!</h1>
+<section class="hero">
+    <h1>
+        Diagnose invisible failures.<br />
+        <span>Fix what’s actually costing you money.</span>
+    </h1>
 
-Welcome to your new app.
+    <p class="hero-sub">
+        Upload logs, headers, or system data.
+        We perform AI-assisted root-cause analysis and return
+        actionable, engineering-grade fixes.
+    </p>
+  <AuthorizeView>
+        <Authorized>
+            <div class="hero-actions">
+                <a class="btn-primary" href="/audit">Run an Audit</a>
+                <a class="btn-secondary" href="/security">Security & Privacy</a>
+                <button class="btn-primary" @onclick='checkHealth'>Check Health</button>
+            </div>
+            <div class="hero-actions">
+            @HealthStatus
+            </div>
+            </Authorized>
+    </AuthorizeView>
+</section>
+
+<section class="features">
+    <div class="feature">
+        <h3>Root Cause, Not Symptoms</h3>
+        <p>
+            We correlate signals across systems and explain
+            why failures happen — not just what broke.
+        </p>
+    </div>
+
+    <div class="feature">
+        <h3>Production-Grade Analysis</h3>
+        <p>
+            Designed for real infrastructure, real logs,
+            and real operational constraints.
+        </p>
+    </div>
+
+    <div class="feature">
+        <h3>Actionable Fixes</h3>
+        <p>
+            Clear, prioritized remediation steps you can
+            implement immediately.
+        </p>
+    </div>
+
+</section>
+
+
+@code{
+    public string HealthStatus = "";
+
+    public async Task checkHealth(){
+        HealthStatus = await Http.GetFromJsonAsync<string>("api/Health");
+        InvokeAsync(StateHasChanged);
+    }
+}

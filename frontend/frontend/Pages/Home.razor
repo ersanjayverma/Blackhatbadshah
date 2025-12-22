@@ -1,5 +1,5 @@
 ﻿@page "/"
-
+@inject HttpClient Http
 <PageTitle>Home</PageTitle>
 
 <section class="hero">
@@ -18,6 +18,10 @@
             <div class="hero-actions">
                 <a class="btn-primary" href="/audit">Run an Audit</a>
                 <a class="btn-secondary" href="/security">Security & Privacy</a>
+                <button class="btn-primary" @onclick='checkHealth'>Check Health</button>
+            </div>
+            <div class="hero-actions">
+            @HealthStatus
             </div>
             </Authorized>
     </AuthorizeView>
@@ -47,4 +51,15 @@
             implement immediately.
         </p>
     </div>
+
 </section>
+
+
+@code{
+    public string HealthStatus = "";
+
+    public async Task checkHealth(){
+        HealthStatus = await Http.GetFromJsonAsync<string>("api/Health");
+        InvokeAsync(StateHasChanged);
+    }
+}

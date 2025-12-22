@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "dgSpecHash": "mqqfVwP0ZTw=",
+  "dgSpecHash": "YVcYMOwz/pE=",
   "success": true,
   "projectFilePath": "/home/sj/code/vscode/frontend/frontend/frontend.csproj",
   "expectedPackageFiles": [
@@ -29,6 +29,7 @@
     "/home/sj/.nuget/packages/microsoft.extensions.fileproviders.abstractions/10.0.1/microsoft.extensions.fileproviders.abstractions.10.0.1.nupkg.sha512",
     "/home/sj/.nuget/packages/microsoft.extensions.fileproviders.physical/10.0.1/microsoft.extensions.fileproviders.physical.10.0.1.nupkg.sha512",
     "/home/sj/.nuget/packages/microsoft.extensions.filesystemglobbing/10.0.1/microsoft.extensions.filesystemglobbing.10.0.1.nupkg.sha512",
+    "/home/sj/.nuget/packages/microsoft.extensions.http/10.0.1/microsoft.extensions.http.10.0.1.nupkg.sha512",
     "/home/sj/.nuget/packages/microsoft.extensions.logging/10.0.1/microsoft.extensions.logging.10.0.1.nupkg.sha512",
     "/home/sj/.nuget/packages/microsoft.extensions.logging.abstractions/10.0.1/microsoft.extensions.logging.abstractions.10.0.1.nupkg.sha512",
     "/home/sj/.nuget/packages/microsoft.extensions.options/10.0.1/microsoft.extensions.options.10.0.1.nupkg.sha512",

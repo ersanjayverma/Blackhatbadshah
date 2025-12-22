@@ -59,7 +59,8 @@
     public string HealthStatus = "";
 
     public async Task checkHealth(){
-        HealthStatus = await Http.GetFromJsonAsync<string>("api/Health");
+        var response  = await Http.GetFromJsonAsync<HealthResponse>("api/health");
+        HealthStatus= response.Status;
         InvokeAsync(StateHasChanged);
     }
 }

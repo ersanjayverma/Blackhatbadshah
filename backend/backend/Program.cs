@@ -6,12 +6,22 @@ var builder = WebApplication.CreateBuilder(args);
 
 // -------------------- Services --------------------
 builder.Services.AddControllers();
-
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowFrontend", policy =>
+    {
+        policy
+            .WithOrigins("https://blackhatbadshah.com")
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials(); // needed if SignalR/auth cookies
+    });
+});
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
         options.Authority = "https://auth.blackhatbadshah.com/realms/blackhatbadshah";
-        options.Audience = "blackhatbadshahapi";
+        options.Audience = "blackhatbadshah-api";
         options.RequireHttpsMetadata = true;
 
         options.TokenValidationParameters = new TokenValidationParameters
@@ -22,6 +32,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
+
 builder.Services.AddAuthorization();
 
 // OpenAPI (doc only)
@@ -29,7 +40,7 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
-
+app.UseCors("AllowFrontend");
 app.UseAuthentication();
 app.UseAuthorization();
 

@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 [Authorize]
 public class HealthController : ControllerBase
 {
+    // Ensure the response is a serializable object for JSON output
     [HttpGet]
-    public IActionResult Get() => Ok("Authenticated");
+    public IActionResult Get() => Ok(new { Status = "Authenticated" });
 }

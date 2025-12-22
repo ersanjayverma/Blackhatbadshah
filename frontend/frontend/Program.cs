@@ -23,11 +23,11 @@ builder.Services.AddOidcAuthentication(options =>
     options.ProviderOptions.DefaultScopes.Add("email");
 });
 
-
+builder.Services.AddScoped<CustomAuthorizationMessageHandler>();
 builder.Services.AddBlazoredLocalStorage();
 builder.Services.AddHttpClient("BlackHatBadshahApi", client => 
     client.BaseAddress = new Uri("https://api.blackhatbadshah.com"))
-    .AddHttpMessageHandler<BaseAddressAuthorizationMessageHandler>();
+    .AddHttpMessageHandler<CustomAuthorizationMessageHandler>();
 
 builder.Services.AddScoped(sp => sp.GetRequiredService<IHttpClientFactory>()
     .CreateClient("BlackHatBadshahApi"));

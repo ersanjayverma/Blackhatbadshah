@@ -32,6 +32,18 @@ build_property.EnableCodeStyleSeverity =
 build_metadata.AdditionalFiles.TargetPath = QXBwLnJhem9y
 build_metadata.AdditionalFiles.CssScope = 
 
+[/home/sj/code/vscode/frontend/frontend/Pages/Assets/Audit.razor]
+build_metadata.AdditionalFiles.TargetPath = UGFnZXMvQXNzZXRzL0F1ZGl0LnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[/home/sj/code/vscode/frontend/frontend/Pages/Assets/Report.razor]
+build_metadata.AdditionalFiles.TargetPath = UGFnZXMvQXNzZXRzL1JlcG9ydC5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[/home/sj/code/vscode/frontend/frontend/Pages/Assets/Security.razor]
+build_metadata.AdditionalFiles.TargetPath = UGFnZXMvQXNzZXRzL1NlY3VyaXR5LnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
 [/home/sj/code/vscode/frontend/frontend/Pages/Authentication.razor]
 build_metadata.AdditionalFiles.TargetPath = UGFnZXMvQXV0aGVudGljYXRpb24ucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 

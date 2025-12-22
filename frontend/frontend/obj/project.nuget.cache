@@ -1,9 +1,10 @@
 {
   "version": 2,
-  "dgSpecHash": "l1VtlA8w15A=",
+  "dgSpecHash": "mqqfVwP0ZTw=",
   "success": true,
   "projectFilePath": "/home/sj/code/vscode/frontend/frontend/frontend.csproj",
   "expectedPackageFiles": [
+    "/home/sj/.nuget/packages/blazored.localstorage/4.5.0/blazored.localstorage.4.5.0.nupkg.sha512",
     "/home/sj/.nuget/packages/microsoft.aspnetcore.app.internal.assets/10.0.0/microsoft.aspnetcore.app.internal.assets.10.0.0.nupkg.sha512",
     "/home/sj/.nuget/packages/microsoft.aspnetcore.authorization/10.0.1/microsoft.aspnetcore.authorization.10.0.1.nupkg.sha512",
     "/home/sj/.nuget/packages/microsoft.aspnetcore.components/10.0.1/microsoft.aspnetcore.components.10.0.1.nupkg.sha512",

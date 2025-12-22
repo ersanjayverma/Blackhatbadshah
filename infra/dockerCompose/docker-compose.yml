@@ -1,0 +1,6 @@
+services:
+  blackhat-fe:
+    image: vermasj/blackhatbadshahfe
+    ports:
+      - "7001:8080"
+    restart: always

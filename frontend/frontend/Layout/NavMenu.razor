@@ -1,8 +1,12 @@
-﻿@inject NavigationManager Nav
+﻿
 
 <nav class="nav">
-    <div class="nav-brand">Blackhatbadshah</div>
+    <!-- Brand -->
+    <NavLink href="" Match="NavLinkMatch.All" class="nav-brand">
+        <img src="/images/logobhb.png" alt="BlackHatBadshah" />
+    </NavLink>
 
+    <!-- Public -->
     <NavLink href="" Match="NavLinkMatch.All" class="nav-link">Home</NavLink>
 
     <AuthorizeView>
@@ -10,11 +14,14 @@
             <NavLink href="audit" class="nav-link">Run Audit</NavLink>
             <NavLink href="reports" class="nav-link">Reports</NavLink>
             <NavLink href="security" class="nav-link">Security</NavLink>
-            <NavLink class="nav-link" href="logout">Logout</NavLink>
+            <NavLink class="nav-link" href="logout">
+                Logout
+            </NavLink>
         </Authorized>
+
         <NotAuthorized>
-            <NavLink class="nav-link" href="login">Login</NavLink>
+            <NavLink href="login" class="nav-link">Login</NavLink>
         </NotAuthorized>
     </AuthorizeView>
-    
 </nav>
+

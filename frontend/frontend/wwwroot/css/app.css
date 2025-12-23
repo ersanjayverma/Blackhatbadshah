@@ -1,7 +1,21 @@
 html, body {
-    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    height: 100%;
+    margin: 0;
+    background-image: url("/images/bg.png");
+    background-repeat: no-repeat;
+    background-position: center center;
+    background-size: cover;   /* fills screen, preserves aspect */
+    background-attachment: fixed;
 }
 
+body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background: rgba(11,14,20,0.65);
+    pointer-events: none;
+    z-index: -1;
+}
 h1:focus {
     outline: none;
 }
@@ -117,8 +131,8 @@ code {
 .app-layout {
     display: flex;
     height: 100vh;
-    background: #0b0e14;
-    color: #e6e8eb;
+    color: #ffffff;
+    background: transparent; 
     font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
 }
 
@@ -170,4 +184,10 @@ code {
 .nav-link.active {
     background: rgba(93,220,255,0.18);
     color: #ffffff;
+}
+.nav-brand img {
+    width: 180px;      /* hard cap */
+    max-width: 100%;
+    height: auto;
+    display: block;
 }

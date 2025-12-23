@@ -1,9 +1,13 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Scalar.AspNetCore;
+using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
+using backend.Hubs;
+using backend.Data;
 
 var builder = WebApplication.CreateBuilder(args);
-
+builder.Services.AddSignalR();
 // -------------------- Services --------------------
 builder.Services.AddControllers();
 builder.Services.AddCors(options =>
@@ -17,6 +21,12 @@ builder.Services.AddCors(options =>
             .AllowCredentials(); // needed if SignalR/auth cookies
     });
 });
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlServer(
+        builder.Configuration.GetConnectionString("DefaultConnection")
+    )
+);
+
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -59,5 +69,5 @@ if (app.Environment.IsDevelopment())
             .EnablePersistentAuthentication(); // ✅ new API
     });
 }
-
+app.MapHub<DataHub>("/hubs/data");
 app.Run();

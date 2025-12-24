@@ -335,6 +335,17 @@ code {
 body.modal-open {
     overflow: hidden;
 }
+/* Log viewer styling */
+.modal-body pre {
+    background-color: #444;
+    color: #e6e6e6;
+    padding: 14px;
+    border-radius: 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
 /* ======================================================
    BASE
 ====================================================== */

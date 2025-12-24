@@ -79,14 +79,15 @@ class Data(TypedDict):
 # TOOLS
 # =====================================================
 tool_search = DuckDuckGoSearchRun(region="in-en")
-
+stack_api = StackExchangeAPIWrapper()
+tool_stack = StackExchangeTool(api_wrapper=stack_api)
 wiki_api = WikipediaAPIWrapper(
     top_k_results=3,
     doc_content_chars_max=5000
 )
 tool_wiki = WikipediaQueryRun(api_wrapper=wiki_api)
 
-tools = [tool_search, tool_wiki]
+tools = [tool_search, tool_wiki,tool_stack]
 llmt = llm.bind_tools(tools)
 
 # =====================================================

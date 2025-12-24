@@ -19,18 +19,16 @@ RUN apk add --no-cache \
 # Set working directory
 WORKDIR /app
 
-# Copy project files
-COPY frontend.csproj ./
-RUN dotnet restore
 
 # Copy the rest of the source code
-COPY . .
-
+COPY frontend frontend/
+COPY shared shared/
+WORKDIR /app/frontend/frontend
+RUN dotnet restore
 # Copy Supervisor configuration
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 # Set environment variable for Release mode
 ENV DOTNET_CONFIGURATION=Release
-
 # Run Supervisor
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

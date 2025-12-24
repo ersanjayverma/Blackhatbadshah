@@ -1,0 +1,182 @@
+@page "/logs"
+@using Microsoft.AspNetCore.Components.Authorization
+@using shared.Dto
+@inject frontend.Services.LogService LogsApi
+@inject IJSRuntime JS
+
+<AuthorizeView>
+    <Authorized>
+
+        <h3>Logs</h3>
+
+        <InputFile OnChange="OnFileSelected" />
+
+        @if (_loading)
+        {
+            <p>Loading…</p>
+        }
+        else if (_logs.Count == 0)
+        {
+            <p>No logs uploaded yet.</p>
+        }
+        else
+        {
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>File</th>
+                        <th>Size (KB)</th>
+                        <th>Created</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var log in _logs)
+                    {
+                        <tr>
+                            <td>@log.FileName</td>
+                            <td>@(log.SizeBytes / 1024)</td>
+                            <td>@log.CreatedAt.ToLocalTime()</td>
+                            <td>
+                                <!-- View in new tab (safe for large logs) -->
+                                <a class="btn btn-sm btn-outline-primary"
+                                   href="@LogsApi.DownloadUrl(log.Id)"
+                                   target="_blank">
+                                    View
+                                </a>
+
+                                <!-- Inline view (text only, small logs) -->
+                                <button class="btn btn-sm btn-outline-secondary ms-2"
+                                        @onclick="() => ViewInline(log)">
+                                    See Content
+                                </button>
+
+                                <!-- Download -->
+                                <a class="btn btn-sm btn-outline-success ms-2"
+                                   href="@LogsApi.DownloadUrl(log.Id)"
+                                   download>
+                                    Download
+                                </a>
+
+                                <!-- Delete -->
+                                <button class="btn btn-sm btn-outline-danger ms-2"
+                                        @onclick="() => Delete(log.Id)">
+                                    Delete
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+
+    </Authorized>
+
+    <NotAuthorized>
+        <p>You must be logged in to access logs.</p>
+    </NotAuthorized>
+</AuthorizeView>
+
+<!-- INLINE VIEWER MODAL -->
+@if (_showContent)
+{
+    <div class="modal-backdrop show"></div>
+    <div class="modal show d-block">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">@_activeLogName</h5>
+                    <button class="btn-close" @onclick="CloseViewer"></button>
+                </div>
+                <div class="modal-body">
+                    <pre style="max-height:70vh; overflow:auto; white-space:pre-wrap">
+@_logContent
+                    </pre>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<LogDto> _logs = new();
+    private bool _loading = true;
+
+    // Inline viewer state
+    private bool _showContent;
+    private string _logContent = "";
+    private string _activeLogName = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Reload();
+    }
+
+    private async Task Reload()
+    {
+        try
+        {
+            _loading = true;
+            _logs = await LogsApi.ListAsync();
+            await InvokeAsync(StateHasChanged);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+
+        await using var stream =
+            file.OpenReadStream(maxAllowedSize: 100 * 1024 * 1024);
+
+        await LogsApi.UploadAsync(
+            stream,
+            file.Name,
+            file.ContentType ?? "application/octet-stream"
+        );
+
+        await Reload();
+    }
+
+    private async Task ViewInline(LogDto log)
+    {
+        // Guard: don't inline huge logs
+        if (log.SizeBytes > 2 * 1024 * 1024)
+        {
+            await JS.InvokeVoidAsync(
+                "alert",
+                "Log is too large to view inline. Use View or Download."
+            );
+            return;
+        }
+
+        _activeLogName = log.FileName;
+        _logContent = await LogsApi.GetContentAsync(log.Id);
+        _showContent = true;
+    }
+
+    private void CloseViewer()
+    {
+        _showContent = false;
+        _logContent = "";
+        _activeLogName = "";
+    }
+
+    private async Task Delete(Guid id)
+    {
+        var confirmed = await JS.InvokeAsync<bool>(
+            "confirm",
+            "Are you sure you want to delete this log?"
+        );
+
+        if (!confirmed)
+            return;
+
+        await LogsApi.DeleteAsync(id);
+        await Reload();
+    }
+}

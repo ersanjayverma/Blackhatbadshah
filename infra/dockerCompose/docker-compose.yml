@@ -4,9 +4,15 @@ services:
     ports:
       - "7001:8080"
     restart: always
-  
+
   blackhat-ai:
     image: vermasj/blackhatbadshahai
     ports:
       - "8501:8000"
+    restart: always
+
+  blackhat-be:
+    image: vermasj/blackhatbadshahbe
+    ports:
+      - "5092:8080"
     restart: always

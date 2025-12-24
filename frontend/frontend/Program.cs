@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Components.Authorization;
 using frontend;
 using Microsoft.Extensions.Http;
 using Blazored.LocalStorage;
-
+using frontend.Services;
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 
 builder.RootComponents.Add<App>("#app");
@@ -22,6 +22,7 @@ builder.Services.AddOidcAuthentication(options =>
     options.ProviderOptions.DefaultScopes.Add("profile");
     options.ProviderOptions.DefaultScopes.Add("email");
 });
+builder.Services.AddScoped<LogService>();
 
 builder.Services.AddScoped<CustomAuthorizationMessageHandler>();
 builder.Services.AddBlazoredLocalStorage();

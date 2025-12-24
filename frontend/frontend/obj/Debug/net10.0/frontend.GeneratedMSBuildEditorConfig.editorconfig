@@ -40,6 +40,10 @@ build_metadata.AdditionalFiles.CssScope =
 build_metadata.AdditionalFiles.TargetPath = UGFnZXMvQXNzZXRzL0F1ZGl0LnJhem9y
 build_metadata.AdditionalFiles.CssScope = 
 
+[/home/sj/code/vscode/frontend/frontend/Pages/Assets/Log.razor]
+build_metadata.AdditionalFiles.TargetPath = UGFnZXMvQXNzZXRzL0xvZy5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
 [/home/sj/code/vscode/frontend/frontend/Pages/Assets/Report.razor]
 build_metadata.AdditionalFiles.TargetPath = UGFnZXMvQXNzZXRzL1JlcG9ydC5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
@@ -50,6 +54,10 @@ build_metadata.AdditionalFiles.CssScope =
 
 [/home/sj/code/vscode/frontend/frontend/Pages/Authentication.razor]
 build_metadata.AdditionalFiles.TargetPath = UGFnZXMvQXV0aGVudGljYXRpb24ucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[/home/sj/code/vscode/frontend/frontend/Pages/Home.razor]
+build_metadata.AdditionalFiles.TargetPath = UGFnZXMvSG9tZS5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
 [/home/sj/code/vscode/frontend/frontend/Pages/Login.razor]
@@ -79,7 +87,3 @@ build_metadata.AdditionalFiles.CssScope = b-6v5ebjb4ko
 [/home/sj/code/vscode/frontend/frontend/Layout/NavMenu.razor]
 build_metadata.AdditionalFiles.TargetPath = TGF5b3V0L05hdk1lbnUucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = b-jycib1kc17
-
-[/home/sj/code/vscode/frontend/frontend/Pages/Home.razor]
-build_metadata.AdditionalFiles.TargetPath = UGFnZXMvSG9tZS5yYXpvcg==
-build_metadata.AdditionalFiles.CssScope = b-hboqhq4ey5

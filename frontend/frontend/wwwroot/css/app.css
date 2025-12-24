@@ -190,86 +190,282 @@ code {
     height: auto;
     display: block;
 }
+/* Floating Action Button */
 .chat-fab {
     position: fixed;
     bottom: 24px;
     right: 24px;
-    width: 56px;
-    height: 56px;
+    width: 60px;
+    height: 60px;
     border-radius: 50%;
-    background-color: #1b6ec2;
+    background: linear-gradient(135deg, #1b6ec2 0%, #1558a0 100%);
     color: white;
+    border: none;
     display: flex;
     align-items: center;
     justify-content: center;
-    text-decoration: none;
-    box-shadow: 0 6px 16px rgba(0,0,0,0.25);
-    z-index: 1100;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(27, 110, 194, 0.4);
+    z-index: 1200;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .chat-fab:hover {
-    background-color: #1558a0;
-}
-.chat-fab {
-    position: fixed;
-    bottom: 24px;
-    right: 24px;
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
-    background: #1b6ec2;
-    color: #fff;
-    border: none;
-    box-shadow: 0 6px 16px rgba(0,0,0,.3);
-    cursor: pointer;
-    z-index: 1200;
+    transform: scale(1.05);
+    box-shadow: 0 6px 16px rgba(27, 110, 194, 0.5);
 }
 
+/* Chat Window Container */
 .chat-overlay {
     position: fixed;
-    bottom: 90px;
+    bottom: 100px;
     right: 24px;
-    width: 360px;
-    height: 480px;
-    background: white;
-    border-radius: 12px;
+    width: 350px;
+    max-height: 500px;
+    height: 70vh;
+    background: #ffffff;
+    border-radius: 16px;
     display: flex;
     flex-direction: column;
-    box-shadow: 0 12px 32px rgba(0,0,0,.35);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.15);
     z-index: 1200;
+    overflow: hidden;
+    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    /* Optional: animation to pop up */
+    animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 .chat-header {
-    padding: 12px;
+    padding: 16px;
     background: #1b6ec2;
     color: white;
+    font-weight: 600;
     display: flex;
     justify-content: space-between;
     align-items: center;
 }
 
+/* Chat Body & Message Bubbles */
 .chat-body {
     flex: 1;
-    padding: 12px;
+    padding: 16px;
     overflow-y: auto;
+    background-color: #f8f9fa;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
 }
 
 .chat-msg {
-    margin-bottom: 8px;
+    max-width: 80%;
+    padding: 10px 14px;
+    border-radius: 18px;
+    font-size: 14px;
+    line-height: 1.4;
 }
 
+/* Distinguish between Sender and Receiver */
+.chat-msg.sent {
+    align-self: flex-end;
+    background-color: #1b6ec2;
+    color: white;
+    border-bottom-right-radius: 4px;
+}
+
+.chat-msg.received {
+    align-self: flex-start;
+    background-color: #e9ecef;
+    color: #333;
+    border-bottom-left-radius: 4px;
+}
+
+/* Input Area */
 .chat-input {
     display: flex;
-    padding: 8px;
-    border-top: 1px solid #ddd;
+    padding: 12px;
+    background: white;
+    border-top: 1px solid #eee;
+    gap: 8px;
 }
 
 .chat-input input {
     flex: 1;
-    padding: 6px;
+    padding: 10px 16px;
+    border: 1px solid #ddd;
+    border-radius: 20px;
+    outline: none;
+    transition: border-color 0.2s;
 }
-chatwindow,
-modalwindow,
-overlaywindow {
+
+.chat-input input:focus {
+    border-color: #1b6ec2;
+}
+
+.chat-input button {
+    background: none;
+    border: none;
+    color: #1b6ec2;
+    font-weight: bold;
+    cursor: pointer;
+    padding: 0 8px;
+}
+
+/* Force dark modal backdrop */
+.modal-backdrop.show {
+    opacity: 0.8;
+    background-color: rgba(0, 0, 0, 0.85);
+}
+
+/* Ensure modal is above everything */
+.modal {
+    z-index: 1055;
+}
+
+/* Backdrop below modal */
+.modal-backdrop {
+    z-index: 1050;
+}
+
+/* Optional: dim page behind modal */
+body.modal-open {
+    overflow: hidden;
+}
+/* Log viewer styling */
+.modal-body pre {
+    background-color: #444;
+    color: #e6e6e6;
+    padding: 14px;
+    border-radius: 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
+/* ======================================================
+   BASE
+====================================================== */
+
+.hero {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 6rem 2rem 5rem;
+    text-align: center;
+}
+
+.hero h1 {
+    font-size: clamp(2.2rem, 5vw, 3.4rem);
+    line-height: 1.15;
+    font-weight: 700;
+    margin-bottom: 1.5rem;
+}
+
+.hero h1 span {
     display: block;
+    color: #5da9ff;
+    font-weight: 600;
+}
+
+.hero-sub {
+    max-width: 720px;
+    margin: 0 auto 2.5rem;
+    font-size: 1.1rem;
+    line-height: 1.7;
+    color: #c7c7c7;
+}
+
+/* ======================================================
+   HERO ACTIONS
+====================================================== */
+
+.hero-actions {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.btn-primary,
+.btn-secondary {
+    padding: 0.75rem 1.6rem;
+    border-radius: 6px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+}
+
+.btn-primary {
+    background-color: #1f6feb;
+    color: #fff;
+}
+
+.btn-primary:hover {
+    background-color: #388bfd;
+}
+
+.btn-secondary {
+    border: 1px solid #30363d;
+    color: #c9d1d9;
+    background: transparent;
+}
+
+.btn-secondary:hover {
+    background-color: rgba(255,255,255,0.05);
+}
+
+/* ======================================================
+   FEATURES
+====================================================== */
+
+.features {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 4rem 2rem 5rem;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 2rem;
+}
+
+.feature {
+    background: #0d1117;
+    border: 1px solid #21262d;
+    border-radius: 10px;
+    padding: 1.8rem 1.6rem;
+    transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.feature:hover {
+    transform: translateY(-3px);
+    border-color: #30363d;
+}
+
+.feature h3 {
+    margin-bottom: 0.75rem;
+    font-size: 1.2rem;
+    color: #f0f6fc;
+}
+
+.feature p {
+    color: #8b949e;
+    line-height: 1.6;
+}
+
+/* ======================================================
+   RESPONSIVE TWEAKS
+====================================================== */
+
+@media (max-width: 640px) {
+    .hero {
+        padding-top: 4.5rem;
+    }
+
+    .hero-sub {
+        font-size: 1rem;
+    }
 }

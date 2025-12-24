@@ -38,27 +38,17 @@
                             <td>@(log.SizeBytes / 1024)</td>
                             <td>@log.CreatedAt.ToLocalTime()</td>
                             <td>
-                                <!-- View in new tab (safe for large logs) -->
-                                <a class="btn btn-sm btn-outline-primary"
-                                   href="@LogsApi.DownloadUrl(log.Id)"
-                                   target="_blank">
-                                    View
-                                </a>
-
-                                <!-- Inline view (text only, small logs) -->
-                                <button class="btn btn-sm btn-outline-secondary ms-2"
+                            
+                                <button class="btn btn-sm btn-outline-success ms-2"
+                                        @onclick="() => Analyze(log.Id)">
+                                    Run Analysis
+                                </button>
+                        
+                                <button class="btn btn-sm btn-outline-primary ms-2"
                                         @onclick="() => ViewInline(log)">
                                     See Content
                                 </button>
-
-                                <!-- Download -->
-                                <a class="btn btn-sm btn-outline-success ms-2"
-                                   href="@LogsApi.DownloadUrl(log.Id)"
-                                   download>
-                                    Download
-                                </a>
-
-                                <!-- Delete -->
+                         
                                 <button class="btn btn-sm btn-outline-danger ms-2"
                                         @onclick="() => Delete(log.Id)">
                                     Delete
@@ -89,13 +79,13 @@
                     <button class="btn-close" @onclick="CloseViewer"></button>
                 </div>
                 <div class="modal-body">
-                    <pre style="max-height:70vh; overflow:auto; white-space:pre-wrap">
-@_logContent
-                    </pre>
-                                    </div>
-                                                </div>
-                                                        </div>
-                                                            </div>
+                    <div style="max-height:70vh; overflow:auto">
+                        @_logContent
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 }
 
 @code {
@@ -104,8 +94,9 @@
 
     // Inline viewer state
     private bool _showContent;
-    private string _logContent = "";
+    private MarkupString _logContent = new MarkupString("");
     private string _activeLogName = "";
+
 
     protected override async Task OnInitializedAsync()
     {
@@ -125,27 +116,68 @@
             _loading = false;
         }
     }
-
     private async Task OnFileSelected(InputFileChangeEventArgs e)
     {
         var file = e.File;
 
+        // ---------------------------------------
+        // 1. Size check (2 MB max)
+        // ---------------------------------------
+        const long maxSize = 2 * 1024 * 1024; // 2 MB
+
+        if (file.Size > maxSize)
+        {
+            await JS.InvokeVoidAsync(
+                "alert",
+                "File size exceeds 2 MB limit."
+            );
+            return;
+        }
+
+        // ---------------------------------------
+        // 2. Extension check (.txt, .log only)
+        // ---------------------------------------
+        var extension = Path.GetExtension(file.Name).ToLowerInvariant();
+
+        if (extension != ".txt" && extension != ".log"&& extension != ".conf" &&  extension != ".config")
+        {
+            await JS.InvokeVoidAsync(
+                "alert",
+                "Only .conf, .config, .txt and .log files are allowed."
+            );
+            return;
+        }
+
+        // ---------------------------------------
+        // 3. Upload
+        // ---------------------------------------
         await using var stream =
-            file.OpenReadStream(maxAllowedSize: 100 * 1024 * 1024);
+            file.OpenReadStream(maxAllowedSize: maxSize);
 
         await LogsApi.UploadAsync(
             stream,
             file.Name,
-            file.ContentType ?? "application/octet-stream"
+            "text/plain"
         );
 
         await Reload();
     }
 
+    private string ConvertToHtml(string markdown)
+    {
+        if (string.IsNullOrWhiteSpace(markdown)) return string.Empty;
+        
+        // Use AdvancedExtensions for tables, task lists, etc.
+        var pipeline = new MarkdownPipelineBuilder()
+            .UseAdvancedExtensions()
+            .Build();
+            
+        return Markdown.ToHtml(markdown, pipeline);
+    }
     private async Task ViewInline(LogDto log)
     {
         // Guard: don't inline huge logs
-        if (log.SizeBytes > 2 * 1024 * 1024)
+        if (log.SizeBytes > 200 * 1024)
         {
             await JS.InvokeVoidAsync(
                 "alert",
@@ -155,14 +187,17 @@
         }
 
         _activeLogName = log.FileName;
-        _logContent = await LogsApi.GetContentAsync(log.Id);
+        var markdown = await LogsApi.GetContentAsync(log.Id);
+        var html = ConvertToHtml(markdown);
+
+        _logContent = new MarkupString(html);
         _showContent = true;
     }
 
     private void CloseViewer()
     {
         _showContent = false;
-        _logContent = "";
+        _logContent = new MarkupString("");
         _activeLogName = "";
     }
 
@@ -178,5 +213,19 @@
 
         await LogsApi.DeleteAsync(id);
         await Reload();
+    }
+    private async Task Analyze(Guid Id){
+          var confirmed = await JS.InvokeAsync<bool>(
+            "confirm",
+            "Are you sure you want to Send this log for Analysis?"
+        );
+        if (!confirmed)
+            return;
+        var chat=  await LogsApi.AnalyzeAsync(Id);
+        var html = ConvertToHtml(chat.reply);
+
+        _logContent = new MarkupString(html);
+        _activeLogName = "Analysis Result";
+        _showContent = true;
     }
 }

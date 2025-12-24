@@ -62,15 +62,14 @@ public class LogService
         return await _http.GetStringAsync($"/api/logs/{id}/content");
     }
 
-    // -------------------------------------------------
+     // -------------------------------------------------
     // GET /api/logs/{id}/content
-    // Download / View URL (browser streaming)
+    // Read log content as TEXT & Analyse text
     // -------------------------------------------------
-    public string DownloadUrl(Guid id)
+    public async Task<ChatResponse> AnalyzeAsync(Guid id)
     {
-        return $"/api/logs/{id}/content";
+        return await  _http.GetFromJsonAsync<ChatResponse>($"/api/logs/Analyze/{id}");
     }
-
     // -------------------------------------------------
     // DELETE /api/logs/{id}
     // Delete log (blob + db)

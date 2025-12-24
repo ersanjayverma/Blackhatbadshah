@@ -1,0 +1,17 @@
+streamlit
+langgraph
+langchain
+langchain-community
+langchain-openai
+sqlite-utils
+grandalf
+ddgs
+langgraph-checkpoint-sqlite
+pypdf 
+python-docx
+wikipedia
+langchain-mcp-adapters
+fastapi
+uvicorn
+python-jose[cryptography]
+httpx

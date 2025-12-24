@@ -8,7 +8,7 @@ public class CustomAuthorizationMessageHandler : AuthorizationMessageHandler
         : base(provider, navigation)
     {
         ConfigureHandler(
-            authorizedUrls: new[] { "https://api.blackhatbadshah.com" }, // The API Base URL
+            authorizedUrls: new[] { "https://api.blackhatbadshah.com" ,"https://ai.blackhatbadshah.com"}, // The API Base URL
             scopes: new[] { "openid", "profile", "email", "offline_access" } // Must match your requested scopes
         );
     }

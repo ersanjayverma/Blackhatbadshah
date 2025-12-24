@@ -28,7 +28,9 @@ builder.Services.AddBlazoredLocalStorage();
 builder.Services.AddHttpClient("BlackHatBadshahApi", client => 
     client.BaseAddress = new Uri("https://api.blackhatbadshah.com"))
     .AddHttpMessageHandler<CustomAuthorizationMessageHandler>();
-
+builder.Services.AddHttpClient("BlackHatBadshahAi", client => 
+    client.BaseAddress = new Uri("https://ai.blackhatbadshah.com"))
+    .AddHttpMessageHandler<CustomAuthorizationMessageHandler>();
 builder.Services.AddScoped(sp => sp.GetRequiredService<IHttpClientFactory>()
     .CreateClient("BlackHatBadshahApi"));
 

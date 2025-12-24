@@ -1,10 +1,11 @@
 {
   "version": 2,
-  "dgSpecHash": "p/nmAJScEpQ=",
+  "dgSpecHash": "Bc3zwTbd7CM=",
   "success": true,
   "projectFilePath": "/home/sj/code/vscode/frontend/frontend/frontend.csproj",
   "expectedPackageFiles": [
     "/home/sj/.nuget/packages/blazored.localstorage/4.5.0/blazored.localstorage.4.5.0.nupkg.sha512",
+    "/home/sj/.nuget/packages/markdig/0.44.0/markdig.0.44.0.nupkg.sha512",
     "/home/sj/.nuget/packages/microsoft.aspnetcore.app.internal.assets/10.0.0/microsoft.aspnetcore.app.internal.assets.10.0.0.nupkg.sha512",
     "/home/sj/.nuget/packages/microsoft.aspnetcore.authorization/10.0.1/microsoft.aspnetcore.authorization.10.0.1.nupkg.sha512",
     "/home/sj/.nuget/packages/microsoft.aspnetcore.components/10.0.1/microsoft.aspnetcore.components.10.0.1.nupkg.sha512",

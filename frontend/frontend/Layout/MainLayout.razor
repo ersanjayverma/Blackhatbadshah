@@ -1,13 +1,49 @@
 ﻿@inherits LayoutComponentBase
-
+@using frontend.Component
 <div class="app-layout">
+    <!-- SIDEBAR -->
     <aside class="sidebar">
         <NavMenu />
     </aside>
 
+    <!-- MAIN CONTENT AREA -->
     <section class="main">
+
+        <!-- AUTH-AWARE CHAT BUTTON -->
+        <AuthorizeView>
+            <Authorized>
+                <button class="chat-fab" @onclick="ToggleChat">
+                    <span class="material-icons">chat</span>
+                </button>
+            </Authorized>
+
+            <NotAuthorized>
+                <button class="chat-fab disabled" disabled>
+                    <span class="material-icons">chat</span>
+                </button>
+            </NotAuthorized>
+        </AuthorizeView>
+
+        <!-- PAGE CONTENT -->
         <main class="content">
             @Body
         </main>
     </section>
 </div>
+
+@* ======================================================
+   CHAT OVERLAY (PORTAL STYLE – OUTSIDE LAYOUT)
+   ====================================================== *@
+@if (showChat)
+{
+    <Chatwindow OnClose="ToggleChat" />
+}
+
+@code {
+    private bool showChat;
+
+    private void ToggleChat()
+    {
+        showChat = !showChat;
+    }
+}

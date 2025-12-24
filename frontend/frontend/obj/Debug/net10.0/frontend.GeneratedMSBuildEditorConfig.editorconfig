@@ -32,6 +32,10 @@ build_property.EnableCodeStyleSeverity =
 build_metadata.AdditionalFiles.TargetPath = QXBwLnJhem9y
 build_metadata.AdditionalFiles.CssScope = 
 
+[/home/sj/code/vscode/frontend/frontend/Component/Chatwindow.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50L0NoYXR3aW5kb3cucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
 [/home/sj/code/vscode/frontend/frontend/Pages/Assets/Audit.razor]
 build_metadata.AdditionalFiles.TargetPath = UGFnZXMvQXNzZXRzL0F1ZGl0LnJhem9y
 build_metadata.AdditionalFiles.CssScope = 

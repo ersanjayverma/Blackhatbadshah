@@ -18,10 +18,6 @@
             <div class="hero-actions">
                 <a class="btn-primary" href="/audit">Run an Audit</a>
                 <a class="btn-secondary" href="/security">Security & Privacy</a>
-                <button class="btn-primary" @onclick='checkHealth'>Check Health</button>
-            </div>
-            <div class="hero-actions">
-            @HealthStatus
             </div>
             </Authorized>
     </AuthorizeView>
@@ -60,7 +56,7 @@
 
     public async Task checkHealth(){
         var response  = await Http.GetFromJsonAsync<HealthResponse>("api/health");
-        HealthStatus= response.Status;
-        InvokeAsync(StateHasChanged);
+        HealthStatus = response.Status;
+        await InvokeAsync(StateHasChanged);
     }
 }

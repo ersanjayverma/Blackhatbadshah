@@ -315,3 +315,23 @@ code {
     padding: 0 8px;
 }
 
+/* Force dark modal backdrop */
+.modal-backdrop.show {
+    opacity: 0.8;
+    background-color: rgba(0, 0, 0, 0.85);
+}
+
+/* Ensure modal is above everything */
+.modal {
+    z-index: 1055;
+}
+
+/* Backdrop below modal */
+.modal-backdrop {
+    z-index: 1050;
+}
+
+/* Optional: dim page behind modal */
+body.modal-open {
+    overflow: hidden;
+}

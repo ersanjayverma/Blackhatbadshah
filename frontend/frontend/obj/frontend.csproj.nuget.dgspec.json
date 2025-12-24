@@ -53,6 +53,10 @@
               "target": "Package",
               "version": "[4.5.0, )"
             },
+            "Markdig": {
+              "target": "Package",
+              "version": "[0.44.0, )"
+            },
             "Microsoft.AspNetCore.App.Internal.Assets": {
               "suppressParent": "All",
               "target": "Package",

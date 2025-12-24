@@ -87,8 +87,10 @@
 
     private async Task HandleKey(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter")
+        if (e.Key == "Enter"){
             await Send();
+            input = string.Empty;
+        }
     }
 
     private record ChatResponse(string reply);

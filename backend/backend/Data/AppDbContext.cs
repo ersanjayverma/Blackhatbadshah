@@ -12,7 +12,7 @@ public class AppDbContext : DbContext
     public DbSet<AuditStep> AuditSteps => Set<AuditStep>();
     public DbSet<AuditFinding> AuditFindings => Set<AuditFinding>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
-
+    public DbSet<Log> Logs => Set<Log>();
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

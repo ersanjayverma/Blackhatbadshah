@@ -1,3 +1,5 @@
+using backend.Data;
+
 namespace backend.Data.Entities;
 
 public class AuditEvent

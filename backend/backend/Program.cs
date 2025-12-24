@@ -4,9 +4,12 @@ using Scalar.AspNetCore;
 using Microsoft.EntityFrameworkCore;
 using backend.Hubs;
 using backend.Data;
+using Azure.Storage.Blobs;
+
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSignalR();
+builder.Services.AddSingleton<IConfiguration>(builder.Configuration);
 // -------------------- Services --------------------
 builder.Services.AddControllers();
 builder.Services.AddCors(options =>
@@ -41,6 +44,12 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
+builder.Services.AddSingleton(sp =>
+{
+    var cfg = sp.GetRequiredService<IConfiguration>();
+    var cs = cfg["AzureBlob:ConnectionString"];
+    return new BlobServiceClient(cs);
+});
 
 builder.Services.AddAuthorization();
 

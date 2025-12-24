@@ -5,7 +5,8 @@ using Microsoft.EntityFrameworkCore;
 using backend.Hubs;
 using backend.Data;
 using Azure.Storage.Blobs;
-
+using backend.Services;
+using backend.Handlers;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSignalR();
@@ -50,9 +51,15 @@ builder.Services.AddSingleton(sp =>
     var cs = cfg["AzureBlob:ConnectionString"];
     return new BlobServiceClient(cs);
 });
-
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddTransient<ForwardAuthHeaderHandler>();
+builder.Services.AddHttpClient<ILogAnalyzer, LogAnalyzer>((sp, client) =>
+{
+    client.BaseAddress = new Uri("https://ai.blackhatbadshah.com");
+    client.Timeout = TimeSpan.FromMinutes(5);
+})
+.AddHttpMessageHandler<ForwardAuthHeaderHandler>();
 builder.Services.AddAuthorization();
-
 // OpenAPI (doc only)
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi();

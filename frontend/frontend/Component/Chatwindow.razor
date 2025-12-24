@@ -1,6 +1,4 @@
 @namespace frontend.Component
-@using Microsoft.AspNetCore.Components.Authorization
-@using Markdig  @* 1. Add Markdig namespace *@
 @inject IHttpClientFactory ClientFactory
 @inject AuthenticationStateProvider AuthStateProvider
 
@@ -71,7 +69,7 @@
             "chat",
             new { thread_id = threadId, message = input }
         );
-
+        input = string.Empty;
         if (response.IsSuccessStatusCode)
         {
             var result = await response.Content.ReadFromJsonAsync<ChatResponse>();
@@ -82,7 +80,7 @@
             messages.Add("*AI: Error contacting server*");
         }
 
-        input = string.Empty;
+       
     }
 
     private async Task HandleKey(KeyboardEventArgs e)
@@ -92,6 +90,4 @@
             input = string.Empty;
         }
     }
-
-    private record ChatResponse(string reply);
 }

@@ -6,6 +6,7 @@ using System.Security.Claims;
 using backend.Data.Entities;
 using backend.Data;
 using shared.Dto;
+using backend.Services;
 namespace backend.Controllers
 {
     [ApiController]
@@ -16,15 +17,17 @@ namespace backend.Controllers
         private readonly IConfiguration _config;
         private readonly BlobServiceClient _blobService;
         private readonly AppDbContext _db;
+        private readonly ILogAnalyzer _analyzer;
 
         public LogsController(
             IConfiguration config,
             BlobServiceClient blobService,
-            AppDbContext db)
+            AppDbContext db,ILogAnalyzer analyzer)
         {
             _config = config;
             _blobService = blobService;
             _db = db;
+            _analyzer=analyzer;
         }
 
         // -----------------------------------------
@@ -180,7 +183,7 @@ namespace backend.Controllers
             {
                 await blob.DeleteIfExistsAsync();
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 // Optional: log this, but do NOT block DB cleanup
                 // _logger.LogWarning(ex, "Failed to delete blob {Path}", log.StoragePath);
@@ -190,6 +193,54 @@ namespace backend.Controllers
             await _db.SaveChangesAsync();
 
             return NoContent();
+        }
+        // -----------------------------------------
+// POST api/logs/Analyse/{id}/content
+// Analyze log content (owner only)
+// -----------------------------------------
+[HttpGet("Analyze/{id:guid}")]
+public async Task<IActionResult> AnalyseContent( Guid id)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                        ?? User.FindFirstValue("sub");
+
+            if (userId == null)
+                return Unauthorized();
+
+            // 1. Fetch log metadata
+            var log = await _db.Logs.FindAsync(id);
+            if (log == null)
+                return NotFound("Log not found");
+
+            if (log.UserId != userId)
+                return Forbid();
+
+            // 2. Fetch blob
+            var containerName = _config["AzureBlob:Container"];
+            if (string.IsNullOrWhiteSpace(containerName))
+                throw new InvalidOperationException("AzureBlob:Container not configured");
+
+            var container = _blobService.GetBlobContainerClient(containerName);
+            var blob = container.GetBlobClient(log.StoragePath);
+
+            if (!await blob.ExistsAsync())
+                return NotFound("Log content missing in storage");
+
+            // 3. Stream blob content (safe)
+            string content;
+            await using (var stream = await blob.OpenReadAsync())
+            using (var reader = new StreamReader(stream))
+            {
+                content = await reader.ReadToEndAsync();
+            }
+
+            if (string.IsNullOrWhiteSpace(content))
+                return BadRequest("Log content is empty");
+
+            // 4. Analyze (deterministic analyzer)
+            var analysis = await _analyzer.AnalyzeAsync(log.Id, content);
+
+            return Ok(analysis);
         }
 
     }

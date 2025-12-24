@@ -66,7 +66,7 @@ async def verify_jwt(
 llm = ChatOpenAI(
     openai_api_base="https://api.together.xyz/v1",
     openai_api_key="2d15d7147c32f76cd01c30754ba484012d106ac462a5b1d269a2a5afb9036e8f",
-    model="openai/gpt-oss-120b",
+    model="Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8",
     streaming=False,
 )
 

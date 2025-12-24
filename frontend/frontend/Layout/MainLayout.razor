@@ -1,20 +1,67 @@
 ﻿@inherits LayoutComponentBase
 @using frontend.Component
+@using Microsoft.AspNetCore.Components.Authorization
+@inject ApiLoaderService Loader
+
 <div class="app-layout">
+
     <!-- SIDEBAR -->
     <aside class="sidebar">
         <NavMenu />
     </aside>
 
-    <!-- MAIN CONTENT AREA -->
+    <!-- MAIN CONTENT -->
     <section class="main">
 
-        <!-- AUTH-AWARE CHAT BUTTON -->
+        <!-- PAGE CONTENT -->
+        <main class="content">
+            @Body
+        </main>
+
+        <!-- GLOBAL API LOADER -->
+        @if (Loader.IsBusy)
+        {
+            <div class="api-loader-overlay">
+                <div class="api-loader-box">
+                    <div class="spinner-border text-primary"></div>
+                    <div class="mt-2">Processing…</div>
+                </div>
+            </div>
+        }
+
+        <!-- CHAT (AUTH AWARE) -->
         <AuthorizeView>
             <Authorized>
-                <button class="chat-fab" @onclick="ToggleChat">
-                    <span class="material-icons">chat</span>
-                </button>
+
+                <!-- FLOATING BUTTON -->
+                @if (!IsChatOpen)
+                {
+                    <button class="chat-fab" @onclick="ToggleChat">
+                        <span class="material-icons">chat</span>
+                    </button>
+                }
+
+                <!-- CHAT OVERLAY -->
+               @if (IsChatOpen)
+                {
+                    <div class="chat-overlay @(IsFullscreen ? "fullscreen" : "")">
+
+                        <!-- HEADER -->
+                        <div class="chat-header">
+                            <span>Blackhat AI</span>
+                            <div>
+                                <button title="Fullscreen"
+                                        @onclick="ToggleFullscreen">⛶</button>
+                                <button title="Close"
+                                        @onclick="ToggleChat">✕</button>
+                            </div>
+                        </div>
+
+                        <!-- CHAT CONTENT -->
+                        <Chatwindow />
+                    </div>
+                }
+
             </Authorized>
 
             <NotAuthorized>
@@ -24,26 +71,30 @@
             </NotAuthorized>
         </AuthorizeView>
 
-        <!-- PAGE CONTENT -->
-        <main class="content">
-            @Body
-        </main>
     </section>
 </div>
 
-@* ======================================================
-   CHAT OVERLAY (PORTAL STYLE – OUTSIDE LAYOUT)
-   ====================================================== *@
-@if (showChat)
-{
-    <Chatwindow OnClose="ToggleChat" />
-}
-
 @code {
-    private bool showChat;
+    private bool IsChatOpen;
+    private bool IsFullscreen;
 
     private void ToggleChat()
     {
-        showChat = !showChat;
+        IsChatOpen = !IsChatOpen;
+        if (!IsChatOpen)
+            IsFullscreen = false;
+    }
+
+    private void ToggleFullscreen()
+        => IsFullscreen = !IsFullscreen;
+
+    protected override void OnInitialized()
+    {
+        Loader.OnChange += StateHasChanged;
+    }
+
+    public void Dispose()
+    {
+        Loader.OnChange -= StateHasChanged;
     }
 }

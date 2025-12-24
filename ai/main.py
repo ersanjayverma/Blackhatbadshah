@@ -7,7 +7,8 @@ from pydantic import BaseModel
 
 import httpx
 from jose import jwt
-
+from langchain_community.utilities import StackExchangeAPIWrapper
+from langchain_community.tools import StackExchangeTool
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langgraph.graph import StateGraph, START, END
@@ -65,7 +66,7 @@ async def verify_jwt(
 llm = ChatOpenAI(
     openai_api_base="https://api.together.xyz/v1",
     openai_api_key="2d15d7147c32f76cd01c30754ba484012d106ac462a5b1d269a2a5afb9036e8f",
-    model="openai/gpt-oss-120b",
+    model="Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8",
     streaming=False,
 )
 
@@ -79,14 +80,15 @@ class Data(TypedDict):
 # TOOLS
 # =====================================================
 tool_search = DuckDuckGoSearchRun(region="in-en")
-
+stack_api = StackExchangeAPIWrapper()
+tool_stack = StackExchangeTool(api_wrapper=stack_api)
 wiki_api = WikipediaAPIWrapper(
     top_k_results=3,
     doc_content_chars_max=5000
 )
 tool_wiki = WikipediaQueryRun(api_wrapper=wiki_api)
 
-tools = [tool_search, tool_wiki]
+tools = [tool_search, tool_wiki,tool_stack]
 llmt = llm.bind_tools(tools)
 
 # =====================================================

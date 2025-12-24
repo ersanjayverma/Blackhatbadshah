@@ -2,57 +2,40 @@
 @inject IHttpClientFactory ClientFactory
 @inject AuthenticationStateProvider AuthStateProvider
 
-<div class="chat-overlay">
-    <div class="chat-header">
-        <span>Blackhat AI</span>
-        <button class="close-btn" @onclick="OnClose">✕</button>
-    </div>
+<!-- BODY -->
+<div class="chat-body">
+    @foreach (var msg in messages)
+    {
+        <div class="chat-msg received">
+            @((MarkupString)ConvertToHtml(msg))
+        </div>
+    }
+</div>
 
-    <div class="chat-body">
-        @foreach (var msg in messages)
-        {
-            @* 2. Cast to MarkupString to render as HTML *@
-            <div class="chat-msg">@((MarkupString)ConvertToHtml(msg))</div>
-        }
-    </div>
+<!-- INPUT -->
+<div class="chat-input">
+    <input placeholder="Type your message…"
+           @bind="input"
+           @bind:event="oninput"
+           @onkeydown="HandleKey" />
 
-    <div class="chat-input">
-        <input placeholder="Type your message…"
-               @bind="input"
-               @bind:event="oninput"
-               @onkeydown="HandleKey" />
-        <button @onclick="Send">Send</button>
-    </div>
+    <button @onclick="Send">Send</button>
 </div>
 
 @code {
-    [Parameter] public EventCallback OnClose { get; set; }
-
     private string input = string.Empty;
     private string? threadId;
     private readonly List<string> messages = new();
-
-    // 3. Helper method to parse Markdown
-    private string ConvertToHtml(string markdown)
-    {
-        if (string.IsNullOrWhiteSpace(markdown)) return string.Empty;
-        
-        // Use AdvancedExtensions for tables, task lists, etc.
-        var pipeline = new MarkdownPipelineBuilder()
-            .UseAdvancedExtensions()
-            .Build();
-            
-        return Markdown.ToHtml(markdown, pipeline);
-    }
 
     protected override async Task OnInitializedAsync()
     {
         var authState = await AuthStateProvider.GetAuthenticationStateAsync();
         var user = authState.User;
 
-        threadId = user.FindFirst("sid")?.Value
-                   ?? user.FindFirst("sub")?.Value
-                   ?? Guid.NewGuid().ToString();
+        threadId =
+            user.FindFirst("sid")?.Value ??
+            user.FindFirst("sub")?.Value ??
+            Guid.NewGuid().ToString();
     }
 
     private async Task Send()
@@ -60,16 +43,18 @@
         if (string.IsNullOrWhiteSpace(input))
             return;
 
-        // Note: Prefixes like "You: " will now be parsed as part of the Markdown
         messages.Add($"**You:** {input}");
 
         var http = ClientFactory.CreateClient("BlackHatBadshahAi");
-
+        string usermsg = input ;
+         input = string.Empty;
         var response = await http.PostAsJsonAsync(
             "chat",
-            new { thread_id = threadId, message = input }
+            new { thread_id = threadId, message = usermsg }
         );
-        input = string.Empty;
+
+       
+
         if (response.IsSuccessStatusCode)
         {
             var result = await response.Content.ReadFromJsonAsync<ChatResponse>();
@@ -79,15 +64,23 @@
         {
             messages.Add("*AI: Error contacting server*");
         }
-
-       
     }
 
     private async Task HandleKey(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter"){
+        if (e.Key == "Enter")
             await Send();
-            input = string.Empty;
-        }
+    }
+
+    private string ConvertToHtml(string markdown)
+    {
+        if (string.IsNullOrWhiteSpace(markdown))
+            return string.Empty;
+
+        var pipeline = new MarkdownPipelineBuilder()
+            .UseAdvancedExtensions()
+            .Build();
+
+        return Markdown.ToHtml(markdown, pipeline);
     }
 }

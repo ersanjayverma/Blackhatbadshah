@@ -7,7 +7,8 @@ from pydantic import BaseModel
 
 import httpx
 from jose import jwt
-
+from langchain_community.utilities import StackExchangeAPIWrapper
+from langchain_community.tools import StackExchangeTool
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langgraph.graph import StateGraph, START, END

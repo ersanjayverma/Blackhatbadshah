@@ -14,92 +14,51 @@ public class LogAnalyzer : ILogAnalyzer
     }
 
     public async Task<ChatResponse> AnalyzeAsync(Guid logId, string logContent)
+{
+    if (string.IsNullOrWhiteSpace(logContent))
+        return new ChatResponse("Analyzer failed: log content is empty");
+
+    var threadId = $"log-{logId}";
+    var prompt = BuildPrompt(logContent);
+
+    HttpResponseMessage response;
+    try
     {
-        if (string.IsNullOrWhiteSpace(logContent))
-            return new ChatResponse("Analyzer failed: log content is empty");
-
-        var threadId = $"log-{logId}";
-        var prompt = BuildPrompt(logContent);
-
-        var request = new HttpRequestMessage(HttpMethod.Post, "chat")
-        {
-            Content = JsonContent.Create(new
+        response = await _http.PostAsJsonAsync(
+            "chat",
+            new
             {
                 thread_id = threadId,
-                message = prompt,
-                stream = true
-            })
-        };
-
-        HttpResponseMessage response;
-        try
-        {
-            response = await _http.SendAsync(
-                request,
-                HttpCompletionOption.ResponseHeadersRead);
-        }
-        catch (Exception ex)
-        {
-            return new ChatResponse(
-                $"Analyzer failed: connection error ({ex.Message})");
-        }
-
-        if (!response.IsSuccessStatusCode)
-            return new ChatResponse(
-                $"Analyzer failed: HTTP {(int)response.StatusCode}");
-
-        var sb = new StringBuilder();
-
-        try
-        {
-            await using var stream = await response.Content.ReadAsStreamAsync();
-            using var reader = new StreamReader(stream);
-
-            string? line;
-            while ((line = await reader.ReadLineAsync()) != null)
-            {
-                if (string.IsNullOrWhiteSpace(line))
-                    continue;
-
-                if (!line.StartsWith("data: "))
-                    continue;
-
-                var payload = line[6..].Trim();
-
-                if (payload == "[DONE]")
-                    break;
-
-                try
-                {
-                    var chunk = JsonSerializer.Deserialize<StreamChunk>(
-                        payload,
-                        new JsonSerializerOptions
-                        {
-                            PropertyNameCaseInsensitive = true
-                        });
-
-                    if (!string.IsNullOrWhiteSpace(chunk?.Token))
-                        sb.Append(chunk.Token);
-                }
-                catch
-                {
-                    // ignore partial / malformed chunks
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            return new ChatResponse(
-                $"Analyzer interrupted: {ex.Message}");
-        }
-
-        var finalText = sb.ToString();
-
-        if (string.IsNullOrWhiteSpace(finalText))
-            return new ChatResponse("Analyzer returned no usable output");
-
-        return new ChatResponse(finalText);
+                message = prompt
+            });
     }
+    catch (Exception ex)
+    {
+        return new ChatResponse(
+            $"Analyzer failed: connection error ({ex.Message})");
+    }
+
+    if (!response.IsSuccessStatusCode)
+        return new ChatResponse(
+            $"Analyzer failed: HTTP {(int)response.StatusCode}");
+
+    ChatResponse? result;
+    try
+    {
+        result = await response.Content.ReadFromJsonAsync<ChatResponse>();
+    }
+    catch (Exception ex)
+    {
+        return new ChatResponse(
+            $"Analyzer failed: invalid response ({ex.Message})");
+    }
+
+    if (result == null || string.IsNullOrWhiteSpace(result.reply))
+        return new ChatResponse("Analyzer returned empty response");
+
+    return result;
+}
+
 
     private static string BuildPrompt(string logContent)
     {

@@ -162,7 +162,7 @@ async def chat(
     request: Request, 
     token=Depends(verify_jwt),  # 🔐 JWT protected
 ):
-    result = request.api.state.graph.invoke(
+    result = request.app.state.graph.invoke(
         {"messages": [HumanMessage(content=req.message)]},
         config={"configurable": {"thread_id": req.thread_id}},
     )

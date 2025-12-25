@@ -1,31 +1,34 @@
-# See https://aka.ms/customizecontainer to learn how to customize your debug container and how Visual Studio uses this Dockerfile to build your images for faster debugging.
+# Use Alpine as the base image
+FROM alpine:latest
 
-# This stage is used when running from VS in fast mode (Default for Debug configuration)
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
-USER $APP_UID
+# Install dependencies, .NET 10 SDK, and Supervisor
+# Note: dotnet10-sdk is available in Alpine 'edge' community repo as of late 2025
+RUN apk add --no-cache \
+    supervisor \
+    icu-libs \
+    krb5-libs \
+    libgcc \
+    libintl \
+    libssl3 \
+    libstdc++ \
+    zlib \
+    bash \
+    --repository=dl-cdn.alpinelinux.org \
+    dotnet10-sdk
+
+# Set working directory
 WORKDIR /app
-EXPOSE 8080
 
 
-# This stage is used to build the service project
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
-ARG BUILD_CONFIGURATION=Release
-WORKDIR /src
-COPY backend backend/
+# Copy the rest of the source code
+COPY frontend frontend/
 COPY shared shared/
-
-
-WORKDIR "/src/backend/backend"
+WORKDIR /app/frontend/frontend
 RUN dotnet restore
-RUN dotnet build "./backend.csproj" -c $BUILD_CONFIGURATION -o /app/build
+# Copy Supervisor configuration
+COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
-# This stage is used to publish the service project to be copied to the final stage
-FROM build AS publish
-ARG BUILD_CONFIGURATION=Release
-RUN dotnet publish "./backend.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
-
-# This stage is used in production or when running from VS in regular mode (Default when not using the Debug configuration)
-FROM base AS final
-WORKDIR /app
-COPY --from=publish /app/publish .
-ENTRYPOINT ["dotnet", "backend.dll"]
+# Set environment variable for Release mode
+ENV DOTNET_CONFIGURATION=Release
+# Run Supervisor
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

@@ -1,19 +1,22 @@
-import sqlite3
+import aiosqlite
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from contextlib import asynccontextmanager
 from typing import TypedDict, Annotated, List
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status,Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
-
+from fastapi.responses import StreamingResponse
 import httpx
+import json
+import asyncio
 from jose import jwt
 from langchain_community.utilities import StackExchangeAPIWrapper
 from langchain_community.tools import StackExchangeTool
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage,AIMessageChunk
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
-from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.prebuilt import ToolNode, tools_condition
 from langchain_community.tools import DuckDuckGoSearchRun, WikipediaQueryRun
 from langchain_community.utilities import WikipediaAPIWrapper
@@ -29,6 +32,20 @@ JWKS_URL = f"{AUTHORITY}/protocol/openid-connect/certs"
 security = HTTPBearer()
 _jwks_cache = None
 
+@asynccontextmanager
+async def lifespan(api: FastAPI):
+    async with aiosqlite.connect("bhb_test.db") as conn:
+        saver = AsyncSqliteSaver(conn)
+        api.state.graph = graph.compile(checkpointer=saver)
+        yield
+
+# =====================================================
+# FASTAPI
+# =====================================================
+api = FastAPI(
+    title="BlackhatBadshah LangGraph API",
+    lifespan=lifespan,
+)
 
 async def verify_jwt(
     credentials: HTTPAuthorizationCredentials = Depends(security),
@@ -67,7 +84,7 @@ llm = ChatOpenAI(
     openai_api_base="https://api.together.xyz/v1",
     openai_api_key="2d15d7147c32f76cd01c30754ba484012d106ac462a5b1d269a2a5afb9036e8f",
     model="Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8",
-    streaming=False,
+    streaming=True,
 )
 
 # =====================================================
@@ -103,9 +120,6 @@ tool_node = ToolNode(tools)
 # =====================================================
 # GRAPH SETUP
 # =====================================================
-conn = sqlite3.connect("bhb_test.db", check_same_thread=False)
-checkpointer = SqliteSaver(conn)
-
 graph = StateGraph(Data)
 graph.add_node("chat_node", chat_node)
 graph.add_node("tools", tool_node)
@@ -115,12 +129,8 @@ graph.add_conditional_edges("chat_node", tools_condition)
 graph.add_edge("tools", "chat_node")
 graph.add_edge("chat_node", END)
 
-app_graph = graph.compile(checkpointer=checkpointer)
 
-# =====================================================
-# FASTAPI
-# =====================================================
-api = FastAPI(title="BlackhatBadshah LangGraph API")
+
 
 class ChatRequest(BaseModel):
     thread_id: str
@@ -143,14 +153,16 @@ api.add_middleware(
         "Authorization",
         "Content-Type",
     ],
+    expose_headers=["Content-Type", "X-Accel-Buffering"]
 )
 
 @api.post("/chat", response_model=ChatResponse)
-def chat(
+async def chat(
     req: ChatRequest,
+    request: Request, 
     token=Depends(verify_jwt),  # 🔐 JWT protected
 ):
-    result = app_graph.invoke(
+    result = request.api.state.graph.invoke(
         {"messages": [HumanMessage(content=req.message)]},
         config={"configurable": {"thread_id": req.thread_id}},
     )
@@ -163,9 +175,64 @@ def chat(
     return ChatResponse(reply=str(last))
 
 
+@api.post("/chat/stream")
+async def chat_stream(
+    req: ChatRequest,
+    request: Request, 
+    token=Depends(verify_jwt),
+):
+    async def event_generator():
+        try:
+            yield ": connected\n\n"
+
+            # Use astream with "messages" mode
+            async for chunk in request.app.state.graph.astream(
+                {"messages": [HumanMessage(content=req.message)]},
+                config={"configurable": {"thread_id": req.thread_id}},
+                stream_mode="messages",
+            ):
+                # 1. Handle Tuple Unpacking: chunk is often (AIMessageChunk, metadata)
+                msg = chunk[0] if isinstance(chunk, tuple) else chunk
+                
+                # 2. Extract content from AIMessageChunk or dict
+                content = ""
+                if isinstance(msg, AIMessageChunk):
+                    content = msg.content
+                elif isinstance(msg, dict) and "content" in msg:
+                    content = msg["content"]
+                elif hasattr(msg, "content"):
+                    content = msg.content
+
+                # 3. Yield only if there is actual text
+                if content:
+                    yield f"data: {json.dumps({'token': content})}\n\n"
+
+            yield "data: [DONE]\n\n"
+
+        except Exception as e:
+            # Detailed logging to help you see the exact failure in the console
+            import traceback
+            error_detail = traceback.format_exc()
+            print(f"CRITICAL STREAM ERROR:\n{error_detail}")
+            
+            # Send a cleaner error to the client
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # CRITICAL: Disables Nginx buffering
+        },
+    )
+
+
 # =====================================================
 # HEALTH
 # =====================================================
 @api.get("/health")
-def health():
+async def health():
     return {"status": "ok"}

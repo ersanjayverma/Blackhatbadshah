@@ -1,34 +1,50 @@
-# Use Alpine as the base image
-FROM alpine:latest
+# See https://aka.ms/customizecontainer to learn how to customize your debug container
+# and how Visual Studio uses this Dockerfile to build your images for faster debugging.
 
-# Install dependencies, .NET 10 SDK, and Supervisor
-# Note: dotnet10-sdk is available in Alpine 'edge' community repo as of late 2025
-RUN apk add --no-cache \
-    supervisor \
-    icu-libs \
-    krb5-libs \
-    libgcc \
-    libintl \
-    libssl3 \
-    libstdc++ \
-    zlib \
-    bash \
-    --repository=dl-cdn.alpinelinux.org \
-    dotnet10-sdk
-
-# Set working directory
+# =========================================================
+# Base runtime (VS Fast Mode / Production Runtime)
+# =========================================================
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
 WORKDIR /app
+EXPOSE 8080
 
+# -----------------------------
+# AWS credentials (DEV ONLY)
+# -----------------------------
+# ⚠️ Do NOT use this in production images
+ENV AWS_ACCESS_KEY_ID=AKIAZJNV77H4QUEUL5VO
+ENV AWS_SECRET_ACCESS_KEY=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
+ENV AWS_REGION=ap-south-1
+ENV AWS_DEFAULT_REGION=ap-south-1
 
-# Copy the rest of the source code
-COPY frontend frontend/
+# =========================================================
+# Build stage
+# =========================================================
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+ARG BUILD_CONFIGURATION=Release
+WORKDIR /src
+
+COPY backend backend/
 COPY shared shared/
-WORKDIR /app/frontend/frontend
-RUN dotnet restore
-# Copy Supervisor configuration
-COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
-# Set environment variable for Release mode
-ENV DOTNET_CONFIGURATION=Release
-# Run Supervisor
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+WORKDIR /src/backend/backend
+RUN dotnet restore
+RUN dotnet build "./backend.csproj" -c $BUILD_CONFIGURATION -o /app/build
+
+# =========================================================
+# Publish stage
+# =========================================================
+FROM build AS publish
+ARG BUILD_CONFIGURATION=Release
+RUN dotnet publish "./backend.csproj" \
+    -c $BUILD_CONFIGURATION \
+    -o /app/publish \
+    /p:UseAppHost=false
+
+# =========================================================
+# Final runtime image
+# =========================================================
+FROM base AS final
+WORKDIR /app
+COPY --from=publish /app/publish .
+ENTRYPOINT ["dotnet", "backend.dll"]

@@ -111,8 +111,8 @@ llmt = llm.bind_tools(tools)
 # =====================================================
 # GRAPH NODES
 # =====================================================
-def chat_node(state: Data):
-    response = llmt.invoke(state["messages"])
+async def chat_node(state: Data):
+    response = await llmt.ainvoke(state["messages"])
     return {"messages": [response]}
 
 tool_node = ToolNode(tools)
@@ -159,20 +159,30 @@ api.add_middleware(
 @api.post("/chat", response_model=ChatResponse)
 async def chat(
     req: ChatRequest,
-    request: Request, 
-    token=Depends(verify_jwt),  # 🔐 JWT protected
+    request: Request,
+    token=Depends(verify_jwt),
 ):
-    result = request.api.state.graph.invoke(
-        {"messages": [HumanMessage(content=req.message)]},
-        config={"configurable": {"thread_id": req.thread_id}},
-    )
+    try:
+        result = await request.app.state.graph.ainvoke(
+            {"messages": [HumanMessage(content=req.message)]},
+            config={"configurable": {"thread_id": req.thread_id}},
+        )
+    except Exception as e:
+        # Never crash the API
+        return ChatResponse(reply=f"Analyzer failed: {str(e)}")
 
-    last = result["messages"][-1]
+    messages = result.get("messages", [])
+    if not messages:
+        return ChatResponse(reply="Analyzer returned no messages")
+
+    last = messages[-1]
 
     if isinstance(last, AIMessage):
         return ChatResponse(reply=last.content)
 
+    # Fallback (should rarely happen)
     return ChatResponse(reply=str(last))
+
 
 
 @api.post("/chat/stream")

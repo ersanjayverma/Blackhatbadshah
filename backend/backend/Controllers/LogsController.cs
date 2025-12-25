@@ -3,155 +3,254 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
-using backend.Data.Entities;
+using System.Text;
+using UglyToad.PdfPig;
+
 using backend.Data;
-using shared.Dto;
+using backend.Data.Entities;
 using backend.Services;
-namespace backend.Controllers
+using shared.Dto;
+
+namespace backend.Controllers;
+
+[ApiController]
+[Route("api/logs")]
+[Authorize]
+public class LogsController : ControllerBase
 {
-    [ApiController]
-    [Route("api/logs")]
-    [Authorize]
-    public class LogsController : ControllerBase
+    private readonly IConfiguration _config;
+    private readonly BlobServiceClient _blobService;
+    private readonly AppDbContext _db;
+    private readonly ILogAnalyzer _analyzer;
+    private readonly ITextractService _textractService;
+
+    // ----------------------------
+    // Supported formats
+    // ----------------------------
+    private static readonly HashSet<string> TextExtensions =
+        new(StringComparer.OrdinalIgnoreCase)
+        { ".txt", ".log", ".json", ".xml", ".csv" };
+
+    private static readonly HashSet<string> ImageExtensions =
+        new(StringComparer.OrdinalIgnoreCase)
+        { ".png", ".jpg", ".jpeg", ".tiff" };
+
+    private static readonly HashSet<string> PdfExtensions =
+        new(StringComparer.OrdinalIgnoreCase)
+        { ".pdf" };
+
+    public LogsController(
+        IConfiguration config,
+        BlobServiceClient blobService,
+        AppDbContext db,
+        ILogAnalyzer analyzer,
+        ITextractService textractService)
     {
-        private readonly IConfiguration _config;
-        private readonly BlobServiceClient _blobService;
-        private readonly AppDbContext _db;
-        private readonly ILogAnalyzer _analyzer;
+        _config = config;
+        _blobService = blobService;
+        _db = db;
+        _analyzer = analyzer;
+        _textractService = textractService;
+    }
 
-        public LogsController(
-            IConfiguration config,
-            BlobServiceClient blobService,
-            AppDbContext db,ILogAnalyzer analyzer)
+    // -----------------------------------------
+    // POST api/logs/upload
+    // -----------------------------------------
+    [HttpPost("upload")]
+    public async Task<IActionResult> Upload(IFormFile file)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest("File is required.");
+
+        var userId =
+            User.FindFirstValue(ClaimTypes.NameIdentifier) ??
+            User.FindFirstValue("sub");
+
+        if (userId == null)
+            return Unauthorized();
+
+        var ext = Path.GetExtension(file.FileName);
+        if (string.IsNullOrWhiteSpace(ext))
+            return BadRequest("File extension missing.");
+
+        string extractedText;
+
+        // ---------------------------------
+        // ROUTING (FINAL, SAFE)
+        // ---------------------------------
+        if (TextExtensions.Contains(ext))
         {
-            _config = config;
-            _blobService = blobService;
-            _db = db;
-            _analyzer=analyzer;
+            using var reader = new StreamReader(file.OpenReadStream());
+            extractedText = await reader.ReadToEndAsync();
         }
-
-        // -----------------------------------------
-        // POST api/logs/upload
-        // -----------------------------------------
-        [HttpPost("upload")]
-        public async Task<IActionResult> Upload(IFormFile file)
+        else if (PdfExtensions.Contains(ext))
         {
-            if (file == null || file.Length == 0)
-                return BadRequest("File is required");
+            // 1️⃣ Try direct PDF text extraction first
+            var directPdfText = await TryExtractPdfTextAsync(file);
 
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                        ?? User.FindFirstValue("sub");
-
-            if (userId == null)
-                return Unauthorized("User id missing");
-
-            var containerName = _config["AzureBlob:Container"]
-                ?? throw new InvalidOperationException("AzureBlob:Container not configured");
-
-            var logId = Guid.NewGuid();
-            var blobName = $"{userId}/{logId}.log";
-
-            var container = _blobService.GetBlobContainerClient(containerName);
-            await container.CreateIfNotExistsAsync();
-
-            var blob = container.GetBlobClient(blobName);
-
-            await using (var stream = file.OpenReadStream())
+            if (!string.IsNullOrWhiteSpace(directPdfText))
             {
-                await blob.UploadAsync(stream, overwrite: true);
+                extractedText = directPdfText; // text-based PDF
+            }
+            else
+            {
+                    try
+                    {
+                        extractedText = await _textractService.ExtractTextAsync(file);
+                    }
+                    catch (Amazon.Textract.Model.UnsupportedDocumentException)
+                    {
+                        return BadRequest(
+                            "This PDF cannot be processed. " +
+                            "It is not a scanned image-based PDF."
+                        );
+                    }
+
+            }
+        }
+        else if (ImageExtensions.Contains(ext))
+        {
+            try
+            {
+                extractedText = await _textractService.ExtractTextAsync(file);
+            }
+            catch (Amazon.Textract.Model.UnsupportedDocumentException)
+            {
+                return BadRequest(
+                    "This File cannot be processed. " +
+                    "It is not a scanned image-based Files."
+                );
             }
 
-            var entity = new Log    
+        }
+        else
+        {
+            return BadRequest(
+                $"Unsupported file type '{ext}'. " +
+                "Supported: text files, images, and PDFs only."
+            );
+        }
+
+        if (string.IsNullOrWhiteSpace(extractedText))
+            return BadRequest("No extractable text found.");
+
+        // ---------------------------------
+        // Save extracted text ONLY
+        // ---------------------------------
+        var containerName =
+            _config["AzureBlob:Container"]
+            ?? throw new InvalidOperationException("AzureBlob:Container missing");
+
+        var logId = Guid.NewGuid();
+        var blobName = $"{logId}.txt";
+
+        var container = _blobService.GetBlobContainerClient(containerName);
+        await container.CreateIfNotExistsAsync();
+
+        await using (var textStream = new MemoryStream(
+            Encoding.UTF8.GetBytes(extractedText)))
+        {
+            await container
+                .GetBlobClient(blobName)
+                .UploadAsync(textStream, overwrite: true);
+        }
+
+        var entity = new Log
+        {
+            Id = logId,
+            UserId = userId,
+            FileName = Path.GetFileName(file.FileName),
+            ContentType = "text/plain",
+            SizeBytes = extractedText.Length,
+            StoragePath = blobName,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _db.Logs.Add(entity);
+        await _db.SaveChangesAsync();
+
+        return Ok(new { logId });
+    }
+
+    // -----------------------------------------
+    // PDF text probe (CRITICAL FIX)
+    // -----------------------------------------
+    private static async Task<string?> TryExtractPdfTextAsync(IFormFile file)
+    {
+        await using var stream = file.OpenReadStream();
+        using var pdf = PdfDocument.Open(stream);
+
+        var sb = new StringBuilder();
+        foreach (var page in pdf.GetPages())
+            sb.AppendLine(page.Text);
+
+        var text = sb.ToString();
+        return string.IsNullOrWhiteSpace(text) ? null : text;
+    }
+
+    // -----------------------------------------
+    // Other endpoints (UNCHANGED)
+    // -----------------------------------------
+
+    [HttpGet("{id:guid}")]
+    public async Task<IActionResult> Get(Guid id)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                     ?? User.FindFirstValue("sub");
+
+        var log = await _db.Logs.FindAsync(id);
+        if (log == null) return NotFound();
+        if (log.UserId != userId) return Forbid();
+
+        return Ok(new LogDto
+        {
+            Id = log.Id,
+            FileName = log.FileName,
+            SizeBytes = log.SizeBytes,
+            CreatedAt = log.CreatedAt
+        });
+    }
+
+    [HttpGet("{id:guid}/content")]
+    public async Task<IActionResult> GetContent(Guid id)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                     ?? User.FindFirstValue("sub");
+
+        var log = await _db.Logs.FindAsync(id);
+        if (log == null) return NotFound();
+        if (log.UserId != userId) return Forbid();
+
+        var container = _blobService.GetBlobContainerClient(
+            _config["AzureBlob:Container"]!);
+
+        var blob = container.GetBlobClient(log.StoragePath);
+        if (!await blob.ExistsAsync()) return NotFound("Blob missing");
+
+        var download = await blob.DownloadStreamingAsync();
+        return File(download.Value.Content, "text/plain");
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> List()
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                     ?? User.FindFirstValue("sub");
+
+        var logs = await _db.Logs
+            .Where(x => x.UserId == userId)
+            .OrderByDescending(x => x.CreatedAt)
+            .Select(x => new LogDto
             {
-                Id = logId,
-                UserId = userId,
-                FileName = file.FileName,
-                ContentType = file.ContentType,
-                SizeBytes = file.Length,
-                StoragePath = blobName,
-                CreatedAt = DateTime.UtcNow
-            };
+                Id = x.Id,
+                FileName = x.FileName,
+                SizeBytes = x.SizeBytes,
+                CreatedAt = x.CreatedAt
+            })
+            .ToListAsync();
 
-            _db.Logs.Add(entity);
-            await _db.SaveChangesAsync();
-
-            return Ok(new { logId });
-        }
-
-        // -----------------------------------------
-        // GET api/logs/{id}
-        // (secure fetch, owner only)
-        // -----------------------------------------
-        [HttpGet("{id:guid}")]
-        public async Task<IActionResult> Get(Guid id)
-        {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                        ?? User.FindFirstValue("sub");
-
-            var log = await _db.Logs.FindAsync(id);
-            if (log == null)
-                return NotFound();
-
-            if (log.UserId != userId)
-                return Forbid();
-
-            return Ok(new LogDto
-                {
-                    Id = log.Id,
-                    FileName = log.FileName,
-                    SizeBytes = log.SizeBytes,
-                    CreatedAt = log.CreatedAt
-                });
-
-        }
-
-        // -----------------------------------------
-        // GET api/logs/{id}/content
-        // (used later by analyzer tool)
-        // -----------------------------------------
-        [HttpGet("{id:guid}/content")]
-        public async Task<IActionResult> GetContent(Guid id)
-        {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                        ?? User.FindFirstValue("sub");
-
-            var log = await _db.Logs.FindAsync(id);
-            if (log == null)
-                return NotFound();
-
-            if (log.UserId != userId)
-                return Forbid();
-
-            var containerName = _config["AzureBlob:Container"]!;
-            var container = _blobService.GetBlobContainerClient(containerName);
-            var blob = container.GetBlobClient(log.StoragePath);
-
-            if (!await blob.ExistsAsync())
-                return NotFound("Blob missing");
-
-            var download = await blob.DownloadStreamingAsync();
-            return File(download.Value.Content, log.ContentType ?? "text/plain");
-        }
-        [HttpGet]
-        public async Task<IActionResult> List()
-        {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                        ?? User.FindFirstValue("sub");
-
-            var logs = await _db.Logs
-                .Where(x => x.UserId == userId)
-                .OrderByDescending(x => x.CreatedAt)
-                .Select(x => new LogDto
-                {
-                    Id = x.Id,
-                    FileName = x.FileName,
-                    SizeBytes = x.SizeBytes,
-                    CreatedAt = x.CreatedAt
-                })
-                .ToListAsync();
-
-            return Ok(logs);
-        }
+        return Ok(logs);
+    }
         // -----------------------------------------
         // DELETE api/logs/{id}
         // (owner only, deletes blob + db record)
@@ -195,11 +294,11 @@ namespace backend.Controllers
             return NoContent();
         }
         // -----------------------------------------
-// POST api/logs/Analyse/{id}/content
-// Analyze log content (owner only)
-// -----------------------------------------
-[HttpGet("Analyze/{id:guid}")]
-public async Task<IActionResult> AnalyseContent( Guid id)
+        // POST api/logs/Analyse/{id}/content
+        // Analyze log content (owner only)
+        // -----------------------------------------
+        [HttpGet("Analyze/{id:guid}")]
+        public async Task<IActionResult> AnalyseContent( Guid id)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
                         ?? User.FindFirstValue("sub");
@@ -242,6 +341,4 @@ public async Task<IActionResult> AnalyseContent( Guid id)
 
             return Ok(analysis);
         }
-
-    }
 }

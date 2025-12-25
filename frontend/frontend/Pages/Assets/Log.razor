@@ -96,6 +96,72 @@
     private bool _showContent;
     private MarkupString _logContent = new MarkupString("");
     private string _activeLogName = "";
+    private static readonly HashSet<string> AllowedExtensions =
+    new(StringComparer.OrdinalIgnoreCase)
+    {
+        // Text
+        ".txt", ".log", ".conf", ".config", ".ini", ".env",
+        ".json", ".xml", ".yaml", ".yml",
+        ".csv", ".tsv",
+        ".md", ".rst", ".adoc",
+
+        // Documents
+        ".docx", ".odt", ".ods", ".odp",
+
+        // Images / OCR / PDF
+        ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp",
+        ".pdf"
+    };
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file == null)
+            return;
+
+        // ---------------------------------------
+        // 1. Size check (MATCH BACKEND: 10 MB)
+        // ---------------------------------------
+        const long maxSize = 10 * 1024 * 1024; // 10 MB
+
+        if (file.Size == 0 || file.Size > maxSize)
+        {
+            await JS.InvokeVoidAsync(
+                "alert",
+                "Invalid file size. Maximum allowed is 10 MB."
+            );
+            return;
+        }
+
+        // ---------------------------------------
+        // 2. Extension allow-list
+        // ---------------------------------------
+        var extension = Path.GetExtension(file.Name);
+
+        if (string.IsNullOrWhiteSpace(extension) ||
+            !AllowedExtensions.Contains(extension))
+        {
+            await JS.InvokeVoidAsync(
+                "alert",
+                "Unsupported or unsafe file type."
+            );
+            return;
+        }
+
+        // ---------------------------------------
+        // 3. Upload
+        // ---------------------------------------
+        await using var stream =
+            file.OpenReadStream(maxAllowedSize: maxSize);
+
+        await LogsApi.UploadAsync(
+            stream,
+            file.Name,
+            file.ContentType // do NOT hardcode
+        );
+
+        await Reload();
+    }
 
 
     protected override async Task OnInitializedAsync()
@@ -116,52 +182,7 @@
             _loading = false;
         }
     }
-    private async Task OnFileSelected(InputFileChangeEventArgs e)
-    {
-        var file = e.File;
-
-        // ---------------------------------------
-        // 1. Size check (2 MB max)
-        // ---------------------------------------
-        const long maxSize = 2 * 1024 * 1024; // 2 MB
-
-        if (file.Size > maxSize)
-        {
-            await JS.InvokeVoidAsync(
-                "alert",
-                "File size exceeds 2 MB limit."
-            );
-            return;
-        }
-
-        // ---------------------------------------
-        // 2. Extension check (.txt, .log only)
-        // ---------------------------------------
-        var extension = Path.GetExtension(file.Name).ToLowerInvariant();
-
-        if (extension != ".txt" && extension != ".log"&& extension != ".conf" &&  extension != ".config")
-        {
-            await JS.InvokeVoidAsync(
-                "alert",
-                "Only .conf, .config, .txt and .log files are allowed."
-            );
-            return;
-        }
-
-        // ---------------------------------------
-        // 3. Upload
-        // ---------------------------------------
-        await using var stream =
-            file.OpenReadStream(maxAllowedSize: maxSize);
-
-        await LogsApi.UploadAsync(
-            stream,
-            file.Name,
-            "text/plain"
-        );
-
-        await Reload();
-    }
+   
 
     private string ConvertToHtml(string markdown)
     {

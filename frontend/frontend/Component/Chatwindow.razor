@@ -39,7 +39,63 @@
             Guid.NewGuid().ToString();
     }
 
-    
+    private async Task Send()
+{
+    if (string.IsNullOrWhiteSpace(input)) return;
+
+    messages.Add(new ChatMessage { Content = $"**You:** {input}", IsUser = true });
+    var aiMsg = new ChatMessage { Content = "**AI:** ", IsUser = false };
+    messages.Add(aiMsg);
+
+    await JS.InvokeVoidAsync("scrollChatToBottom");
+
+    var http = ClientFactory.CreateClient("BlackHatBadshahAi");
+    var request = new HttpRequestMessage(HttpMethod.Post, "chat/stream")
+    {
+        Content = JsonContent.Create(new { thread_id = threadId, message = input })
+    };
+    input = string.Empty;
+    request.SetBrowserResponseStreamingEnabled(true);
+  
+
+    using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+    response.EnsureSuccessStatusCode();
+
+    using var stream = await response.Content.ReadAsStreamAsync();
+    using var reader = new StreamReader(stream, System.Text.Encoding.UTF8, true, 128);
+
+    string? line;
+    while ((line = await reader.ReadLineAsync()) != null)
+    {
+        if (string.IsNullOrWhiteSpace(line) || !line.StartsWith("data: ")) continue;
+
+        var payload = line[6..].Trim();
+        if (payload == "[DONE]") break;
+
+        try
+        {
+            var chunk = JsonSerializer.Deserialize<StreamChunk>(
+                payload,
+                new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true,
+                    DefaultBufferSize = 32
+                });
+
+            if (chunk?.Token == null) continue;
+
+            aiMsg.Content += chunk.Token;
+            await InvokeAsync(StateHasChanged);
+            await Task.Yield();
+            await JS.InvokeVoidAsync("scrollChatToBottom");
+        }
+        catch
+        {
+            // ignore partial JSON
+        }
+    }
+}
+
 
 
 

@@ -7,6 +7,7 @@ using backend.Data.Entities;
 using backend.Data;
 using shared.Dto;
 using backend.Services;
+using System.Text;
 namespace backend.Controllers
 {
     [ApiController]
@@ -18,65 +19,135 @@ namespace backend.Controllers
         private readonly BlobServiceClient _blobService;
         private readonly AppDbContext _db;
         private readonly ILogAnalyzer _analyzer;
+        private readonly ITextractService _textractService;
+        static readonly HashSet<string> TextExtensions =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                ".txt", ".log", ".conf", ".config", ".ini", ".env",
+                ".json", ".xml", ".yaml", ".yml",
+                ".csv", ".tsv",
+                ".md", ".rst", ".adoc"
+            };
+
+        static readonly HashSet<string> DocumentExtensions =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                ".docx",
+                ".odt", ".ods", ".odp"
+            };
+
+        static readonly HashSet<string> OcrExtensions =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp",
+                ".pdf"
+            };
+
 
         public LogsController(
             IConfiguration config,
             BlobServiceClient blobService,
-            AppDbContext db,ILogAnalyzer analyzer)
+            AppDbContext db,ILogAnalyzer analyzer,
+            ITextractService textractService)
         {
             _config = config;
             _blobService = blobService;
             _db = db;
             _analyzer=analyzer;
+            _textractService = textractService;
         }
 
-        // -----------------------------------------
-        // POST api/logs/upload
-        // -----------------------------------------
         [HttpPost("upload")]
         public async Task<IActionResult> Upload(IFormFile file)
         {
             if (file == null || file.Length == 0)
-                return BadRequest("File is required");
+                return BadRequest("File is required.");
 
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                        ?? User.FindFirstValue("sub");
+            var userId =
+                User.FindFirstValue(ClaimTypes.NameIdentifier) ??
+                User.FindFirstValue("sub");
 
             if (userId == null)
-                return Unauthorized("User id missing");
+                return Unauthorized();
 
-            var containerName = _config["AzureBlob:Container"]
-                ?? throw new InvalidOperationException("AzureBlob:Container not configured");
+            var ext = Path.GetExtension(file.FileName);
+            if (string.IsNullOrWhiteSpace(ext))
+                return BadRequest("Invalid file.");
+
+            bool isText     = TextExtensions.Contains(ext);
+            bool isDocument = DocumentExtensions.Contains(ext);
+            bool isOcr      = OcrExtensions.Contains(ext);
+
+            if (!isText && !isDocument && !isOcr)
+                return BadRequest("Unsupported or unsafe file type.");
+
+            var containerName =
+                _config["AzureBlob:Container"]
+                ?? throw new InvalidOperationException("AzureBlob:Container missing");
 
             var logId = Guid.NewGuid();
-            var blobName = $"{userId}/{logId}.log";
+            var blobName = $"{logId}.txt";
 
             var container = _blobService.GetBlobContainerClient(containerName);
             await container.CreateIfNotExistsAsync();
 
-            var blob = container.GetBlobClient(blobName);
+            // --------------------------------------------------
+            // 1. Extract text
+            // --------------------------------------------------
+            string extractedText;
 
-            await using (var stream = file.OpenReadStream())
+            if (isText)
             {
-                await blob.UploadAsync(stream, overwrite: true);
+                using var reader = new StreamReader(file.OpenReadStream());
+                extractedText = await reader.ReadToEndAsync();
+            }
+            else if (isDocument)
+            {
+                extractedText = await _textractService.ExtractTextAsync(file);
+            }
+            else
+            {
+                extractedText = await _textractService.ExtractTextAsync(file);
             }
 
-            var entity = new Log    
+            if (string.IsNullOrWhiteSpace(extractedText))
+                return BadRequest("No extractable text found.");
+
+            // --------------------------------------------------
+            // 2. Save extracted text ONLY
+            // --------------------------------------------------
+            await using (var textStream = new MemoryStream(
+                Encoding.UTF8.GetBytes(extractedText)))
+            {
+                await container
+                    .GetBlobClient(blobName)
+                    .UploadAsync(textStream, overwrite: true);
+            }
+
+            // --------------------------------------------------
+            // 3. Persist Log entity (UNCHANGED schema)
+            // --------------------------------------------------
+            var entity = new Log
             {
                 Id = logId,
                 UserId = userId,
-                FileName = file.FileName,
-                ContentType = file.ContentType,
-                SizeBytes = file.Length,
-                StoragePath = blobName,
+                FileName = Path.GetFileName(file.FileName),
+                ContentType = "text/plain",
+                SizeBytes = extractedText.Length,
+                StoragePath = blobName,   // <-- logId.txt
                 CreatedAt = DateTime.UtcNow
             };
 
             _db.Logs.Add(entity);
             await _db.SaveChangesAsync();
 
+            // --------------------------------------------------
+            // 4. Return ONLY logId
+            // --------------------------------------------------
             return Ok(new { logId });
         }
+
+
 
         // -----------------------------------------
         // GET api/logs/{id}

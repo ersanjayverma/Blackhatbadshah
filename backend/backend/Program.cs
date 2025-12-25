@@ -51,6 +51,7 @@ builder.Services.AddSingleton(sp =>
     var cs = cfg["AzureBlob:ConnectionString"];
     return new BlobServiceClient(cs);
 });
+builder.Services.AddSingleton<ITextractService, TextractService>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddTransient<ForwardAuthHeaderHandler>();
 builder.Services.AddHttpClient<ILogAnalyzer, LogAnalyzer>((sp, client) =>

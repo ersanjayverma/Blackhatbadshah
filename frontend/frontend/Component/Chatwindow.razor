@@ -1,13 +1,14 @@
 @namespace frontend.Component
 @inject IHttpClientFactory ClientFactory
 @inject AuthenticationStateProvider AuthStateProvider
-
+@inject IJSRuntime JS
 <!-- BODY -->
 <div class="chat-body">
     @foreach (var msg in messages)
     {
-        <div class="chat-msg received">
-            @((MarkupString)ConvertToHtml(msg))
+        <div class="chat-msg @(msg.IsUser ? "sent" : "received")"
+             @key="msg.Id">
+            @((MarkupString)ConvertToHtml(msg.Content))
         </div>
     }
 </div>
@@ -25,7 +26,7 @@
 @code {
     private string input = string.Empty;
     private string? threadId;
-    private readonly List<string> messages = new();
+    private readonly List<ChatMessage> messages = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -38,33 +39,9 @@
             Guid.NewGuid().ToString();
     }
 
-    private async Task Send()
-    {
-        if (string.IsNullOrWhiteSpace(input))
-            return;
+    
 
-        messages.Add($"**You:** {input}");
 
-        var http = ClientFactory.CreateClient("BlackHatBadshahAi");
-        string usermsg = input ;
-         input = string.Empty;
-        var response = await http.PostAsJsonAsync(
-            "chat",
-            new { thread_id = threadId, message = usermsg }
-        );
-
-       
-
-        if (response.IsSuccessStatusCode)
-        {
-            var result = await response.Content.ReadFromJsonAsync<ChatResponse>();
-            messages.Add($"**AI:** {result?.reply}");
-        }
-        else
-        {
-            messages.Add("*AI: Error contacting server*");
-        }
-    }
 
     private async Task HandleKey(KeyboardEventArgs e)
     {

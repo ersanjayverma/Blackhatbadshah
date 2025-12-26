@@ -1,3 +1,27 @@
+/* ======================================================
+   SMOOTH TRANSITIONS & ANIMATIONS
+====================================================== */
+
+* {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+.content > * {
+    animation: contentFadeIn 0.3s ease-out;
+}
+
+@keyframes contentFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
 html, body {
     height: 100%;
     margin: 0;
@@ -11,7 +35,10 @@ body::before {
     content: "";
     position: fixed;
     inset: 0;
-    background: rgba(11,14,20,0.65);
+    background: linear-gradient(180deg,
+                                rgba(13, 17, 23, 0.75) 0%,
+                                rgba(11, 14, 20, 0.85) 100%);
+    backdrop-filter: blur(2px);
     pointer-events: none;
     z-index: -1;
 }
@@ -30,7 +57,16 @@ a, .btn-link {
 }
 
 .btn:focus, .btn:active:focus, .btn-link.nav-link:focus, .form-control:focus, .form-check-input:focus {
-  box-shadow: 0 0 0 0.1rem white, 0 0 0 0.25rem #258cfb;
+    box-shadow: 0 0 0 0.1rem rgba(31, 111, 235, 0.25),
+                0 0 0 0.35rem rgba(31, 111, 235, 0.4);
+    outline: none;
+}
+
+.btn:focus-visible, .form-control:focus-visible {
+    box-shadow: 0 0 0 0.2rem rgba(31, 111, 235, 0.3),
+                0 0 0 0.5rem rgba(31, 111, 235, 0.5);
+    outline: 2px solid rgba(31, 111, 235, 0.6);
+    outline-offset: 2px;
 }
 
 .content {
@@ -38,15 +74,22 @@ a, .btn-link {
 }
 
 .valid.modified:not([type=checkbox]) {
-    outline: 1px solid #26b050;
+    outline: 1px solid #3fb950;
+    box-shadow: 0 0 0 3px rgba(63, 185, 80, 0.15);
 }
 
 .invalid {
-    outline: 1px solid red;
+    outline: 1px solid #f85149;
+    box-shadow: 0 0 0 3px rgba(248, 81, 73, 0.15);
 }
 
 .validation-message {
-    color: red;
+    color: #ff7b72;
+    font-size: 0.875rem;
+    margin-top: 0.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
 }
 
 #blazor-error-ui {
@@ -91,16 +134,17 @@ a, .btn-link {
 
     .loading-progress circle {
         fill: none;
-        stroke: #e0e0e0;
+        stroke: #30363d;
         stroke-width: 0.6rem;
         transform-origin: 50% 50%;
         transform: rotate(-90deg);
     }
 
         .loading-progress circle:last-child {
-            stroke: #1b6ec2;
+            stroke: #1f6feb;
             stroke-dasharray: calc(3.141 * var(--blazor-load-percentage, 0%) * 0.8), 500%;
             transition: stroke-dasharray 0.05s ease-in-out;
+            filter: drop-shadow(0 0 8px rgba(31, 111, 235, 0.6));
         }
 
 .loading-progress-text {
@@ -173,6 +217,7 @@ code {
     padding: 0.55rem 0.75rem;
     border-radius: 6px;
     font-size: 0.9rem;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .nav-link:hover {
@@ -181,8 +226,13 @@ code {
 }
 
 .nav-link.active {
-    background: rgba(93,220,255,0.18);
+    background: linear-gradient(90deg,
+                                rgba(31, 111, 235, 0.18) 0%,
+                                rgba(31, 111, 235, 0.12) 100%);
     color: #ffffff;
+    border-left: 3px solid #1f6feb;
+    padding-left: calc(0.75rem - 3px);
+    box-shadow: inset 0 1px 2px rgba(31, 111, 235, 0.25);
 }
 .nav-brand img {
     width: 180px;      /* hard cap */
@@ -203,24 +253,31 @@ code {
 }
 
 .hero h1 {
-    font-size: clamp(2.2rem, 5vw, 3.4rem);
+    font-size: clamp(2.2rem, 5vw, 3.6rem);
     line-height: 1.15;
     font-weight: 700;
     margin-bottom: 1.5rem;
+    letter-spacing: -0.02em;
+    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
 }
 
 .hero h1 span {
     display: block;
-    color: #5da9ff;
-    font-weight: 600;
+    background: linear-gradient(135deg, #58a6ff 0%, #1f6feb 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    font-weight: 700;
+    margin-top: 0.5rem;
 }
 
 .hero-sub {
     max-width: 720px;
     margin: 0 auto 2.5rem;
-    font-size: 1.1rem;
-    line-height: 1.7;
-    color: #c7c7c7;
+    font-size: 1.125rem;
+    line-height: 1.75;
+    color: #c9d1d9;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
 }
 
 /* ======================================================
@@ -278,27 +335,264 @@ code {
 }
 
 .feature {
-    background: #0d1117;
+    background: linear-gradient(145deg, #0d1117 0%, #0a0d12 100%);
     border: 1px solid #21262d;
-    border-radius: 10px;
+    border-radius: 12px;
     padding: 1.8rem 1.6rem;
-    transition: transform 0.15s ease, border-color 0.15s ease;
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                border-color 0.25s ease,
+                box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+}
+
+.feature::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg,
+                                rgba(31, 111, 235, 0) 0%,
+                                rgba(31, 111, 235, 0.6) 50%,
+                                rgba(31, 111, 235, 0) 100%);
+    opacity: 0;
+    transition: opacity 0.3s ease;
 }
 
 .feature:hover {
-    transform: translateY(-3px);
-    border-color: #30363d;
+    transform: translateY(-5px);
+    border-color: rgba(31, 111, 235, 0.4);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6),
+                0 4px 16px rgba(31, 111, 235, 0.15),
+                inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.feature:hover::before {
+    opacity: 1;
 }
 
 .feature h3 {
-    margin-bottom: 0.75rem;
-    font-size: 1.2rem;
+    margin-bottom: 0.85rem;
+    font-size: 1.25rem;
+    font-weight: 600;
     color: #f0f6fc;
+    letter-spacing: -0.01em;
 }
 
 .feature p {
     color: #8b949e;
+    line-height: 1.65;
+    margin: 0;
+}
+
+/* ======================================================
+   BOOTSTRAP TABLE DARK STYLING
+====================================================== */
+
+.table {
+    color: #e6e9ef;
+    border-color: #21262d;
+}
+
+.table thead th {
+    background: linear-gradient(180deg, #161b22 0%, #0d1117 100%);
+    color: #f0f6fc;
+    border-color: #30363d;
+    font-weight: 600;
+    font-size: 0.875rem;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    padding: 1rem 0.75rem;
+    border-bottom: 2px solid #30363d;
+}
+
+.table tbody tr {
+    border-color: #21262d;
+    transition: background-color 0.15s ease;
+}
+
+.table-striped tbody tr:nth-of-type(odd) {
+    background-color: rgba(255, 255, 255, 0.02);
+}
+
+.table tbody tr:hover {
+    background-color: rgba(31, 111, 235, 0.08);
+}
+
+.table td {
+    padding: 0.875rem 0.75rem;
+    vertical-align: middle;
+    border-color: #21262d;
+}
+
+/* ======================================================
+   BOOTSTRAP BUTTON DARK VARIANTS
+====================================================== */
+
+.btn {
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    transition: all 0.2s ease;
+}
+
+.btn-primary {
+    background: linear-gradient(180deg, #1f6feb 0%, #1557b0 100%);
+    border: none;
+    color: #ffffff;
+    box-shadow: 0 2px 6px rgba(31, 111, 235, 0.3);
+}
+
+.btn-primary:hover {
+    background: linear-gradient(180deg, #388bfd 0%, #1f6feb 100%);
+    box-shadow: 0 4px 12px rgba(31, 111, 235, 0.4);
+    transform: translateY(-1px);
+}
+
+.btn-primary:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 3px rgba(31, 111, 235, 0.3);
+}
+
+.btn-secondary {
+    background: #21262d;
+    border: 1px solid #30363d;
+    color: #c9d1d9;
+}
+
+.btn-secondary:hover {
+    background: #30363d;
+    border-color: #484f58;
+    color: #ffffff;
+}
+
+.btn-outline-success {
+    color: #3fb950;
+    border-color: #2ea043;
+    background: transparent;
+}
+
+.btn-outline-success:hover {
+    background: rgba(63, 185, 80, 0.15);
+    border-color: #3fb950;
+    color: #56d364;
+}
+
+.btn-outline-primary {
+    color: #58a6ff;
+    border-color: #1f6feb;
+    background: transparent;
+}
+
+.btn-outline-primary:hover {
+    background: rgba(31, 111, 235, 0.15);
+    border-color: #388bfd;
+    color: #79c0ff;
+}
+
+.btn-outline-danger {
+    color: #f85149;
+    border-color: #da3633;
+    background: transparent;
+}
+
+.btn-outline-danger:hover {
+    background: rgba(248, 81, 73, 0.15);
+    border-color: #f85149;
+    color: #ff7b72;
+}
+
+.btn-success {
+    background: linear-gradient(180deg, #2ea043 0%, #26843b 100%);
+    border: none;
+    color: #ffffff;
+}
+
+.btn-success:hover {
+    background: linear-gradient(180deg, #3fb950 0%, #2ea043 100%);
+}
+
+.btn-sm {
+    font-size: 0.8125rem;
+    padding: 0.375rem 0.75rem;
+}
+
+/* ======================================================
+   MODAL CLOSE BUTTON DARK VARIANT
+====================================================== */
+
+.btn-close {
+    filter: invert(1) grayscale(100%) brightness(200%);
+    opacity: 0.6;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.btn-close:hover {
+    opacity: 1;
+    transform: scale(1.1);
+}
+
+.btn-close:focus {
+    box-shadow: 0 0 0 0.25rem rgba(31, 111, 235, 0.4);
+    opacity: 1;
+}
+
+/* ======================================================
+   FORM CONTROLS DARK THEME
+====================================================== */
+
+.form-control, .form-select {
+    background-color: #0d1117;
+    border: 1px solid #30363d;
+    color: #e6e9ef;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.form-control::placeholder {
+    color: #6e7681;
+    opacity: 1;
+}
+
+.form-control:focus, .form-select:focus {
+    background-color: #0d1117;
+    border-color: #1f6feb;
+    color: #ffffff;
+    box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.15);
+}
+
+textarea.form-control {
+    resize: vertical;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     line-height: 1.6;
+}
+
+.form-label {
+    color: #c9d1d9;
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+    font-size: 0.9rem;
+}
+
+input[type="file"].form-control {
+    padding: 0.5rem 0.75rem;
+    cursor: pointer;
+}
+
+input[type="file"].form-control::file-selector-button {
+    background: #21262d;
+    border: 1px solid #30363d;
+    color: #c9d1d9;
+    padding: 0.375rem 0.75rem;
+    margin-right: 0.75rem;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+}
+
+input[type="file"].form-control::file-selector-button:hover {
+    background: #30363d;
+    color: #ffffff;
 }
 
 /* ======================================================
@@ -473,20 +767,70 @@ body.modal-open {
 .log-viewer::-webkit-scrollbar-track {
     background-color: #1a1a1a;
 }
+
+/* ======================================================
+   GLOBAL SCROLLBAR STYLING
+====================================================== */
+
+/* Global scrollbar styling for consistency */
+::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, #3a3f4b 0%, #2d3139 100%);
+    border-radius: 6px;
+    border: 2px solid #0d1117;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, #484d5a 0%, #3a3f4b 100%);
+}
+
+::-webkit-scrollbar-track {
+    background: #1a1d24;
+    border-radius: 6px;
+}
+
+.content::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, #3a3f4b 0%, #2d3139 100%);
+}
+
+/* ======================================================
+   API LOADER ENHANCEMENT
+====================================================== */
+
 .api-loader-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,.45);
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
     z-index: 5000;
     display: flex;
     align-items: center;
     justify-content: center;
+    animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
 }
 
 .api-loader-box {
-    background: #111;
-    color: white;
-    padding: 22px 30px;
-    border-radius: 8px;
+    background: linear-gradient(145deg, #161b22 0%, #0d1117 100%);
+    color: #e6e9ef;
+    padding: 2rem 2.5rem;
+    border-radius: 12px;
     text-align: center;
+    border: 1px solid #30363d;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8),
+                0 8px 24px rgba(31, 111, 235, 0.2);
+}
+
+.api-loader-box .spinner-border {
+    width: 3rem;
+    height: 3rem;
+    border-width: 0.3rem;
 }

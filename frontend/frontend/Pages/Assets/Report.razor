@@ -1,11 +1,162 @@
 @page "/reports"
+@inject HttpClient Http
+@inject IJSRuntime JS
 
 <AuthorizeView>
     <Authorized>
-        <h1>Reports</h1>
-        <!-- Your actual page content -->
+
+        <h3>Reports</h3>
+
+        @if (_loading)
+        {
+            <p>Loading reports…</p>
+        }
+        else if (_reports.Count == 0)
+        {
+            <p>No reports available.</p>
+        }
+        else
+        {
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>Report</th>
+                        <th>Log File</th>
+                        <th>Created</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var report in _reports)
+                    {
+                        <tr>
+                            <td>@report.Title</td>
+                            <td>@report.FileName</td>
+                            <td>@report.CreatedAtUtc.ToLocalTime()</td>
+                            <td>
+                                <button class="btn btn-sm btn-success me-2"
+                                        @onclick="() => OpenModal(report.Id)">
+                                    View
+                                </button>
+
+                                <button class="btn btn-sm btn-primary"
+                                        @onclick="() => DownloadReport(report.Id)">
+                                    Download
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+
+        @* ================= MODAL (SAME AS LOG VIEWER) ================= *@
+        @if (_showContent)
+        {
+            <div class="modal-backdrop show"></div>
+
+            <div class="modal show d-block">
+                <div class="modal-dialog modal-xl">
+                    <div class="modal-content">
+
+                        <div class="modal-header">
+                            <h5 class="modal-title">@_activeReportTitle</h5>
+                            <button class="btn-close" @onclick="CloseViewer"></button>
+                        </div>
+
+                        <div class="modal-body">
+                            <div style="max-height:70vh; overflow:auto">
+                                @_reportContent
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        }
+
     </Authorized>
+
     <NotAuthorized>
-        <p>You must be logged in to see this.</p>
+        <p>You must be logged in to view reports.</p>
     </NotAuthorized>
 </AuthorizeView>
+
+@code {
+
+    // ---------- State ----------
+    private bool _loading = true;
+    private bool _showContent = false;
+
+    private List<ReportListItem> _reports = new();
+
+    private MarkupString _reportContent = new("");
+    private string _activeReportTitle = string.Empty;
+
+    // ---------- Lifecycle ----------
+    protected override async Task OnInitializedAsync()
+    {
+        _reports =
+            await Http.GetFromJsonAsync<List<ReportListItem>>("/api/reports")
+            ?? new();
+
+        _loading = false;
+    }
+
+    // ---------- Actions ----------
+    private async Task OpenModal(Guid reportId)
+    {
+        var report =
+            await Http.GetFromJsonAsync<ReportDetail>($"/api/reports/{reportId}");
+
+        if (report == null)
+            return;
+
+        _activeReportTitle = report.Title;
+
+        var html = ConvertToHtml(report.Content);
+        _reportContent = new MarkupString(html);
+
+        _showContent = true;
+    }
+
+    private void CloseViewer()
+    {
+        _showContent = false;
+        _reportContent = new("");
+        _activeReportTitle = string.Empty;
+    }
+
+    private async Task DownloadReport(Guid reportId)
+    {
+        var response = await Http.GetAsync($"/api/reports/{reportId}/download");
+        if (!response.IsSuccessStatusCode)
+            return;
+
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+
+        var fileName =
+            response.Content.Headers.ContentDisposition?.FileNameStar
+            ?? response.Content.Headers.ContentDisposition?.FileName
+            ?? $"report-{reportId}.txt";
+
+        await JS.InvokeVoidAsync(
+            "downloadFile",
+            fileName,
+            "text/plain",
+            bytes);
+    }
+
+    // ---------- Markdown ----------
+    private string ConvertToHtml(string markdown)
+    {
+        if (string.IsNullOrWhiteSpace(markdown))
+            return string.Empty;
+
+        var pipeline = new Markdig.MarkdownPipelineBuilder()
+            .UseAdvancedExtensions()
+            .Build();
+
+        return Markdig.Markdown.ToHtml(markdown, pipeline);
+    }
+}

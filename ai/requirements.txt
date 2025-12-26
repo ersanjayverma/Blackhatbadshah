@@ -2,7 +2,7 @@ streamlit
 langgraph
 langchain
 langchain-community
-langchain-openai
+langchain-anthropic
 sqlite-utils
 grandalf
 ddgs

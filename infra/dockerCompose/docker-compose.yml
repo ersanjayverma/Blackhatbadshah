@@ -1,18 +1,20 @@
 services:
   blackhat-fe:
-    image: vermasj/blackhatbadshahfe
+    image: blackhatbadshah.azurecr.io/vermasj/blackhatbadshahfe
     ports:
       - "7001:8080"
     restart: always
 
   blackhat-ai:
-    image: vermasj/blackhatbadshahai
+    image: blackhatbadshah.azurecr.io/vermasj/blackhatbadshahai
+    environment:
+      - ANTHROPIC_API_KEY=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 
     ports:
       - "8501:8000"
     restart: always
 
   blackhat-be:
-    image: vermasj/blackhatbadshahbe
+    image: blackhatbadshah.azurecr.io/vermasj/blackhatbadshahbe
     ports:
       - "5092:8080"
     restart: always

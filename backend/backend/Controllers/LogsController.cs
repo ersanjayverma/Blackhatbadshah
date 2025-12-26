@@ -23,6 +23,7 @@ public class LogsController : ControllerBase
     private readonly AppDbContext _db;
     private readonly ILogAnalyzer _analyzer;
     private readonly ITextractService _textractService;
+    private readonly IHubNotificationService _hubNotification;
 
     // ----------------------------
     // Supported formats
@@ -44,13 +45,15 @@ public class LogsController : ControllerBase
         BlobServiceClient blobService,
         AppDbContext db,
         ILogAnalyzer analyzer,
-        ITextractService textractService)
+        ITextractService textractService,
+        IHubNotificationService hubNotification)
     {
         _config = config;
         _blobService = blobService;
         _db = db;
         _analyzer = analyzer;
         _textractService = textractService;
+        _hubNotification = hubNotification;
     }
 
     // -----------------------------------------
@@ -61,6 +64,11 @@ public class LogsController : ControllerBase
     {
         if (file == null || file.Length == 0)
             return BadRequest("File is required.");
+
+        // File size validation (10 MB max)
+        const long maxFileSize = 10 * 1024 * 1024;
+        if (file.Length > maxFileSize)
+            return BadRequest("File size exceeds the maximum allowed size of 10 MB.");
 
         var userId =
             User.FindFirstValue(ClaimTypes.NameIdentifier) ??
@@ -168,6 +176,9 @@ public class LogsController : ControllerBase
 
         _db.Logs.Add(entity);
         await _db.SaveChangesAsync();
+
+        // Notify via SignalR
+        await _hubNotification.NotifyLogCreatedAsync(userId, logId, entity.FileName);
 
         return Ok(new { logId });
     }
@@ -291,13 +302,16 @@ public class LogsController : ControllerBase
             _db.Logs.Remove(log);
             await _db.SaveChangesAsync();
 
+            // Notify via SignalR
+            await _hubNotification.NotifyLogDeletedAsync(userId, id);
+
             return NoContent();
         }
     // -----------------------------------------
-    // GET api/logs/Analyze/{id}
+    // GET api/logs/{id}/analyze
     // Analyze log content + save report as TEXT
     // -----------------------------------------
-    [HttpGet("Analyze/{id:guid}")]
+    [HttpGet("{id:guid}/analyze")]
     public async Task<IActionResult> AnalyseContent(Guid id)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
@@ -364,19 +378,74 @@ public class LogsController : ControllerBase
         {
             Id = reportId,
             LogId = log.Id,
+            UserId = userId,
             Title = $"Analysis Report – {log.FileName}",
             Summary = analysisText.Length > 500
                 ? analysisText[..500]
                 : analysisText,
             ReportPath = reportBlobPath,
+            Status = ReportStatus.Completed,
             CreatedAtUtc = DateTime.UtcNow
         };
 
         _db.Reports.Add(report);
         await _db.SaveChangesAsync();
 
+        // Notify via SignalR
+        await _hubNotification.NotifyReportCreatedAsync(userId, reportId, report.Title);
+        await _hubNotification.NotifyReportStatusChangedAsync(userId, reportId, "Completed");
+
         // 8. Return response
       return Ok(analysis);
+    }
+
+    // -----------------------------------------
+    // DELETE api/logs/all
+    // Delete all logs for the current user
+    // -----------------------------------------
+    [HttpDelete("all")]
+    public async Task<IActionResult> DeleteAll()
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                    ?? User.FindFirstValue("sub");
+
+        if (userId == null)
+            return Unauthorized();
+
+        var logs = await _db.Logs
+            .Where(l => l.UserId == userId)
+            .ToListAsync();
+
+        if (logs.Count == 0)
+            return NoContent();
+
+        var containerName = _config["AzureBlob:Container"]
+            ?? throw new InvalidOperationException("AzureBlob:Container not configured");
+
+        var container = _blobService.GetBlobContainerClient(containerName);
+
+        // Delete all blobs
+        foreach (var log in logs)
+        {
+            try
+            {
+                var blob = container.GetBlobClient(log.StoragePath);
+                await blob.DeleteIfExistsAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to delete blob for log {log.Id}: {ex.Message}");
+            }
+        }
+
+        // Delete all from database
+        _db.Logs.RemoveRange(logs);
+        await _db.SaveChangesAsync();
+
+        // Notify via SignalR
+        await _hubNotification.NotifyAllLogsDeletedAsync(userId, logs.Count);
+
+        return Ok(new DeleteAllResponse { Deleted = logs.Count });
     }
 
 }

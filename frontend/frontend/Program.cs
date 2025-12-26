@@ -23,7 +23,9 @@ builder.Services.AddOidcAuthentication(options =>
     options.ProviderOptions.DefaultScopes.Add("email");
 });
 builder.Services.AddScoped<LogService>();
+builder.Services.AddScoped<ReportService>();
 builder.Services.AddSingleton<ApiLoaderService>();
+builder.Services.AddSingleton<HubConnectionService>();
 builder.Services.AddTransient<ApiLoaderHandler>();
 builder.Services.AddScoped<CustomAuthorizationMessageHandler>();
 builder.Services.AddBlazoredLocalStorage();

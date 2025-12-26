@@ -52,6 +52,7 @@ builder.Services.AddSingleton(sp =>
     return new BlobServiceClient(cs);
 });
 builder.Services.AddSingleton<ITextractService, TextractService>();
+builder.Services.AddScoped<IHubNotificationService, HubNotificationService>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddTransient<ForwardAuthHeaderHandler>();
 builder.Services.AddHttpClient<ILogAnalyzer, LogAnalyzer>((sp, client) =>

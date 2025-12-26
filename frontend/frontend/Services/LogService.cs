@@ -63,12 +63,12 @@ public class LogService
     }
 
      // -------------------------------------------------
-    // GET /api/logs/{id}/content
+    // GET /api/logs/{id}/analyze
     // Read log content as TEXT & Analyse text
     // -------------------------------------------------
     public async Task<ChatResponse> AnalyzeAsync(Guid id)
     {
-        return await  _http.GetFromJsonAsync<ChatResponse>($"/api/logs/Analyze/{id}");
+        return await  _http.GetFromJsonAsync<ChatResponse>($"/api/logs/{id}/analyze");
     }
     // -------------------------------------------------
     // DELETE /api/logs/{id}
@@ -78,5 +78,18 @@ public class LogService
     {
         var response = await _http.DeleteAsync($"/api/logs/{id}");
         response.EnsureSuccessStatusCode();
+    }
+
+    // -------------------------------------------------
+    // DELETE /api/logs/all
+    // Delete all logs for the current user
+    // -------------------------------------------------
+    public async Task<int> DeleteAllAsync()
+    {
+        var response = await _http.DeleteAsync("/api/logs/all");
+        response.EnsureSuccessStatusCode();
+
+        var result = await response.Content.ReadFromJsonAsync<DeleteAllResponse>();
+        return result?.Deleted ?? 0;
     }
 }

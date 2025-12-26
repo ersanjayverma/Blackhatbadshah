@@ -1,11 +1,23 @@
 @page "/reports"
-@inject HttpClient Http
+@using frontend.Services
+@using shared.Dto
+@inject ReportService ReportService
+@inject HubConnectionService HubService
 @inject IJSRuntime JS
+@implements IAsyncDisposable
 
 <AuthorizeView>
     <Authorized>
 
-        <h3>Reports</h3>
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h3 class="mb-0">Reports</h3>
+            @if (_reports.Count > 0)
+            {
+                <button class="btn btn-danger" @onclick="ConfirmDeleteAll">
+                    Clear All Reports
+                </button>
+            }
+        </div>
 
         @if (_loading)
         {
@@ -13,15 +25,19 @@
         }
         else if (_reports.Count == 0)
         {
-            <p>No reports available.</p>
+            <div class="alert alert-info">
+                <i class="bi bi-info-circle me-2"></i>
+                No reports available. Upload and analyze logs to generate reports.
+            </div>
         }
         else
         {
-            <table class="table table-striped">
-                <thead>
+            <table class="table table-striped table-hover">
+                <thead class="table-dark">
                     <tr>
                         <th>Report</th>
                         <th>Log File</th>
+                        <th>Status</th>
                         <th>Created</th>
                         <th>Actions</th>
                     </tr>
@@ -31,17 +47,53 @@
                     {
                         <tr>
                             <td>@report.Title</td>
-                            <td>@report.FileName</td>
-                            <td>@report.CreatedAtUtc.ToLocalTime()</td>
+                            <td>
+                                @if (report.FileName == "Log Deleted")
+                                {
+                                    <span class="text-muted">@report.FileName</span>
+                                }
+                                else
+                                {
+                                    @report.FileName
+                                }
+                            </td>
+                            <td>
+                                @switch (report.Status)
+                                {
+                                    case ReportStatus.InProgress:
+                                        <span class="badge bg-warning text-dark">
+                                            <i class="bi bi-hourglass-split me-1"></i>In Progress
+                                        </span>
+                                        break;
+                                    case ReportStatus.Completed:
+                                        <span class="badge bg-success">
+                                            <i class="bi bi-check-circle me-1"></i>Completed
+                                        </span>
+                                        break;
+                                    case ReportStatus.Failed:
+                                        <span class="badge bg-danger">
+                                            <i class="bi bi-x-circle me-1"></i>Failed
+                                        </span>
+                                        break;
+                                }
+                            </td>
+                            <td>@report.CreatedAtUtc.ToLocalTime().ToString("g")</td>
                             <td>
                                 <button class="btn btn-sm btn-success me-2"
-                                        @onclick="() => OpenModal(report.Id)">
-                                    View
+                                        @onclick="() => OpenModal(report.Id)"
+                                        disabled="@(report.Status != ReportStatus.Completed)">
+                                    <i class="bi bi-eye me-1"></i>View
                                 </button>
 
-                                <button class="btn btn-sm btn-primary"
-                                        @onclick="() => DownloadReport(report.Id)">
-                                    Download
+                                <button class="btn btn-sm btn-primary me-2"
+                                        @onclick="() => DownloadReport(report.Id)"
+                                        disabled="@(report.Status != ReportStatus.Completed)">
+                                    <i class="bi bi-download me-1"></i>Download
+                                </button>
+
+                                <button class="btn btn-sm btn-danger"
+                                        @onclick="() => ConfirmDelete(report.Id, report.Title)">
+                                    <i class="bi bi-trash me-1"></i>Delete
                                 </button>
                             </td>
                         </tr>
@@ -50,7 +102,7 @@
             </table>
         }
 
-        @* ================= MODAL (SAME AS LOG VIEWER) ================= *@
+        @* ================= REPORT VIEWER MODAL ================= *@
         @if (_showContent)
         {
             <div class="modal-backdrop show"></div>
@@ -59,15 +111,84 @@
                 <div class="modal-dialog modal-xl">
                     <div class="modal-content">
 
-                        <div class="modal-header">
-                            <h5 class="modal-title">@_activeReportTitle</h5>
-                            <button class="btn-close" @onclick="CloseViewer"></button>
+                        <div class="modal-header bg-dark text-white">
+                            <h5 class="modal-title">
+                                <i class="bi bi-file-earmark-text me-2"></i>@_activeReportTitle
+                            </h5>
+                            <button class="btn-close btn-close-white" @onclick="CloseViewer"></button>
                         </div>
 
                         <div class="modal-body">
-                            <div style="max-height:70vh; overflow:auto">
+                            <div style="max-height:70vh; overflow:auto; padding: 20px;">
                                 @_reportContent
                             </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        }
+
+        @* ================= DELETE CONFIRMATION MODAL ================= *@
+        @if (_showDeleteConfirm)
+        {
+            <div class="modal-backdrop show"></div>
+
+            <div class="modal show d-block">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+
+                        <div class="modal-header bg-danger text-white">
+                            <h5 class="modal-title">
+                                <i class="bi bi-exclamation-triangle me-2"></i>Confirm Deletion
+                            </h5>
+                            <button class="btn-close btn-close-white" @onclick="CancelDelete"></button>
+                        </div>
+
+                        <div class="modal-body">
+                            <p>Are you sure you want to delete this report?</p>
+                            <p class="fw-bold">@_reportToDeleteTitle</p>
+                            <p class="text-muted">This action cannot be undone.</p>
+                        </div>
+
+                        <div class="modal-footer">
+                            <button class="btn btn-secondary" @onclick="CancelDelete">Cancel</button>
+                            <button class="btn btn-danger" @onclick="DeleteReport">
+                                <i class="bi bi-trash me-1"></i>Delete
+                            </button>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        }
+
+        @* ================= DELETE ALL CONFIRMATION MODAL ================= *@
+        @if (_showDeleteAllConfirm)
+        {
+            <div class="modal-backdrop show"></div>
+
+            <div class="modal show d-block">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+
+                        <div class="modal-header bg-danger text-white">
+                            <h5 class="modal-title">
+                                <i class="bi bi-exclamation-triangle me-2"></i>Clear All Reports
+                            </h5>
+                            <button class="btn-close btn-close-white" @onclick="CancelDeleteAll"></button>
+                        </div>
+
+                        <div class="modal-body">
+                            <p>Are you sure you want to delete <strong>all @_reports.Count reports</strong>?</p>
+                            <p class="text-danger fw-bold">This action cannot be undone!</p>
+                        </div>
+
+                        <div class="modal-footer">
+                            <button class="btn btn-secondary" @onclick="CancelDeleteAll">Cancel</button>
+                            <button class="btn btn-danger" @onclick="DeleteAllReports">
+                                <i class="bi bi-trash me-1"></i>Delete All
+                            </button>
                         </div>
 
                     </div>
@@ -87,27 +208,90 @@
     // ---------- State ----------
     private bool _loading = true;
     private bool _showContent = false;
+    private bool _showDeleteConfirm = false;
+    private bool _showDeleteAllConfirm = false;
 
     private List<ReportListItem> _reports = new();
 
     private MarkupString _reportContent = new("");
     private string _activeReportTitle = string.Empty;
 
+    private Guid _reportToDeleteId = Guid.Empty;
+    private string _reportToDeleteTitle = string.Empty;
+
+    private IDisposable? _reportCreatedSubscription;
+    private IDisposable? _reportStatusChangedSubscription;
+    private IDisposable? _reportDeletedSubscription;
+    private IDisposable? _allReportsDeletedSubscription;
+
     // ---------- Lifecycle ----------
     protected override async Task OnInitializedAsync()
     {
-        _reports =
-            await Http.GetFromJsonAsync<List<ReportListItem>>("/api/reports")
-            ?? new();
+        await LoadReports();
+        await InitializeSignalR();
+    }
 
+    private async Task InitializeSignalR()
+    {
+        try
+        {
+            await HubService.InitializeAsync();
+            await HubService.StartAsync();
+
+            // Subscribe to real-time report events
+            _reportCreatedSubscription = HubService.On<ReportListItem>("ReportCreated", async (report) =>
+            {
+                _reports.Insert(0, report);
+                await InvokeAsync(StateHasChanged);
+            });
+
+            _reportStatusChangedSubscription = HubService.On<Guid, ReportStatus>("ReportStatusChanged", async (reportId, status) =>
+            {
+                var report = _reports.FirstOrDefault(r => r.Id == reportId);
+                if (report != null)
+                {
+                    report.Status = status;
+                    await InvokeAsync(StateHasChanged);
+                }
+            });
+
+            _reportDeletedSubscription = HubService.On<Guid>("ReportDeleted", async (reportId) =>
+            {
+                _reports.RemoveAll(r => r.Id == reportId);
+                await InvokeAsync(StateHasChanged);
+            });
+
+            _allReportsDeletedSubscription = HubService.On("AllReportsDeleted", async () =>
+            {
+                _reports.Clear();
+                await InvokeAsync(StateHasChanged);
+            });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"SignalR connection failed: {ex.Message}");
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _reportCreatedSubscription?.Dispose();
+        _reportStatusChangedSubscription?.Dispose();
+        _reportDeletedSubscription?.Dispose();
+        _allReportsDeletedSubscription?.Dispose();
+    }
+
+    private async Task LoadReports()
+    {
+        _loading = true;
+        _reports = await ReportService.ListAsync();
         _loading = false;
     }
 
-    // ---------- Actions ----------
+    // ---------- View Actions ----------
     private async Task OpenModal(Guid reportId)
     {
-        var report =
-            await Http.GetFromJsonAsync<ReportDetail>($"/api/reports/{reportId}");
+        var report = await ReportService.GetAsync(reportId);
 
         if (report == null)
             return;
@@ -129,22 +313,75 @@
 
     private async Task DownloadReport(Guid reportId)
     {
-        var response = await Http.GetAsync($"/api/reports/{reportId}/download");
-        if (!response.IsSuccessStatusCode)
-            return;
+        try
+        {
+            var stream = await ReportService.DownloadAsync(reportId);
+            var bytes = new byte[stream.Length];
+            await stream.ReadAsync(bytes);
 
-        var bytes = await response.Content.ReadAsByteArrayAsync();
+            await JS.InvokeVoidAsync(
+                "downloadFile",
+                $"report-{reportId}.txt",
+                "text/plain",
+                bytes);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Download failed: {ex.Message}");
+        }
+    }
 
-        var fileName =
-            response.Content.Headers.ContentDisposition?.FileNameStar
-            ?? response.Content.Headers.ContentDisposition?.FileName
-            ?? $"report-{reportId}.txt";
+    // ---------- Delete Actions ----------
+    private void ConfirmDelete(Guid reportId, string title)
+    {
+        _reportToDeleteId = reportId;
+        _reportToDeleteTitle = title;
+        _showDeleteConfirm = true;
+    }
 
-        await JS.InvokeVoidAsync(
-            "downloadFile",
-            fileName,
-            "text/plain",
-            bytes);
+    private void CancelDelete()
+    {
+        _reportToDeleteId = Guid.Empty;
+        _reportToDeleteTitle = string.Empty;
+        _showDeleteConfirm = false;
+    }
+
+    private async Task DeleteReport()
+    {
+        try
+        {
+            await ReportService.DeleteAsync(_reportToDeleteId);
+            _reports.RemoveAll(r => r.Id == _reportToDeleteId);
+            CancelDelete();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Delete failed: {ex.Message}");
+        }
+    }
+
+    private void ConfirmDeleteAll()
+    {
+        _showDeleteAllConfirm = true;
+    }
+
+    private void CancelDeleteAll()
+    {
+        _showDeleteAllConfirm = false;
+    }
+
+    private async Task DeleteAllReports()
+    {
+        try
+        {
+            var count = await ReportService.DeleteAllAsync();
+            _reports.Clear();
+            _showDeleteAllConfirm = false;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Delete all failed: {ex.Message}");
+        }
     }
 
     // ---------- Markdown ----------
@@ -155,6 +392,7 @@
 
         var pipeline = new Markdig.MarkdownPipelineBuilder()
             .UseAdvancedExtensions()
+            .DisableHtml()  // Disable raw HTML for XSS protection
             .Build();
 
         return Markdig.Markdown.ToHtml(markdown, pipeline);

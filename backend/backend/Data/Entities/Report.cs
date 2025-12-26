@@ -1,14 +1,21 @@
+using shared.Dto;
+
 namespace backend.Data.Entities;
+
 public class Report
 {
     public Guid Id { get; set; }
 
-    public Guid LogId { get; set; }
-    public Log Log { get; set; } = null!;
+    public string UserId { get; set; } = null!; // User who owns this report
+
+    public Guid? LogId { get; set; } // Nullable - report persists even if log is deleted
+    public Log? Log { get; set; } // Nullable navigation property
 
     public string Title { get; set; } = null!;
     public string Summary { get; set; } = null!;
     public string ReportPath { get; set; } = null!; // blob/file path
+
+    public ReportStatus Status { get; set; } = ReportStatus.InProgress;
 
     public DateTime CreatedAtUtc { get; set; }
 }

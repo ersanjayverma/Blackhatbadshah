@@ -1,0 +1,8 @@
+namespace shared.Dto;
+public sealed class ReportListItem
+{
+    public Guid Id { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string FileName { get; set; } = string.Empty;
+    public DateTime CreatedAtUtc { get; set; }
+}

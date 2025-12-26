@@ -9,11 +9,12 @@ from pydantic import BaseModel
 from fastapi.responses import StreamingResponse
 import httpx
 import json
+import os
 import asyncio
 from jose import jwt
 from langchain_community.utilities import StackExchangeAPIWrapper
 from langchain_community.tools import StackExchangeTool
-from langchain_openai import ChatOpenAI
+from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage,AIMessageChunk
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
@@ -80,10 +81,14 @@ async def verify_jwt(
 # =====================================================
 # LLM
 # =====================================================
-llm = ChatOpenAI(
-    openai_api_base="https://api.together.xyz/v1",
-    openai_api_key="2d15d7147c32f76cd01c30754ba484012d106ac462a5b1d269a2a5afb9036e8f",
-    model="Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8",
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
+
+if not ANTHROPIC_API_KEY:
+    raise RuntimeError("ANTHROPIC_API_KEY is not set in environment")
+
+llm = ChatAnthropic(
+    model="claude-sonnet-4-5-20250929",
+    api_key=ANTHROPIC_API_KEY,
     streaming=True,
 )
 
@@ -207,7 +212,13 @@ async def chat_stream(
                 # 2. Extract content from AIMessageChunk or dict
                 content = ""
                 if isinstance(msg, AIMessageChunk):
-                    content = msg.content
+                    if isinstance(msg.content, list):
+                        content = "".join(
+                            part.get("text", "")
+                            for part in msg.content
+                        )
+                    else:
+                        content = str(msg.content)
                 elif isinstance(msg, dict) and "content" in msg:
                     content = msg["content"]
                 elif hasattr(msg, "content"):

@@ -237,9 +237,9 @@ public class LogsController : ControllerBase
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
                      ?? User.FindFirstValue("sub");
 
-        var logs = await _db.Logs
+        var logs = await _db.Logs.AsNoTracking()
             .Where(x => x.UserId == userId)
-            .OrderByDescending(x => x.CreatedAt)
+            .OrderByDescending(x => x.CreatedAt).Take(10)
             .Select(x => new LogDto
             {
                 Id = x.Id,
@@ -293,52 +293,90 @@ public class LogsController : ControllerBase
 
             return NoContent();
         }
-        // -----------------------------------------
-        // POST api/logs/Analyse/{id}/content
-        // Analyze log content (owner only)
-        // -----------------------------------------
-        [HttpGet("Analyze/{id:guid}")]
-        public async Task<IActionResult> AnalyseContent( Guid id)
+    // -----------------------------------------
+    // GET api/logs/Analyze/{id}
+    // Analyze log content + save report as TEXT
+    // -----------------------------------------
+    [HttpGet("Analyze/{id:guid}")]
+    public async Task<IActionResult> AnalyseContent(Guid id)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                    ?? User.FindFirstValue("sub");
+
+        if (userId == null)
+            return Unauthorized();
+
+        // 1. Fetch log
+        var log = await _db.Logs.FindAsync(id);
+        if (log == null)
+            return NotFound("Log not found");
+
+        if (log.UserId != userId)
+            return Forbid();
+
+        // 2. Blob container
+        var containerName = _config["AzureBlob:Container"]
+            ?? throw new InvalidOperationException("AzureBlob:Container missing");
+
+        var container = _blobService.GetBlobContainerClient(containerName);
+        await container.CreateIfNotExistsAsync();
+
+        // 3. Fetch log content from blob
+        var logBlob = container.GetBlobClient(log.StoragePath);
+        if (!await logBlob.ExistsAsync())
+            return NotFound("Log content missing in storage");
+
+        string logContent;
+        await using (var stream = await logBlob.OpenReadAsync())
+        using (var reader = new StreamReader(stream))
         {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                        ?? User.FindFirstValue("sub");
-
-            if (userId == null)
-                return Unauthorized();
-
-            // 1. Fetch log metadata
-            var log = await _db.Logs.FindAsync(id);
-            if (log == null)
-                return NotFound("Log not found");
-
-            if (log.UserId != userId)
-                return Forbid();
-
-            // 2. Fetch blob
-            var containerName = _config["AzureBlob:Container"];
-            if (string.IsNullOrWhiteSpace(containerName))
-                throw new InvalidOperationException("AzureBlob:Container not configured");
-
-            var container = _blobService.GetBlobContainerClient(containerName);
-            var blob = container.GetBlobClient(log.StoragePath);
-
-            if (!await blob.ExistsAsync())
-                return NotFound("Log content missing in storage");
-
-            // 3. Stream blob content (safe)
-            string content;
-            await using (var stream = await blob.OpenReadAsync())
-            using (var reader = new StreamReader(stream))
-            {
-                content = await reader.ReadToEndAsync();
-            }
-
-            if (string.IsNullOrWhiteSpace(content))
-                return BadRequest("Log content is empty");
-
-            // 4. Analyze (deterministic analyzer)
-            var analysis = await _analyzer.AnalyzeAsync(log.Id, content);
-
-            return Ok(analysis);
+            logContent = await reader.ReadToEndAsync();
         }
+
+        if (string.IsNullOrWhiteSpace(logContent))
+            return BadRequest("Log content is empty");
+
+        // 4. Analyze log (AI / deterministic analyzer)
+        var analysis = await _analyzer.AnalyzeAsync(log.Id, logContent);
+        if (analysis == null)
+            return StatusCode(500, "Analyzer returned no result");
+
+        // 5. Extract PLAIN TEXT (no JSON)
+        var analysisText =
+            analysis.reply
+            ?? analysis.ToString()
+            ?? throw new InvalidOperationException("Analysis produced no text");
+
+        // 6. Upload analysis text as report
+        var reportId = Guid.NewGuid();
+        var reportBlobPath = $"reports/{log.Id}/{reportId}.txt";
+
+        await using (var textStream = new MemoryStream(
+            Encoding.UTF8.GetBytes(analysisText)))
+        {
+            await container
+                .GetBlobClient(reportBlobPath)
+                .UploadAsync(textStream, overwrite: true);
+        }
+
+        // 7. Persist Report entity
+        var report = new Report
+        {
+            Id = reportId,
+            LogId = log.Id,
+            Title = $"Analysis Report – {log.FileName}",
+            Summary = analysisText.Length > 500
+                ? analysisText[..500]
+                : analysisText,
+            ReportPath = reportBlobPath,
+            CreatedAtUtc = DateTime.UtcNow
+        };
+
+        _db.Reports.Add(report);
+        await _db.SaveChangesAsync();
+
+        // 8. Return response
+      return Ok(analysis);
+    }
+
 }

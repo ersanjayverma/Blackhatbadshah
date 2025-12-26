@@ -1,6 +1,7 @@
 @page "/logs"
 @using Microsoft.AspNetCore.Components.Authorization
 @using shared.Dto
+@using Markdig
 @inject frontend.Services.LogService LogsApi
 @inject IJSRuntime JS
 
@@ -8,8 +9,6 @@
     <Authorized>
 
         <h3>Logs</h3>
-
-        <InputFile OnChange="OnFileSelected" />
 
         @if (_loading)
         {
@@ -38,17 +37,16 @@
                             <td>@(log.SizeBytes / 1024)</td>
                             <td>@log.CreatedAt.ToLocalTime()</td>
                             <td>
-                            
                                 <button class="btn btn-sm btn-outline-success ms-2"
                                         @onclick="() => Analyze(log.Id)">
                                     Run Analysis
                                 </button>
-                        
+
                                 <button class="btn btn-sm btn-outline-primary ms-2"
                                         @onclick="() => ViewInline(log)">
                                     See Content
                                 </button>
-                         
+
                                 <button class="btn btn-sm btn-outline-danger ms-2"
                                         @onclick="() => Delete(log.Id)">
                                     Delete
@@ -60,6 +58,35 @@
             </table>
         }
 
+        <hr />
+
+        <h5>Upload or Paste Logs</h5>
+
+        <div class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label">Upload Log File</label>
+                <InputFile class="form-control"
+                           OnChange="OnFileSelected" />
+            </div>
+
+            <div class="col-md-8">
+                <label class="form-label">Paste Logs</label>
+                <textarea class="form-control"
+                          rows="8"
+                          placeholder="Paste logs here..."
+                          @bind="_pastedLogs">
+                </textarea>
+            </div>
+        </div>
+
+        <div class="mt-3 d-flex gap-2">
+            <button class="btn btn-primary"
+                    disabled="@string.IsNullOrWhiteSpace(_pastedLogs)"
+                    @onclick="UploadPastedLogs">
+                Upload Pasted Logs
+            </button>
+        </div>
+
     </Authorized>
 
     <NotAuthorized>
@@ -67,7 +94,6 @@
     </NotAuthorized>
 </AuthorizeView>
 
-<!-- INLINE VIEWER MODAL -->
 @if (_showContent)
 {
     <div class="modal-backdrop show"></div>
@@ -92,77 +118,20 @@
     private List<LogDto> _logs = new();
     private bool _loading = true;
 
-    // Inline viewer state
     private bool _showContent;
-    private MarkupString _logContent = new MarkupString("");
+    private MarkupString _logContent = new("");
     private string _activeLogName = "";
+
+    private string _pastedLogs = string.Empty;
+    private Guid? _lastUploadedLogId;
+
     private static readonly HashSet<string> AllowedExtensions =
-    new(StringComparer.OrdinalIgnoreCase)
-    {
-        // Text
-        ".txt", ".log", ".conf", ".config", ".ini", ".env",
-        ".json", ".xml", ".yaml", ".yml",
-        ".csv", ".tsv",
-        ".md", ".rst", ".adoc",
-
-        // Documents
-        ".docx", ".odt", ".ods", ".odp",
-
-        // Images / OCR / PDF
-        ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp",
-        ".pdf"
-    };
-
-    private async Task OnFileSelected(InputFileChangeEventArgs e)
-    {
-        var file = e.File;
-        if (file == null)
-            return;
-
-        // ---------------------------------------
-        // 1. Size check (MATCH BACKEND: 10 MB)
-        // ---------------------------------------
-        const long maxSize = 10 * 1024 * 1024; // 10 MB
-
-        if (file.Size == 0 || file.Size > maxSize)
+        new(StringComparer.OrdinalIgnoreCase)
         {
-            await JS.InvokeVoidAsync(
-                "alert",
-                "Invalid file size. Maximum allowed is 10 MB."
-            );
-            return;
-        }
-
-        // ---------------------------------------
-        // 2. Extension allow-list
-        // ---------------------------------------
-        var extension = Path.GetExtension(file.Name);
-
-        if (string.IsNullOrWhiteSpace(extension) ||
-            !AllowedExtensions.Contains(extension))
-        {
-            await JS.InvokeVoidAsync(
-                "alert",
-                "Unsupported or unsafe file type."
-            );
-            return;
-        }
-
-        // ---------------------------------------
-        // 3. Upload
-        // ---------------------------------------
-        await using var stream =
-            file.OpenReadStream(maxAllowedSize: maxSize);
-
-        await LogsApi.UploadAsync(
-            stream,
-            file.Name,
-            file.ContentType // do NOT hardcode
-        );
-
-        await Reload();
-    }
-
+            ".txt", ".log", ".json", ".xml", ".csv",
+            ".png", ".jpg", ".jpeg", ".tiff",
+            ".pdf"
+        };
 
     protected override async Task OnInitializedAsync()
     {
@@ -182,28 +151,75 @@
             _loading = false;
         }
     }
-   
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file == null)
+            return;
+
+        const long maxSize = 10 * 1024 * 1024;
+
+        if (file.Size == 0 || file.Size > maxSize)
+        {
+            await JS.InvokeVoidAsync("alert", "Invalid file size. Maximum allowed is 10 MB.");
+            return;
+        }
+
+        var extension = Path.GetExtension(file.Name);
+
+        if (string.IsNullOrWhiteSpace(extension) || !AllowedExtensions.Contains(extension))
+        {
+            await JS.InvokeVoidAsync("alert", "Unsupported or unsafe file type.");
+            return;
+        }
+
+        await using var stream = file.OpenReadStream(maxAllowedSize: maxSize);
+
+        await LogsApi.UploadAsync(stream, file.Name, file.ContentType);
+
+        await Reload();
+
+        _lastUploadedLogId = _logs
+            .OrderByDescending(l => l.CreatedAt)
+            .FirstOrDefault()?.Id;
+    }
+
+    private async Task UploadPastedLogs()
+    {
+        var bytes = System.Text.Encoding.UTF8.GetBytes(_pastedLogs);
+        await using var stream = new MemoryStream(bytes);
+
+        var fileName = $"pasted-log-{DateTime.UtcNow:yyyyMMdd-HHmmss}.log";
+
+        await LogsApi.UploadAsync(stream, fileName, "text/plain");
+
+        _pastedLogs = string.Empty;
+
+        await Reload();
+
+        _lastUploadedLogId = _logs
+            .OrderByDescending(l => l.CreatedAt)
+            .FirstOrDefault()?.Id;
+    }
 
     private string ConvertToHtml(string markdown)
     {
-        if (string.IsNullOrWhiteSpace(markdown)) return string.Empty;
-        
-        // Use AdvancedExtensions for tables, task lists, etc.
+        if (string.IsNullOrWhiteSpace(markdown))
+            return string.Empty;
+
         var pipeline = new MarkdownPipelineBuilder()
             .UseAdvancedExtensions()
             .Build();
-            
+
         return Markdown.ToHtml(markdown, pipeline);
     }
+
     private async Task ViewInline(LogDto log)
     {
-        // Guard: don't inline huge logs
         if (log.SizeBytes > 200 * 1024)
         {
-            await JS.InvokeVoidAsync(
-                "alert",
-                "Log is too large to view inline. Use View or Download."
-            );
+            await JS.InvokeVoidAsync("alert", "Log is too large to view inline.");
             return;
         }
 
@@ -218,7 +234,7 @@
     private void CloseViewer()
     {
         _showContent = false;
-        _logContent = new MarkupString("");
+        _logContent = new("");
         _activeLogName = "";
     }
 
@@ -235,14 +251,18 @@
         await LogsApi.DeleteAsync(id);
         await Reload();
     }
-    private async Task Analyze(Guid Id){
-          var confirmed = await JS.InvokeAsync<bool>(
+
+    private async Task Analyze(Guid id)
+    {
+        var confirmed = await JS.InvokeAsync<bool>(
             "confirm",
             "Are you sure you want to Send this log for Analysis?"
         );
+
         if (!confirmed)
             return;
-        var chat=  await LogsApi.AnalyzeAsync(Id);
+
+        var chat = await LogsApi.AnalyzeAsync(id);
         var html = ConvertToHtml(chat.reply);
 
         _logContent = new MarkupString(html);

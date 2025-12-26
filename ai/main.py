@@ -11,6 +11,8 @@ import httpx
 import json
 import os
 import asyncio
+import base64
+from pathlib import Path
 from jose import jwt
 from langchain_community.utilities import StackExchangeAPIWrapper
 from langchain_community.tools import StackExchangeTool
@@ -93,6 +95,69 @@ llm = ChatAnthropic(
 )
 
 # =====================================================
+# DOCUMENT PROCESSING CONSTANTS
+# =====================================================
+MAX_DOCUMENT_SIZE_BYTES = 2 * 1024 * 1024  # 2MB limit
+SUPPORTED_TEXT_EXTENSIONS = {'.txt', '.md', '.py', '.js', '.json', '.xml', '.csv', '.log', '.yaml', '.yml'}
+
+def validate_and_decode_document(
+    document_base64: str,
+    document_name: str | None
+) -> tuple[str, str]:
+    """
+    Validates and decodes a base64-encoded text document.
+
+    Args:
+        document_base64: Base64-encoded document string
+        document_name: Optional filename for validation
+
+    Returns:
+        Tuple of (decoded_text, filename)
+
+    Raises:
+        HTTPException: If validation fails
+    """
+    # Validate base64 format
+    try:
+        decoded_bytes = base64.b64decode(document_base64)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid base64 encoding: {str(e)}"
+        )
+
+    # Check size limit (2MB)
+    if len(decoded_bytes) > MAX_DOCUMENT_SIZE_BYTES:
+        size_mb = len(decoded_bytes) / (1024 * 1024)
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Document size ({size_mb:.2f}MB) exceeds 2MB limit"
+        )
+
+    # Validate file extension if name provided
+    if document_name:
+        extension = Path(document_name).suffix.lower()
+        if extension not in SUPPORTED_TEXT_EXTENSIONS:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unsupported file type: {extension}. Supported: {', '.join(SUPPORTED_TEXT_EXTENSIONS)}"
+            )
+
+    # Decode to text (UTF-8)
+    try:
+        decoded_text = decoded_bytes.decode('utf-8')
+    except UnicodeDecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Document is not valid UTF-8 text"
+        )
+
+    # Use provided name or default
+    filename = document_name if document_name else "document.txt"
+
+    return decoded_text, filename
+
+# =====================================================
 # LANGGRAPH STATE
 # =====================================================
 class Data(TypedDict):
@@ -140,6 +205,8 @@ graph.add_edge("chat_node", END)
 class ChatRequest(BaseModel):
     thread_id: str
     message: str
+    document_base64: str | None = None
+    document_name: str | None = None
 
 class ChatResponse(BaseModel):
     reply: str
@@ -168,10 +235,36 @@ async def chat(
     token=Depends(verify_jwt),
 ):
     try:
+        # Build message content
+        message_content = req.message
+
+        # If document provided, validate and include it
+        if req.document_base64:
+            decoded_text, filename = validate_and_decode_document(
+                req.document_base64,
+                req.document_name
+            )
+
+            # Construct multimodal message with document context
+            message_content = [
+                {
+                    "type": "text",
+                    "text": f"Document ({filename}):\n\n{decoded_text}\n\n---\n\n"
+                },
+                {
+                    "type": "text",
+                    "text": req.message
+                }
+            ]
+
+        # Invoke graph with message (string or list)
         result = await request.app.state.graph.ainvoke(
-            {"messages": [HumanMessage(content=req.message)]},
+            {"messages": [HumanMessage(content=message_content)]},
             config={"configurable": {"thread_id": req.thread_id}},
         )
+    except HTTPException:
+        # Re-raise validation errors (with proper status codes)
+        raise
     except Exception as e:
         # Never crash the API
         return ChatResponse(reply=f"Analyzer failed: {str(e)}")
@@ -183,8 +276,19 @@ async def chat(
     last = messages[-1]
 
     if isinstance(last, AIMessage):
-        return ChatResponse(reply=last.content)
+        reply = last.content
 
+        # Claude now returns list segments
+        if isinstance(reply, list):
+            reply = "".join(
+                part.get("text", "") if isinstance(part, dict) else str(part)
+                for part in reply
+            )
+
+        # Safety: ensure string
+        reply = str(reply)
+
+        return ChatResponse(reply=reply)
     # Fallback (should rarely happen)
     return ChatResponse(reply=str(last))
 

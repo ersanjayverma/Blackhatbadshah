@@ -439,8 +439,16 @@ public class LogsController : ControllerBase
         await _db.SaveChangesAsync();
 
         // Notify via SignalR
-        await _hubNotification.NotifyReportCreatedAsync(userId, reportId, report.Title);
-        await _hubNotification.NotifyReportStatusChangedAsync(userId, reportId, "Completed");
+        var reportListItem = new ReportListItem
+        {
+            Id = report.Id,
+            Title = report.Title,
+            FileName = log.FileName,
+            CreatedAtUtc = report.CreatedAtUtc,
+            Status = ReportStatus.Completed
+        };
+        await _hubNotification.NotifyReportCreatedAsync(userId, reportListItem);
+        await _hubNotification.NotifyReportStatusChangedAsync(userId, reportId, ReportStatus.Completed);
 
         // 8. Return response
       return Ok(analysis);

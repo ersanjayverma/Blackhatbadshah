@@ -108,8 +108,16 @@ public class LogAnalysisBackgroundWorker : BackgroundService
             await db.SaveChangesAsync(cancellationToken);
 
             // 3. Notify that report is created and in progress
-            await hubNotification.NotifyReportCreatedAsync(userId, reportId.Value, report.Title);
-            await hubNotification.NotifyReportStatusChangedAsync(userId, reportId.Value, "InProgress");
+            var reportListItem = new ReportListItem
+            {
+                Id = report.Id,
+                Title = report.Title,
+                FileName = log.FileName,
+                CreatedAtUtc = report.CreatedAtUtc,
+                Status = ReportStatus.InProgress
+            };
+            await hubNotification.NotifyReportCreatedAsync(userId, reportListItem);
+            await hubNotification.NotifyReportStatusChangedAsync(userId, reportId.Value, ReportStatus.InProgress);
 
             // 4. Fetch log content from blob
             var containerName = config["AzureBlob:Container"]
@@ -170,7 +178,7 @@ public class LogAnalysisBackgroundWorker : BackgroundService
             await db.SaveChangesAsync(cancellationToken);
 
             // 9. Notify completion
-            await hubNotification.NotifyReportStatusChangedAsync(userId, reportId.Value, "Completed");
+            await hubNotification.NotifyReportStatusChangedAsync(userId, reportId.Value, ReportStatus.Completed);
 
             _logger.LogInformation("Successfully completed analysis for LogId: {LogId}, ReportId: {ReportId}", logId, reportId);
         }
@@ -202,7 +210,7 @@ public class LogAnalysisBackgroundWorker : BackgroundService
                 report.Summary = summary;
                 await db.SaveChangesAsync();
 
-                await hubNotification.NotifyReportStatusChangedAsync(userId, reportId, status.ToString());
+                await hubNotification.NotifyReportStatusChangedAsync(userId, reportId, status);
             }
         }
         catch (Exception ex)

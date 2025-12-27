@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.SignalR;
 using backend.Hubs;
+using shared.Dto;
 
 namespace backend.Services;
 
@@ -21,36 +22,36 @@ public class HubNotificationService : IHubNotificationService
     public async Task NotifyLogDeletedAsync(string userId, Guid logId)
     {
         await _hubContext.Clients.Group($"user_{userId}")
-            .SendAsync("LogDeleted", new { logId });
+            .SendAsync("LogDeleted", logId);
     }
 
     public async Task NotifyAllLogsDeletedAsync(string userId, int count)
     {
         await _hubContext.Clients.Group($"user_{userId}")
-            .SendAsync("AllLogsDeleted", new { count });
+            .SendAsync("AllLogsDeleted");
     }
 
-    public async Task NotifyReportCreatedAsync(string userId, Guid reportId, string title)
+    public async Task NotifyReportCreatedAsync(string userId, ReportListItem report)
     {
         await _hubContext.Clients.Group($"user_{userId}")
-            .SendAsync("ReportCreated", new { reportId, title, createdAt = DateTime.UtcNow });
+            .SendAsync("ReportCreated", report);
     }
 
-    public async Task NotifyReportStatusChangedAsync(string userId, Guid reportId, string status)
+    public async Task NotifyReportStatusChangedAsync(string userId, Guid reportId, ReportStatus status)
     {
         await _hubContext.Clients.Group($"user_{userId}")
-            .SendAsync("ReportStatusChanged", new { reportId, status });
+            .SendAsync("ReportStatusChanged", reportId, status);
     }
 
     public async Task NotifyReportDeletedAsync(string userId, Guid reportId)
     {
         await _hubContext.Clients.Group($"user_{userId}")
-            .SendAsync("ReportDeleted", new { reportId });
+            .SendAsync("ReportDeleted", reportId);
     }
 
     public async Task NotifyAllReportsDeletedAsync(string userId, int count)
     {
         await _hubContext.Clients.Group($"user_{userId}")
-            .SendAsync("AllReportsDeleted", new { count });
+            .SendAsync("AllReportsDeleted");
     }
 }

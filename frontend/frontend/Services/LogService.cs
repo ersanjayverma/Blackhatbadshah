@@ -62,9 +62,21 @@ public class LogService
         return await _http.GetStringAsync($"/api/logs/{id}/content");
     }
 
-     // -------------------------------------------------
+    // -------------------------------------------------
+    // POST /api/logs/{id}/analyze
+    // Queue log analysis job (non-blocking, background worker)
+    // -------------------------------------------------
+    public async Task<QueueAnalysisResponse> QueueAnalysisAsync(Guid id)
+    {
+        var response = await _http.PostAsync($"/api/logs/{id}/analyze", null);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<QueueAnalysisResponse>()
+               ?? new QueueAnalysisResponse { Message = "Analysis queued", LogId = id };
+    }
+
+    // -------------------------------------------------
     // GET /api/logs/{id}/analyze
-    // Read log content as TEXT & Analyse text
+    // Read log content as TEXT & Analyse text (LEGACY - Synchronous)
     // -------------------------------------------------
     public async Task<ChatResponse> AnalyzeAsync(Guid id)
     {

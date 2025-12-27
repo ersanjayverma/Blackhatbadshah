@@ -43,6 +43,24 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateAudience = true,
             ValidateLifetime = true
         };
+
+        // ✅ Enable SignalR authentication from query string
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"];
+                var path = context.HttpContext.Request.Path;
+
+                // If the request is for SignalR hub and token is in query string
+                if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
+                {
+                    context.Token = accessToken;
+                }
+
+                return Task.CompletedTask;
+            }
+        };
     });
 
 builder.Services.AddSingleton(sp =>
@@ -53,7 +71,10 @@ builder.Services.AddSingleton(sp =>
 });
 builder.Services.AddSingleton<ITextractService, TextractService>();
 builder.Services.AddScoped<IHubNotificationService, HubNotificationService>();
+builder.Services.AddSingleton<ILogAnalysisQueue, LogAnalysisQueue>();
+builder.Services.AddHostedService<LogAnalysisBackgroundWorker>();
 builder.Services.AddHttpContextAccessor();
+
 builder.Services.AddTransient<ForwardAuthHeaderHandler>();
 builder.Services.AddHttpClient<ILogAnalyzer, LogAnalyzer>((sp, client) =>
 {

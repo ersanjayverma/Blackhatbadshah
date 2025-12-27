@@ -1,8 +1,10 @@
 @page "/reports"
+@using Microsoft.AspNetCore.Components.WebAssembly.Authentication
 @using frontend.Services
 @using shared.Dto
 @inject ReportService ReportService
 @inject HubConnectionService HubService
+@inject IAccessTokenProvider TokenProvider
 @inject IJSRuntime JS
 @implements IAsyncDisposable
 
@@ -311,7 +313,15 @@
     {
         try
         {
-            await HubService.InitializeAsync();
+            await HubService.InitializeAsync(async () =>
+            {
+                var tokenResult = await TokenProvider.RequestAccessToken();
+                if (tokenResult.TryGetToken(out var token))
+                {
+                    return token.Value;
+                }
+                return null;
+            });
             await HubService.StartAsync();
 
             _reportCreatedSubscription = HubService.On<ReportListItem>("ReportCreated", async (report) =>

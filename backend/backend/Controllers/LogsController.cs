@@ -24,6 +24,7 @@ public class LogsController : ControllerBase
     private readonly ILogAnalyzer _analyzer;
     private readonly ITextractService _textractService;
     private readonly IHubNotificationService _hubNotification;
+    private readonly ILogAnalysisQueue _analysisQueue;
 
     // ----------------------------
     // Supported formats
@@ -46,7 +47,8 @@ public class LogsController : ControllerBase
         AppDbContext db,
         ILogAnalyzer analyzer,
         ITextractService textractService,
-        IHubNotificationService hubNotification)
+        IHubNotificationService hubNotification,
+        ILogAnalysisQueue analysisQueue)
     {
         _config = config;
         _blobService = blobService;
@@ -54,6 +56,7 @@ public class LogsController : ControllerBase
         _analyzer = analyzer;
         _textractService = textractService;
         _hubNotification = hubNotification;
+        _analysisQueue = analysisQueue;
     }
 
     // -----------------------------------------
@@ -308,8 +311,52 @@ public class LogsController : ControllerBase
             return NoContent();
         }
     // -----------------------------------------
+    // POST api/logs/{id}/analyze
+    // Queue log analysis job (non-blocking)
+    // -----------------------------------------
+    [HttpPost("{id:guid}/analyze")]
+    public async Task<IActionResult> QueueAnalysis(Guid id)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                    ?? User.FindFirstValue("sub");
+
+        if (userId == null)
+            return Unauthorized();
+
+        // Verify log exists and belongs to user
+        var log = await _db.Logs.FindAsync(id);
+        if (log == null)
+            return NotFound("Log not found");
+
+        if (log.UserId != userId)
+            return Forbid();
+
+        // ✅ Extract access token from Authorization header
+        var authHeader = Request.Headers.Authorization.ToString();
+        if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            return Unauthorized("Access token missing or invalid");
+
+        var accessToken = authHeader["Bearer ".Length..].Trim();
+
+        // Queue the analysis job with user's token
+        try
+        {
+            _analysisQueue.QueueAnalysisJob(id, userId, accessToken);
+            return Accepted(new
+            {
+                message = "Analysis job queued successfully. The report will be available in the Reports section soon.",
+                logId = id
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { message = "Failed to queue analysis job", error = ex.Message });
+        }
+    }
+
+    // -----------------------------------------
     // GET api/logs/{id}/analyze
-    // Analyze log content + save report as TEXT
+    // Analyze log content + save report as TEXT (LEGACY - Synchronous)
     // -----------------------------------------
     [HttpGet("{id:guid}/analyze")]
     public async Task<IActionResult> AnalyseContent(Guid id)

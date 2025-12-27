@@ -80,6 +80,11 @@
               "target": "Package",
               "version": "[10.0.1, )"
             },
+            "Microsoft.DotNet.HotReload.WebAssembly.Browser": {
+              "target": "Package",
+              "version": "[10.0.100, )",
+              "autoReferenced": true
+            },
             "Microsoft.Extensions.Http": {
               "target": "Package",
               "version": "[10.0.1, )"

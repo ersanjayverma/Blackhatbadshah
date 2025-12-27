@@ -1,10 +1,12 @@
 @page "/logs"
 @using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.WebAssembly.Authentication
 @using shared.Dto
 @using Markdig
 @using frontend.Services
 @inject LogService LogsApi
 @inject HubConnectionService HubService
+@inject IAccessTokenProvider TokenProvider
 @inject IJSRuntime JS
 @implements IAsyncDisposable
 
@@ -335,7 +337,15 @@
     {
         try
         {
-            await HubService.InitializeAsync();
+            await HubService.InitializeAsync(async () =>
+            {
+                var tokenResult = await TokenProvider.RequestAccessToken();
+                if (tokenResult.TryGetToken(out var token))
+                {
+                    return token.Value;
+                }
+                return null;
+            });
             await HubService.StartAsync();
 
             _logCreatedSubscription = HubService.On<LogDto>("LogCreated", async (log) =>
@@ -525,7 +535,7 @@
     {
         var confirmed = await JS.InvokeAsync<bool>(
             "confirm",
-            "Send this log for AI analysis? This may take a few moments."
+            "Send this log for AI analysis? The report will be available in the Reports section soon."
         );
 
         if (!confirmed)
@@ -533,16 +543,15 @@
 
         try
         {
-            var chat = await LogsApi.AnalyzeAsync(id);
-            var html = ConvertToHtml(chat.reply);
-
-            _logContent = new MarkupString(html);
-            _activeLogName = "Analysis Result";
-            _showContent = true;
+            var response = await LogsApi.QueueAnalysisAsync(id);
+            await JS.InvokeVoidAsync("alert",
+                "Analysis job queued successfully!\n\n" +
+                "The report will be available in the Reports section soon. " +
+                "You will be notified via real-time updates when it's ready.");
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Analysis failed: {ex.Message}");
+            await JS.InvokeVoidAsync("alert", $"Failed to queue analysis: {ex.Message}");
         }
     }
 

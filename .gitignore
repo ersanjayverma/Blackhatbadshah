@@ -9,7 +9,14 @@
 *.user
 *.userosscache
 *.sln.docstates
+
+# Environment and Secret files
 *.env
+.env
+.env.*
+!.env.example
+.env.local
+.env.*.local
 
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
@@ -342,6 +349,10 @@ paket-files/
 # Python Tools for Visual Studio (PTVS)
 **/__pycache__/
 *.pyc
+venv/
+env/
+.venv/
+.python-version
 
 # Cake - Uncomment if you are using it
 #tools/**

@@ -1,0 +1,72 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Environment files
+.env
+.env.*
+!.env.example
+*.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode
+.vs
+.idea
+*.swp
+*.swo
+*~
+
+# Documentation
+README.md
+SECURITY.md
+*.md
+
+# CI/CD
+.github
+.gitlab-ci.yml
+.travis.yml
+
+# Docker
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# Build artifacts
+**/bin
+**/obj
+**/dist
+**/build
+**/.next
+**/.nuxt
+
+# Dependencies
+**/node_modules
+**/venv
+**/env
+**/.venv
+**/__pycache__
+*.pyc
+*.pyo
+
+# Logs
+*.log
+logs/
+**/*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test files
+**/*test*
+**/*spec*
+*.test.js
+*.spec.js
+
+# Temporary files
+*.tmp
+*.temp
+*.cache

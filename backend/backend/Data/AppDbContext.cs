@@ -12,6 +12,19 @@ public class AppDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        // Configure Report-Log relationship: reports persist even when logs are deleted
+        modelBuilder.Entity<Report>()
+            .HasOne(r => r.Log)
+            .WithMany()
+            .HasForeignKey(r => r.LogId)
+            .OnDelete(DeleteBehavior.SetNull); // Set LogId to null when log is deleted
+
+        // Configure Report status enum
+        modelBuilder.Entity<Report>()
+            .Property(r => r.Status)
+            .HasConversion<string>();
+
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
     }
 }

@@ -1,129 +1,323 @@
 @page "/logs"
 @using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.WebAssembly.Authentication
 @using shared.Dto
 @using Markdig
-@inject frontend.Services.LogService LogsApi
+@using frontend.Services
+@inject LogService LogsApi
+@inject HubConnectionService HubService
+@inject IAccessTokenProvider TokenProvider
 @inject IJSRuntime JS
+@implements IAsyncDisposable
 
 <AuthorizeView>
     <Authorized>
 
-        <h3>Logs</h3>
+        <div class="container-fluid px-4 py-4">
 
-        @if (_loading)
-        {
-            <p>Loading…</p>
-        }
-        else if (_logs.Count == 0)
-        {
-            <p>No logs uploaded yet.</p>
-        }
-        else
-        {
-            <table class="table table-striped">
-                <thead>
-                    <tr>
-                        <th>File</th>
-                        <th>Size (KB)</th>
-                        <th>Created</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var log in _logs)
+            <!-- HEADER -->
+            <div class="d-flex justify-content-between align-items-center flex-wrap mb-4">
+                <div>
+                    <h2 class="mb-1 fw-bold text-gradient">
+                        <i class="bi bi-file-earmark-text me-2"></i>Log Management
+                    </h2>
+                    <p class="text-muted mb-0">Upload, analyze, and manage your log files</p>
+                </div>
+
+                @if (_logs.Count > 0)
+                {
+                    <button class="btn btn-danger btn-lg shadow-sm" @onclick="ConfirmDeleteAll">
+                        <i class="bi bi-trash me-2"></i>Clear All Logs
+                    </button>
+                }
+            </div>
+
+            <!-- UPLOAD -->
+            <div class="card modern-card shadow-lg mb-4">
+                <div class="card-header gradient-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-cloud-upload me-2"></i>Upload Logs
+                    </h5>
+                </div>
+
+                <div class="card-body p-4">
+
+                    <div class="mb-4">
+                        <label class="form-label fw-bold text-dark mb-3">
+                            <i class="bi bi-file-earmark-arrow-up me-2"></i>Upload Log File
+                        </label>
+
+                        <div class="upload-box">
+                            <InputFile
+                                OnChange="OnFileSelected"
+                                accept=".txt,.log,.json,.xml,.csv,.png,.jpg,.jpeg,.tiff,.pdf"
+                                class="form-control form-control-lg" />
+
+                            <small class="text-muted d-block mt-3 text-center">
+                                <i class="bi bi-info-circle me-1"></i>
+                                Max size: <strong>2 MB</strong> — Supported: .txt .log .json .xml .csv .pdf + images
+                            </small>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="form-label fw-bold text-dark mb-3">
+                            <i class="bi bi-clipboard me-2"></i>Paste Logs Directly
+                        </label>
+
+                        <textarea
+                            class="form-control form-control-lg monospace-textarea mb-3"
+                            rows="6"
+                            placeholder="Paste your log content here..."
+                            @bind="_pastedLogs"></textarea>
+
+                        <button class="btn btn-primary btn-lg w-100 shadow-sm"
+                                disabled="@string.IsNullOrWhiteSpace(_pastedLogs)"
+                                @onclick="UploadPastedLogs">
+                            <i class="bi bi-upload me-2"></i>Upload Pasted Logs
+                        </button>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- LIST -->
+            <div class="card modern-card shadow-lg">
+                <div class="card-header gradient-header-dark d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="bi bi-list-ul me-2"></i>Your Logs
+                    </h5>
+                    <span class="badge bg-light text-dark px-3 py-2 rounded-pill">@_logs.Count Total</span>
+                </div>
+
+                <div class="card-body p-0">
+
+                    @if (_loading)
                     {
-                        <tr>
-                            <td>@log.FileName</td>
-                            <td>@(log.SizeBytes / 1024)</td>
-                            <td>@log.CreatedAt.ToLocalTime()</td>
-                            <td>
-                                <button class="btn btn-sm btn-outline-success ms-2"
-                                        @onclick="() => Analyze(log.Id)">
-                                    Run Analysis
-                                </button>
-
-                                <button class="btn btn-sm btn-outline-primary ms-2"
-                                        @onclick="() => ViewInline(log)">
-                                    See Content
-                                </button>
-
-                                <button class="btn btn-sm btn-outline-danger ms-2"
-                                        @onclick="() => Delete(log.Id)">
-                                    Delete
-                                </button>
-                            </td>
-                        </tr>
+                        <div class="text-center py-5">
+                            <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;"></div>
+                            <p class="text-muted fw-semibold">Loading logs...</p>
+                        </div>
                     }
-                </tbody>
-            </table>
+                    else if (_logs.Count == 0)
+                    {
+                        <div class="empty-state-box">
+                            <i class="bi bi-inbox display-1 text-muted mb-3"></i>
+                            <h5 class="fw-bold">No logs uploaded yet</h5>
+                            <p class="text-muted">Upload your first log file to get started</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0 modern-table">
+                                <thead>
+                                    <tr>
+                                        <th><i class="bi bi-file-earmark me-2"></i>File</th>
+                                        <th><i class="bi bi-hdd me-2"></i>Size</th>
+                                        <th><i class="bi bi-calendar me-2"></i>Created</th>
+                                        <th class="text-center"><i class="bi bi-gear me-2"></i>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var log in _logs)
+                                    {
+                                        <tr class="table-row-hover">
+                                            <td class="fw-semibold">@log.FileName</td>
+                                            <td>
+                                                <span class="badge badge-custom">
+                                                    @FormatFileSize(log.SizeBytes)
+                                                </span>
+                                            </td>
+                                            <td class="text-muted">@log.CreatedAt.ToLocalTime().ToString("g")</td>
+                                            <td class="text-center">
+                                                <div class="btn-group shadow-sm" role="group">
+                                                    <button class="btn btn-sm btn-success"
+                                                            @onclick="() => Analyze(log.Id)"
+                                                            title="Analyze">
+                                                        <i class="bi bi-cpu me-1"></i>Analyze
+                                                    </button>
+
+                                                    <button class="btn btn-sm btn-info"
+                                                            @onclick="() => ViewInline(log)"
+                                                            title="View">
+                                                        <i class="bi bi-eye me-1"></i>View
+                                                    </button>
+
+                                                    <button class="btn btn-sm btn-danger"
+                                                            @onclick="() => ConfirmDelete(log.Id, log.FileName)"
+                                                            title="Delete">
+                                                        <i class="bi bi-trash"></i>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+
+                </div>
+            </div>
+
+        </div>
+
+        <!-- VIEWER MODAL -->
+        @if (_showContent)
+        {
+            <div class="custom-modal-backdrop" @onclick="CloseViewer"></div>
+
+            <div class="custom-modal">
+                <div class="custom-modal-dialog">
+                    <div class="custom-modal-content">
+
+                        <div class="custom-modal-header">
+                            <h5 class="custom-modal-title">
+                                <i class="bi bi-file-earmark-text me-2"></i>@_activeLogName
+                            </h5>
+                            <button class="custom-modal-close" @onclick="CloseViewer">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
+
+                        <div class="custom-modal-body">
+                            @_logContent
+                        </div>
+
+                        <div class="custom-modal-footer">
+                            <button class="btn btn-secondary" @onclick="CloseViewer">
+                                <i class="bi bi-x-lg me-2"></i>Close
+                            </button>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
         }
 
-        <hr />
+        <!-- DELETE CONFIRMATION MODAL -->
+        @if (_showDeleteConfirm)
+        {
+            <div class="custom-modal-backdrop" @onclick="CancelDelete"></div>
 
-        <h5>Upload or Paste Logs</h5>
+            <div class="custom-modal">
+                <div class="custom-modal-dialog custom-modal-dialog-sm">
+                    <div class="custom-modal-content">
 
-        <div class="row g-3">
-            <div class="col-md-4">
-                <label class="form-label">Upload Log File</label>
-                <InputFile class="form-control"
-                           OnChange="OnFileSelected" />
+                        <div class="custom-modal-header bg-danger">
+                            <h5 class="custom-modal-title">
+                                <i class="bi bi-exclamation-triangle-fill me-2"></i>Confirm Deletion
+                            </h5>
+                            <button class="custom-modal-close" @onclick="CancelDelete">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
+
+                        <div class="custom-modal-body">
+                            <div class="text-center mb-3">
+                                <i class="bi bi-trash text-danger" style="font-size: 3rem;"></i>
+                            </div>
+                            <p class="mb-2">Are you sure you want to delete this log?</p>
+                            <div class="alert alert-light border">
+                                <i class="bi bi-file-earmark-text me-2"></i>
+                                <strong>@_logToDeleteName</strong>
+                            </div>
+                            <p class="text-muted small mb-0">
+                                <i class="bi bi-info-circle me-1"></i>This action cannot be undone.
+                            </p>
+                        </div>
+
+                        <div class="custom-modal-footer">
+                            <button class="btn btn-light" @onclick="CancelDelete">
+                                <i class="bi bi-x-lg me-2"></i>Cancel
+                            </button>
+                            <button class="btn btn-danger" @onclick="DeleteLog">
+                                <i class="bi bi-trash me-2"></i>Delete
+                            </button>
+                        </div>
+
+                    </div>
+                </div>
             </div>
+        }
 
-            <div class="col-md-8">
-                <label class="form-label">Paste Logs</label>
-                <textarea class="form-control"
-                          rows="8"
-                          placeholder="Paste logs here..."
-                          @bind="_pastedLogs">
-                </textarea>
+        <!-- DELETE ALL CONFIRMATION MODAL -->
+        @if (_showDeleteAllConfirm)
+        {
+            <div class="custom-modal-backdrop" @onclick="CancelDeleteAll"></div>
+
+            <div class="custom-modal">
+                <div class="custom-modal-dialog custom-modal-dialog-sm">
+                    <div class="custom-modal-content">
+
+                        <div class="custom-modal-header bg-danger">
+                            <h5 class="custom-modal-title">
+                                <i class="bi bi-exclamation-triangle-fill me-2"></i>Clear All Logs
+                            </h5>
+                            <button class="custom-modal-close" @onclick="CancelDeleteAll">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
+
+                        <div class="custom-modal-body">
+                            <div class="text-center mb-3">
+                                <i class="bi bi-exclamation-octagon text-danger" style="font-size: 3rem;"></i>
+                            </div>
+                            <p class="mb-2">Are you sure you want to delete <strong class="text-danger">all @_logs.Count logs</strong>?</p>
+                            <div class="alert alert-danger border-danger">
+                                <i class="bi bi-shield-exclamation me-2"></i>
+                                <strong>Warning:</strong> This will permanently delete all your log files.
+                            </div>
+                            <p class="text-muted small mb-0">
+                                <i class="bi bi-info-circle me-1"></i>This action cannot be undone.
+                            </p>
+                        </div>
+
+                        <div class="custom-modal-footer">
+                            <button class="btn btn-light" @onclick="CancelDeleteAll">
+                                <i class="bi bi-x-lg me-2"></i>Cancel
+                            </button>
+                            <button class="btn btn-danger" @onclick="DeleteAllLogs">
+                                <i class="bi bi-trash me-2"></i>Delete All
+                            </button>
+                        </div>
+
+                    </div>
+                </div>
             </div>
-        </div>
-
-        <div class="mt-3 d-flex gap-2">
-            <button class="btn btn-primary"
-                    disabled="@string.IsNullOrWhiteSpace(_pastedLogs)"
-                    @onclick="UploadPastedLogs">
-                Upload Pasted Logs
-            </button>
-        </div>
+        }
 
     </Authorized>
 
     <NotAuthorized>
-        <p>You must be logged in to access logs.</p>
+        <div class="container mt-5">
+            <div class="alert alert-warning shadow-sm">
+                <i class="bi bi-lock me-2"></i>
+                You must be logged in to access logs.
+            </div>
+        </div>
     </NotAuthorized>
 </AuthorizeView>
 
-@if (_showContent)
-{
-    <div class="modal-backdrop show"></div>
-    <div class="modal show d-block">
-        <div class="modal-dialog modal-xl">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">@_activeLogName</h5>
-                    <button class="btn-close" @onclick="CloseViewer"></button>
-                </div>
-                <div class="modal-body">
-                    <div style="max-height:70vh; overflow:auto">
-                        @_logContent
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-}
 
 @code {
     private List<LogDto> _logs = new();
     private bool _loading = true;
+    private bool _showContent = false;
+    private bool _showDeleteConfirm = false;
+    private bool _showDeleteAllConfirm = false;
 
-    private bool _showContent;
     private MarkupString _logContent = new("");
     private string _activeLogName = "";
-
     private string _pastedLogs = string.Empty;
-    private Guid? _lastUploadedLogId;
+
+    private Guid _logToDeleteId = Guid.Empty;
+    private string _logToDeleteName = string.Empty;
+
+    private IDisposable? _logCreatedSubscription;
+    private IDisposable? _logDeletedSubscription;
+    private IDisposable? _allLogsDeletedSubscription;
 
     private static readonly HashSet<string> AllowedExtensions =
         new(StringComparer.OrdinalIgnoreCase)
@@ -136,6 +330,53 @@
     protected override async Task OnInitializedAsync()
     {
         await Reload();
+        await InitializeSignalR();
+    }
+
+    private async Task InitializeSignalR()
+    {
+        try
+        {
+            await HubService.InitializeAsync(async () =>
+            {
+                var tokenResult = await TokenProvider.RequestAccessToken();
+                if (tokenResult.TryGetToken(out var token))
+                {
+                    return token.Value;
+                }
+                return null;
+            });
+            await HubService.StartAsync();
+
+            _logCreatedSubscription = HubService.On<LogDto>("LogCreated", async (log) =>
+            {
+                _logs.Insert(0, log);
+                await InvokeAsync(StateHasChanged);
+            });
+
+            _logDeletedSubscription = HubService.On<Guid>("LogDeleted", async (logId) =>
+            {
+                _logs.RemoveAll(l => l.Id == logId);
+                await InvokeAsync(StateHasChanged);
+            });
+
+            _allLogsDeletedSubscription = HubService.On("AllLogsDeleted", async () =>
+            {
+                _logs.Clear();
+                await InvokeAsync(StateHasChanged);
+            });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"SignalR connection failed: {ex.Message}");
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _logCreatedSubscription?.Dispose();
+        _logDeletedSubscription?.Dispose();
+        _allLogsDeletedSubscription?.Dispose();
     }
 
     private async Task Reload()
@@ -158,11 +399,11 @@
         if (file == null)
             return;
 
-        const long maxSize = 10 * 1024 * 1024;
+        const long maxSize = 2 * 1024 * 1024;
 
         if (file.Size == 0 || file.Size > maxSize)
         {
-            await JS.InvokeVoidAsync("alert", "Invalid file size. Maximum allowed is 10 MB.");
+            await JS.InvokeVoidAsync("alert", "Invalid file size. Maximum allowed is 2 MB.");
             return;
         }
 
@@ -170,65 +411,65 @@
 
         if (string.IsNullOrWhiteSpace(extension) || !AllowedExtensions.Contains(extension))
         {
-            await JS.InvokeVoidAsync("alert", "Unsupported or unsafe file type.");
+            await JS.InvokeVoidAsync("alert", "Unsupported file type. Please upload a valid log file.");
             return;
         }
 
-        await using var stream = file.OpenReadStream(maxAllowedSize: maxSize);
-
-        await LogsApi.UploadAsync(stream, file.Name, file.ContentType);
-
-        await Reload();
-
-        _lastUploadedLogId = _logs
-            .OrderByDescending(l => l.CreatedAt)
-            .FirstOrDefault()?.Id;
+        try
+        {
+            await using var stream = file.OpenReadStream(maxAllowedSize: maxSize);
+            await LogsApi.UploadAsync(stream, file.Name, file.ContentType);
+            await Reload();
+            await JS.InvokeVoidAsync("alert", "Log file uploaded successfully!");
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", $"Upload failed: {ex.Message}");
+        }
     }
 
     private async Task UploadPastedLogs()
     {
-        var bytes = System.Text.Encoding.UTF8.GetBytes(_pastedLogs);
-        await using var stream = new MemoryStream(bytes);
+        try
+        {
+            var bytes = System.Text.Encoding.UTF8.GetBytes(_pastedLogs);
+            await using var stream = new MemoryStream(bytes);
 
-        var fileName = $"pasted-log-{DateTime.UtcNow:yyyyMMdd-HHmmss}.log";
+            var fileName = $"pasted-log-{DateTime.UtcNow:yyyyMMdd-HHmmss}.log";
 
-        await LogsApi.UploadAsync(stream, fileName, "text/plain");
+            await LogsApi.UploadAsync(stream, fileName, "text/plain");
 
-        _pastedLogs = string.Empty;
-
-        await Reload();
-
-        _lastUploadedLogId = _logs
-            .OrderByDescending(l => l.CreatedAt)
-            .FirstOrDefault()?.Id;
-    }
-
-    private string ConvertToHtml(string markdown)
-    {
-        if (string.IsNullOrWhiteSpace(markdown))
-            return string.Empty;
-
-        var pipeline = new MarkdownPipelineBuilder()
-            .UseAdvancedExtensions()
-            .Build();
-
-        return Markdown.ToHtml(markdown, pipeline);
+            _pastedLogs = string.Empty;
+            await Reload();
+            await JS.InvokeVoidAsync("alert", "Pasted logs uploaded successfully!");
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", $"Upload failed: {ex.Message}");
+        }
     }
 
     private async Task ViewInline(LogDto log)
     {
         if (log.SizeBytes > 200 * 1024)
         {
-            await JS.InvokeVoidAsync("alert", "Log is too large to view inline.");
+            await JS.InvokeVoidAsync("alert", "Log is too large to view inline. Please use the download feature.");
             return;
         }
 
-        _activeLogName = log.FileName;
-        var markdown = await LogsApi.GetContentAsync(log.Id);
-        var html = ConvertToHtml(markdown);
+        try
+        {
+            _activeLogName = log.FileName;
+            var content = await LogsApi.GetContentAsync(log.Id);
+            var html = ConvertToHtml(content);
 
-        _logContent = new MarkupString(html);
-        _showContent = true;
+            _logContent = new MarkupString(html);
+            _showContent = true;
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", $"Failed to load log: {ex.Message}");
+        }
     }
 
     private void CloseViewer()
@@ -238,35 +479,101 @@
         _activeLogName = "";
     }
 
-    private async Task Delete(Guid id)
+    private void ConfirmDelete(Guid id, string fileName)
     {
-        var confirmed = await JS.InvokeAsync<bool>(
-            "confirm",
-            "Are you sure you want to delete this log?"
-        );
+        _logToDeleteId = id;
+        _logToDeleteName = fileName;
+        _showDeleteConfirm = true;
+    }
 
-        if (!confirmed)
-            return;
+    private void CancelDelete()
+    {
+        _logToDeleteId = Guid.Empty;
+        _logToDeleteName = string.Empty;
+        _showDeleteConfirm = false;
+    }
 
-        await LogsApi.DeleteAsync(id);
-        await Reload();
+    private async Task DeleteLog()
+    {
+        try
+        {
+            await LogsApi.DeleteAsync(_logToDeleteId);
+            await Reload();
+            CancelDelete();
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", $"Delete failed: {ex.Message}");
+        }
+    }
+
+    private void ConfirmDeleteAll()
+    {
+        _showDeleteAllConfirm = true;
+    }
+
+    private void CancelDeleteAll()
+    {
+        _showDeleteAllConfirm = false;
+    }
+
+    private async Task DeleteAllLogs()
+    {
+        try
+        {
+            var count = await LogsApi.DeleteAllAsync();
+            _logs.Clear();
+            _showDeleteAllConfirm = false;
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", $"Delete all failed: {ex.Message}");
+        }
     }
 
     private async Task Analyze(Guid id)
     {
         var confirmed = await JS.InvokeAsync<bool>(
             "confirm",
-            "Are you sure you want to Send this log for Analysis?"
+            "Send this log for AI analysis? The report will be available in the Reports section soon."
         );
 
         if (!confirmed)
             return;
 
-        var chat = await LogsApi.AnalyzeAsync(id);
-        var html = ConvertToHtml(chat.reply);
+        try
+        {
+            var response = await LogsApi.QueueAnalysisAsync(id);
+            await JS.InvokeVoidAsync("alert",
+                "Analysis job queued successfully!\n\n" +
+                "The report will be available in the Reports section soon. " +
+                "You will be notified via real-time updates when it's ready.");
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", $"Failed to queue analysis: {ex.Message}");
+        }
+    }
 
-        _logContent = new MarkupString(html);
-        _activeLogName = "Analysis Result";
-        _showContent = true;
+    private string ConvertToHtml(string markdown)
+    {
+        if (string.IsNullOrWhiteSpace(markdown))
+            return string.Empty;
+
+        var pipeline = new MarkdownPipelineBuilder()
+            .UseAdvancedExtensions()
+            .DisableHtml()
+            .Build();
+
+        return Markdown.ToHtml(markdown, pipeline);
+    }
+
+    private string FormatFileSize(long bytes)
+    {
+        if (bytes < 1024)
+            return $"{bytes} B";
+        if (bytes < 1024 * 1024)
+            return $"{bytes / 1024:F1} KB";
+        return $"{bytes / (1024 * 1024):F1} MB";
     }
 }

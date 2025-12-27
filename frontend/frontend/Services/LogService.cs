@@ -62,13 +62,25 @@ public class LogService
         return await _http.GetStringAsync($"/api/logs/{id}/content");
     }
 
-     // -------------------------------------------------
-    // GET /api/logs/{id}/content
-    // Read log content as TEXT & Analyse text
+    // -------------------------------------------------
+    // POST /api/logs/{id}/analyze
+    // Queue log analysis job (non-blocking, background worker)
+    // -------------------------------------------------
+    public async Task<QueueAnalysisResponse> QueueAnalysisAsync(Guid id)
+    {
+        var response = await _http.PostAsync($"/api/logs/{id}/analyze", null);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<QueueAnalysisResponse>()
+               ?? new QueueAnalysisResponse { Message = "Analysis queued", LogId = id };
+    }
+
+    // -------------------------------------------------
+    // GET /api/logs/{id}/analyze
+    // Read log content as TEXT & Analyse text (LEGACY - Synchronous)
     // -------------------------------------------------
     public async Task<ChatResponse> AnalyzeAsync(Guid id)
     {
-        return await  _http.GetFromJsonAsync<ChatResponse>($"/api/logs/Analyze/{id}");
+        return await  _http.GetFromJsonAsync<ChatResponse>($"/api/logs/{id}/analyze");
     }
     // -------------------------------------------------
     // DELETE /api/logs/{id}
@@ -78,5 +90,18 @@ public class LogService
     {
         var response = await _http.DeleteAsync($"/api/logs/{id}");
         response.EnsureSuccessStatusCode();
+    }
+
+    // -------------------------------------------------
+    // DELETE /api/logs/all
+    // Delete all logs for the current user
+    // -------------------------------------------------
+    public async Task<int> DeleteAllAsync()
+    {
+        var response = await _http.DeleteAsync("/api/logs/all");
+        response.EnsureSuccessStatusCode();
+
+        var result = await response.Content.ReadFromJsonAsync<DeleteAllResponse>();
+        return result?.Deleted ?? 0;
     }
 }

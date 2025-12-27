@@ -1,73 +1,269 @@
 @page "/reports"
-@inject HttpClient Http
+@using Microsoft.AspNetCore.Components.WebAssembly.Authentication
+@using frontend.Services
+@using shared.Dto
+@inject ReportService ReportService
+@inject HubConnectionService HubService
+@inject IAccessTokenProvider TokenProvider
 @inject IJSRuntime JS
+@implements IAsyncDisposable
 
 <AuthorizeView>
     <Authorized>
 
-        <h3>Reports</h3>
+        <div class="container-fluid px-4 py-4">
 
-        @if (_loading)
-        {
-            <p>Loading reports…</p>
-        }
-        else if (_reports.Count == 0)
-        {
-            <p>No reports available.</p>
-        }
-        else
-        {
-            <table class="table table-striped">
-                <thead>
-                    <tr>
-                        <th>Report</th>
-                        <th>Log File</th>
-                        <th>Created</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var report in _reports)
+            <!-- HEADER -->
+            <div class="d-flex justify-content-between align-items-center flex-wrap mb-4">
+                <div>
+                    <h2 class="mb-1 fw-bold text-gradient">
+                        <i class="bi bi-file-earmark-bar-graph me-2"></i>Reports
+                    </h2>
+                    <p class="text-muted mb-0">View and manage analysis reports</p>
+                </div>
+
+                @if (_reports.Count > 0)
+                {
+                    <button class="btn btn-danger btn-lg shadow-sm" @onclick="ConfirmDeleteAll">
+                        <i class="bi bi-trash me-2"></i>Clear All Reports
+                    </button>
+                }
+            </div>
+
+            <!-- REPORTS LIST -->
+            <div class="card modern-card shadow-lg">
+                <div class="card-header gradient-header-dark d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="bi bi-list-ul me-2"></i>Your Reports
+                    </h5>
+                    <span class="badge bg-light text-dark px-3 py-2 rounded-pill">@_reports.Count Total</span>
+                </div>
+
+                <div class="card-body p-0">
+
+                    @if (_loading)
                     {
-                        <tr>
-                            <td>@report.Title</td>
-                            <td>@report.FileName</td>
-                            <td>@report.CreatedAtUtc.ToLocalTime()</td>
-                            <td>
-                                <button class="btn btn-sm btn-success me-2"
-                                        @onclick="() => OpenModal(report.Id)">
-                                    View
-                                </button>
-
-                                <button class="btn btn-sm btn-primary"
-                                        @onclick="() => DownloadReport(report.Id)">
-                                    Download
-                                </button>
-                            </td>
-                        </tr>
+                        <div class="text-center py-5">
+                            <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;"></div>
+                            <p class="text-muted fw-semibold">Loading reports...</p>
+                        </div>
                     }
-                </tbody>
-            </table>
-        }
+                    else if (_reports.Count == 0)
+                    {
+                        <div class="empty-state-box">
+                            <i class="bi bi-file-earmark-bar-graph display-1 text-muted mb-3"></i>
+                            <h5 class="fw-bold">No reports available</h5>
+                            <p class="text-muted">Upload and analyze logs to generate reports</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0 modern-table">
+                                <thead>
+                                    <tr>
+                                        <th><i class="bi bi-file-text me-2"></i>Report</th>
+                                        <th><i class="bi bi-paperclip me-2"></i>Log File</th>
+                                        <th><i class="bi bi-activity me-2"></i>Status</th>
+                                        <th><i class="bi bi-calendar me-2"></i>Created</th>
+                                        <th class="text-center"><i class="bi bi-gear me-2"></i>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var report in _reports)
+                                    {
+                                        <tr class="table-row-hover">
+                                            <td class="fw-semibold">@report.Title</td>
 
-        @* ================= MODAL (SAME AS LOG VIEWER) ================= *@
+                                            <td>
+                                                @if (report.FileName == "Log Deleted")
+                                                {
+                                                    <span class="text-muted fst-italic">@report.FileName</span>
+                                                }
+                                                else
+                                                {
+                                                    <span>@report.FileName</span>
+                                                }
+                                            </td>
+
+                                            <td>
+                                                @switch (report.Status)
+                                                {
+                                                    case ReportStatus.InProgress:
+                                                        <span class="badge bg-warning text-dark px-3 py-2">
+                                                            <i class="bi bi-hourglass-split me-1"></i>In Progress
+                                                        </span>
+                                                        break;
+
+                                                    case ReportStatus.Completed:
+                                                        <span class="badge bg-success px-3 py-2">
+                                                            <i class="bi bi-check-circle me-1"></i>Completed
+                                                        </span>
+                                                        break;
+
+                                                    case ReportStatus.Failed:
+                                                        <span class="badge bg-danger px-3 py-2">
+                                                            <i class="bi bi-x-circle me-1"></i>Failed
+                                                        </span>
+                                                        break;
+                                                }
+                                            </td>
+
+                                            <td class="text-muted">@report.CreatedAtUtc.ToLocalTime().ToString("g")</td>
+
+                                            <td class="text-center">
+                                                <div class="btn-group shadow-sm" role="group">
+                                                    <button class="btn btn-sm btn-success"
+                                                            @onclick="() => OpenModal(report.Id)"
+                                                            disabled="@(report.Status != ReportStatus.Completed)"
+                                                            title="View">
+                                                        <i class="bi bi-eye me-1"></i>View
+                                                    </button>
+
+                                                    <button class="btn btn-sm btn-info"
+                                                            @onclick="() => DownloadReport(report.Id)"
+                                                            disabled="@(report.Status != ReportStatus.Completed)"
+                                                            title="Download">
+                                                        <i class="bi bi-download me-1"></i>Download
+                                                    </button>
+
+                                                    <button class="btn btn-sm btn-danger"
+                                                            @onclick="() => ConfirmDelete(report.Id, report.Title)"
+                                                            title="Delete">
+                                                        <i class="bi bi-trash"></i>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+
+                </div>
+            </div>
+
+        </div>
+
+        <!-- VIEWER MODAL -->
         @if (_showContent)
         {
-            <div class="modal-backdrop show"></div>
+            <div class="custom-modal-backdrop" @onclick="CloseViewer"></div>
 
-            <div class="modal show d-block">
-                <div class="modal-dialog modal-xl">
-                    <div class="modal-content">
+            <div class="custom-modal">
+                <div class="custom-modal-dialog">
+                    <div class="custom-modal-content">
 
-                        <div class="modal-header">
-                            <h5 class="modal-title">@_activeReportTitle</h5>
-                            <button class="btn-close" @onclick="CloseViewer"></button>
+                        <div class="custom-modal-header">
+                            <h5 class="custom-modal-title">
+                                <i class="bi bi-file-earmark-bar-graph me-2"></i>@_activeReportTitle
+                            </h5>
+                            <button class="custom-modal-close" @onclick="CloseViewer">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
                         </div>
 
-                        <div class="modal-body">
-                            <div style="max-height:70vh; overflow:auto">
-                                @_reportContent
+                        <div class="custom-modal-body">
+                            @_reportContent
+                        </div>
+
+                        <div class="custom-modal-footer">
+                            <button class="btn btn-secondary" @onclick="CloseViewer">
+                                <i class="bi bi-x-lg me-2"></i>Close
+                            </button>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        }
+
+        <!-- DELETE CONFIRMATION MODAL -->
+        @if (_showDeleteConfirm)
+        {
+            <div class="custom-modal-backdrop" @onclick="CancelDelete"></div>
+
+            <div class="custom-modal">
+                <div class="custom-modal-dialog custom-modal-dialog-sm">
+                    <div class="custom-modal-content">
+
+                        <div class="custom-modal-header bg-danger">
+                            <h5 class="custom-modal-title">
+                                <i class="bi bi-exclamation-triangle-fill me-2"></i>Confirm Deletion
+                            </h5>
+                            <button class="custom-modal-close" @onclick="CancelDelete">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
+
+                        <div class="custom-modal-body">
+                            <div class="text-center mb-3">
+                                <i class="bi bi-trash text-danger" style="font-size: 3rem;"></i>
                             </div>
+                            <p class="mb-2">Are you sure you want to delete this report?</p>
+                            <div class="alert alert-light border">
+                                <i class="bi bi-file-earmark-bar-graph me-2"></i>
+                                <strong>@_reportToDeleteTitle</strong>
+                            </div>
+                            <p class="text-muted small mb-0">
+                                <i class="bi bi-info-circle me-1"></i>This action cannot be undone.
+                            </p>
+                        </div>
+
+                        <div class="custom-modal-footer">
+                            <button class="btn btn-light" @onclick="CancelDelete">
+                                <i class="bi bi-x-lg me-2"></i>Cancel
+                            </button>
+                            <button class="btn btn-danger" @onclick="DeleteReport">
+                                <i class="bi bi-trash me-2"></i>Delete
+                            </button>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        }
+
+        <!-- DELETE ALL CONFIRMATION MODAL -->
+        @if (_showDeleteAllConfirm)
+        {
+            <div class="custom-modal-backdrop" @onclick="CancelDeleteAll"></div>
+
+            <div class="custom-modal">
+                <div class="custom-modal-dialog custom-modal-dialog-sm">
+                    <div class="custom-modal-content">
+
+                        <div class="custom-modal-header bg-danger">
+                            <h5 class="custom-modal-title">
+                                <i class="bi bi-exclamation-triangle-fill me-2"></i>Clear All Reports
+                            </h5>
+                            <button class="custom-modal-close" @onclick="CancelDeleteAll">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
+
+                        <div class="custom-modal-body">
+                            <div class="text-center mb-3">
+                                <i class="bi bi-exclamation-octagon text-danger" style="font-size: 3rem;"></i>
+                            </div>
+                            <p class="mb-2">Are you sure you want to delete <strong class="text-danger">all @_reports.Count reports</strong>?</p>
+                            <div class="alert alert-danger border-danger">
+                                <i class="bi bi-shield-exclamation me-2"></i>
+                                <strong>Warning:</strong> This will permanently delete all your reports.
+                            </div>
+                            <p class="text-muted small mb-0">
+                                <i class="bi bi-info-circle me-1"></i>This action cannot be undone.
+                            </p>
+                        </div>
+
+                        <div class="custom-modal-footer">
+                            <button class="btn btn-light" @onclick="CancelDeleteAll">
+                                <i class="bi bi-x-lg me-2"></i>Cancel
+                            </button>
+                            <button class="btn btn-danger" @onclick="DeleteAllReports">
+                                <i class="bi bi-trash me-2"></i>Delete All
+                            </button>
                         </div>
 
                     </div>
@@ -78,37 +274,108 @@
     </Authorized>
 
     <NotAuthorized>
-        <p>You must be logged in to view reports.</p>
+        <div class="container mt-5">
+            <div class="alert alert-warning shadow-sm">
+                <i class="bi bi-lock me-2"></i>
+                You must be logged in to view reports.
+            </div>
+        </div>
     </NotAuthorized>
 </AuthorizeView>
 
 @code {
 
-    // ---------- State ----------
     private bool _loading = true;
     private bool _showContent = false;
+    private bool _showDeleteConfirm = false;
+    private bool _showDeleteAllConfirm = false;
 
     private List<ReportListItem> _reports = new();
 
     private MarkupString _reportContent = new("");
     private string _activeReportTitle = string.Empty;
 
-    // ---------- Lifecycle ----------
+    private Guid _reportToDeleteId = Guid.Empty;
+    private string _reportToDeleteTitle = string.Empty;
+
+    private IDisposable? _reportCreatedSubscription;
+    private IDisposable? _reportStatusChangedSubscription;
+    private IDisposable? _reportDeletedSubscription;
+    private IDisposable? _allReportsDeletedSubscription;
+
     protected override async Task OnInitializedAsync()
     {
-        _reports =
-            await Http.GetFromJsonAsync<List<ReportListItem>>("/api/reports")
-            ?? new();
+        await LoadReports();
+        await InitializeSignalR();
+    }
 
+    private async Task InitializeSignalR()
+    {
+        try
+        {
+            await HubService.InitializeAsync(async () =>
+            {
+                var tokenResult = await TokenProvider.RequestAccessToken();
+                if (tokenResult.TryGetToken(out var token))
+                {
+                    return token.Value;
+                }
+                return null;
+            });
+            await HubService.StartAsync();
+
+            _reportCreatedSubscription = HubService.On<ReportListItem>("ReportCreated", async (report) =>
+            {
+                _reports.Insert(0, report);
+                await InvokeAsync(StateHasChanged);
+            });
+
+            _reportStatusChangedSubscription = HubService.On<Guid, ReportStatus>("ReportStatusChanged", async (reportId, status) =>
+            {
+                var report = _reports.FirstOrDefault(r => r.Id == reportId);
+                if (report != null)
+                {
+                    report.Status = status;
+                    await InvokeAsync(StateHasChanged);
+                }
+            });
+
+            _reportDeletedSubscription = HubService.On<Guid>("ReportDeleted", async (reportId) =>
+            {
+                _reports.RemoveAll(r => r.Id == reportId);
+                await InvokeAsync(StateHasChanged);
+            });
+
+            _allReportsDeletedSubscription = HubService.On("AllReportsDeleted", async () =>
+            {
+                _reports.Clear();
+                await InvokeAsync(StateHasChanged);
+            });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"SignalR connection failed: {ex.Message}");
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _reportCreatedSubscription?.Dispose();
+        _reportStatusChangedSubscription?.Dispose();
+        _reportDeletedSubscription?.Dispose();
+        _allReportsDeletedSubscription?.Dispose();
+    }
+
+    private async Task LoadReports()
+    {
+        _loading = true;
+        _reports = await ReportService.ListAsync();
         _loading = false;
     }
 
-    // ---------- Actions ----------
     private async Task OpenModal(Guid reportId)
     {
-        var report =
-            await Http.GetFromJsonAsync<ReportDetail>($"/api/reports/{reportId}");
-
+        var report = await ReportService.GetAsync(reportId);
         if (report == null)
             return;
 
@@ -129,25 +396,76 @@
 
     private async Task DownloadReport(Guid reportId)
     {
-        var response = await Http.GetAsync($"/api/reports/{reportId}/download");
-        if (!response.IsSuccessStatusCode)
-            return;
+        try
+        {
+            var stream = await ReportService.DownloadAsync(reportId);
+            var bytes = new byte[stream.Length];
+            await stream.ReadAsync(bytes);
 
-        var bytes = await response.Content.ReadAsByteArrayAsync();
-
-        var fileName =
-            response.Content.Headers.ContentDisposition?.FileNameStar
-            ?? response.Content.Headers.ContentDisposition?.FileName
-            ?? $"report-{reportId}.txt";
-
-        await JS.InvokeVoidAsync(
-            "downloadFile",
-            fileName,
-            "text/plain",
-            bytes);
+            await JS.InvokeVoidAsync(
+                "downloadFile",
+                $"report-{reportId}.txt",
+                "text/plain",
+                bytes);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Download failed: {ex.Message}");
+        }
     }
 
-    // ---------- Markdown ----------
+    private void ConfirmDelete(Guid reportId, string title)
+    {
+        _reportToDeleteId = reportId;
+        _reportToDeleteTitle = title;
+        _showDeleteConfirm = true;
+    }
+
+    private void CancelDelete()
+    {
+        _reportToDeleteId = Guid.Empty;
+        _reportToDeleteTitle = string.Empty;
+        _showDeleteConfirm = false;
+    }
+
+    private async Task DeleteReport()
+    {
+        try
+        {
+            await ReportService.DeleteAsync(_reportToDeleteId);
+            _reports.RemoveAll(r => r.Id == _reportToDeleteId);
+            CancelDelete();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Delete failed: {ex.Message}");
+        }
+    }
+
+    private void ConfirmDeleteAll()
+    {
+        _showDeleteAllConfirm = true;
+    }
+
+    private void CancelDeleteAll()
+    {
+        _showDeleteAllConfirm = false;
+    }
+
+    private async Task DeleteAllReports()
+    {
+        try
+        {
+            var count = await ReportService.DeleteAllAsync();
+            _reports.Clear();
+            _showDeleteAllConfirm = false;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Delete all failed: {ex.Message}");
+        }
+    }
+
     private string ConvertToHtml(string markdown)
     {
         if (string.IsNullOrWhiteSpace(markdown))
@@ -155,6 +473,7 @@
 
         var pipeline = new Markdig.MarkdownPipelineBuilder()
             .UseAdvancedExtensions()
+            .DisableHtml()
             .Build();
 
         return Markdig.Markdown.ToHtml(markdown, pipeline);

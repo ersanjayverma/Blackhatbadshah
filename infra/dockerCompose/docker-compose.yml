@@ -8,13 +8,20 @@ services:
   blackhat-ai:
     image: blackhatbadshah.azurecr.io/vermasj/blackhatbadshahai
     environment:
-      - ANTHROPIC_API_KEY=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 
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
     ports:
       - "8501:8000"
     restart: always
 
   blackhat-be:
     image: blackhatbadshah.azurecr.io/vermasj/blackhatbadshahbe
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION:-ap-south-1}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-ap-south-1}
+      - ConnectionStrings__DefaultConnection=${ConnectionStrings__DefaultConnection}
+      - AzureBlob__ConnectionString=${AzureBlob__ConnectionString}
     ports:
       - "5092:8080"
     restart: always

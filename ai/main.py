@@ -101,9 +101,9 @@ GPT_MODELS = {
 
 TOGETHER_MODELS = {
     "together-llama-3-70b": "meta-llama/Llama-3-70b-chat-hf",
-    "together-llama-3-8b": "meta-llama/Llama-3-8b-chat-hf",
+    "together-llama-3.1-405b": "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo",
     "together-mixtral-8x7b": "mistralai/Mixtral-8x7B-Instruct-v0.1",
-    "together-qwen-2-72b": "Qwen/Qwen2-72B-Instruct",
+    "together-qwen": "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8",
 }
 
 ALL_MODELS = {**CLAUDE_MODELS, **GPT_MODELS, **TOGETHER_MODELS}

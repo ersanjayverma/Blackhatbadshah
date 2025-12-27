@@ -42,6 +42,37 @@
 
                 <div class="card-body p-4">
 
+                    <!-- MODEL SELECTOR -->
+                    <div class="mb-4">
+                        <label class="form-label fw-bold text-dark mb-3">
+                            <i class="bi bi-cpu me-2"></i>AI Model for Analysis
+                        </label>
+                        <div class="model-selector-wrapper">
+                            <select class="form-select form-select-lg model-selector-log" @bind="_selectedModel">
+                                <optgroup label="Claude (Anthropic)">
+                                    <option value="claude-sonnet-4-5">Claude Sonnet 4.5 (Recommended)</option>
+                                    <option value="claude-opus-4-5">Claude Opus 4.5 (Most Powerful)</option>
+                                    <option value="claude-sonnet-3-5">Claude Sonnet 3.5</option>
+                                </optgroup>
+                                <optgroup label="GPT (OpenAI)">
+                                    <option value="gpt-4o">GPT-4o</option>
+                                    <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                                    <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                                </optgroup>
+                                <optgroup label="Open Source (TogetherAI)">
+                                    <option value="together-llama-3-70b">Llama 3 70B</option>
+                                    <option value="together-llama-3.1-405b">Llama 3.1 405B</option>
+                                    <option value="together-mixtral-8x7b">Mixtral 8x7B</option>
+                                    <option value="together-qwen">Qwen</option>
+                                </optgroup>
+                            </select>
+                            <small class="text-muted d-block mt-2">
+                                <i class="bi bi-info-circle me-1"></i>
+                                Selected model will be used for all log analyses
+                            </small>
+                        </div>
+                    </div>
+
                     <div class="mb-4">
                         <label class="form-label fw-bold text-dark mb-3">
                             <i class="bi bi-file-earmark-arrow-up me-2"></i>Upload Log File
@@ -311,6 +342,7 @@
     private MarkupString _logContent = new("");
     private string _activeLogName = "";
     private string _pastedLogs = string.Empty;
+    private string _selectedModel = "claude-sonnet-4-5";
 
     private Guid _logToDeleteId = Guid.Empty;
     private string _logToDeleteName = string.Empty;
@@ -535,7 +567,7 @@
     {
         var confirmed = await JS.InvokeAsync<bool>(
             "confirm",
-            "Send this log for AI analysis? The report will be available in the Reports section soon."
+            $"Send this log for AI analysis using {GetModelDisplayName(_selectedModel)}?\n\nThe report will be available in the Reports section soon."
         );
 
         if (!confirmed)
@@ -543,16 +575,35 @@
 
         try
         {
-            var response = await LogsApi.QueueAnalysisAsync(id);
+            var response = await LogsApi.QueueAnalysisAsync(id, _selectedModel);
             await JS.InvokeVoidAsync("alert",
-                "Analysis job queued successfully!\n\n" +
-                "The report will be available in the Reports section soon. " +
-                "You will be notified via real-time updates when it's ready.");
+                $"Analysis job queued successfully!\n\n" +
+                $"Model: {GetModelDisplayName(_selectedModel)}\n" +
+                $"The report will be available in the Reports section soon. " +
+                $"You will be notified via real-time updates when it's ready.");
         }
         catch (Exception ex)
         {
             await JS.InvokeVoidAsync("alert", $"Failed to queue analysis: {ex.Message}");
         }
+    }
+
+    private string GetModelDisplayName(string modelValue)
+    {
+        return modelValue switch
+        {
+            "claude-sonnet-4-5" => "Claude Sonnet 4.5",
+            "claude-opus-4-5" => "Claude Opus 4.5",
+            "claude-sonnet-3-5" => "Claude Sonnet 3.5",
+            "gpt-4o" => "GPT-4o",
+            "gpt-4-turbo" => "GPT-4 Turbo",
+            "gpt-3.5-turbo" => "GPT-3.5 Turbo",
+            "together-llama-3-70b" => "Llama 3 70B",
+            "together-llama-3.1-405b"=> "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo",
+            "together-mixtral-8x7b" => "Mixtral 8x7B",
+            "together-qwen" => "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8",
+            _ => modelValue
+        };
     }
 
     private string ConvertToHtml(string markdown)

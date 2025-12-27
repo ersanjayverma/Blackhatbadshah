@@ -13,7 +13,7 @@ public class LogAnalyzer : ILogAnalyzer
         _http = http;
     }
 
-    public async Task<ChatResponse> AnalyzeAsync(Guid logId, string logContent)
+    public async Task<ChatResponse> AnalyzeAsync(Guid logId, string logContent, string? model = null)
 {
     if (string.IsNullOrWhiteSpace(logContent))
         return new ChatResponse("Analyzer failed: log content is empty");
@@ -26,6 +26,9 @@ public class LogAnalyzer : ILogAnalyzer
 
     var prompt = BuildPrompt();
 
+    // Use default model if none specified
+    var selectedModel = model ?? ModelMapping.DefaultModel;
+
     HttpResponseMessage response;
     try
     {
@@ -36,7 +39,8 @@ public class LogAnalyzer : ILogAnalyzer
                 thread_id = threadId,
                 message = prompt,
                 document_base64 = base64Content,
-                document_name = $"{logId}.txt"
+                document_name = $"{logId}.txt",
+                model = selectedModel
             });
     }
     catch (Exception ex)

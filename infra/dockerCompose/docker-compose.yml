@@ -9,6 +9,8 @@ services:
     image: blackhatbadshah.azurecr.io/vermasj/blackhatbadshahai
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - TOGETHER_API_KEY=${TOGETHER_API_KEY}
     ports:
       - "8501:8000"
     restart: always

@@ -36,16 +36,17 @@ public class LogAnalysisBackgroundWorker : BackgroundService
                 if (job == null)
                     continue;
 
-                var (logId, userId, accessToken) = job.Value;
+                var (logId, userId, accessToken, model) = job.Value;
 
-                _logger.LogInformation("Processing analysis job for LogId: {LogId}, UserId: {UserId}", logId, userId);
+                _logger.LogInformation("Processing analysis job for LogId: {LogId}, UserId: {UserId}, Model: {Model}",
+                    logId, userId, model ?? ModelMapping.DefaultModel);
 
                 // ✅ Set user's token in async context for handler to use
                 TokenContextService.CurrentToken = accessToken;
 
                 try
                 {
-                    await ProcessAnalysisJobAsync(logId, userId, stoppingToken);
+                    await ProcessAnalysisJobAsync(logId, userId, model, stoppingToken);
                 }
                 finally
                 {
@@ -62,7 +63,7 @@ public class LogAnalysisBackgroundWorker : BackgroundService
         _logger.LogInformation("LogAnalysisBackgroundWorker is stopping.");
     }
 
-    private async Task ProcessAnalysisJobAsync(Guid logId, string userId, CancellationToken cancellationToken)
+    private async Task ProcessAnalysisJobAsync(Guid logId, string userId, string? model, CancellationToken cancellationToken)
     {
         using var scope = _serviceProvider.CreateScope();
 
@@ -147,8 +148,8 @@ public class LogAnalysisBackgroundWorker : BackgroundService
                 return;
             }
 
-            // 5. Analyze log
-            var analysis = await analyzer.AnalyzeAsync(log.Id, logContent);
+            // 5. Analyze log with specified model
+            var analysis = await analyzer.AnalyzeAsync(log.Id, logContent, model);
             if (analysis == null)
             {
                 _logger.LogWarning("Analyzer returned no result for LogId: {LogId}", logId);

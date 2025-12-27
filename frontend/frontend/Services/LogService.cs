@@ -66,9 +66,10 @@ public class LogService
     // POST /api/logs/{id}/analyze
     // Queue log analysis job (non-blocking, background worker)
     // -------------------------------------------------
-    public async Task<QueueAnalysisResponse> QueueAnalysisAsync(Guid id)
+    public async Task<QueueAnalysisResponse> QueueAnalysisAsync(Guid id, string? model = null)
     {
-        var response = await _http.PostAsync($"/api/logs/{id}/analyze", null);
+        var requestBody = model != null ? JsonContent.Create(new AnalyzeLogRequest { Model = model }) : null;
+        var response = await _http.PostAsync($"/api/logs/{id}/analyze", requestBody);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<QueueAnalysisResponse>()
                ?? new QueueAnalysisResponse { Message = "Analysis queued", LogId = id };
@@ -78,9 +79,10 @@ public class LogService
     // GET /api/logs/{id}/analyze
     // Read log content as TEXT & Analyse text (LEGACY - Synchronous)
     // -------------------------------------------------
-    public async Task<ChatResponse> AnalyzeAsync(Guid id)
+    public async Task<ChatResponse> AnalyzeAsync(Guid id, string? model = null)
     {
-        return await  _http.GetFromJsonAsync<ChatResponse>($"/api/logs/{id}/analyze");
+        var url = model != null ? $"/api/logs/{id}/analyze?model={model}" : $"/api/logs/{id}/analyze";
+        return await  _http.GetFromJsonAsync<ChatResponse>(url);
     }
     // -------------------------------------------------
     // DELETE /api/logs/{id}

@@ -17,3 +17,4 @@ python-jose[cryptography]
 httpx
 stackapi
 aiosqlite<0.22.0
+langchain-openai

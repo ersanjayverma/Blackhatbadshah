@@ -2,11 +2,22 @@
 @using frontend.Component
 @using Microsoft.AspNetCore.Components.Authorization
 @inject ApiLoaderService Loader
+@inject IJSRuntime JS
+
+<!-- MOBILE HAMBURGER MENU TOGGLE -->
+<button class="nav-toggle" @onclick="ToggleMobileMenu" aria-label="Toggle navigation">
+    <span></span>
+    <span></span>
+    <span></span>
+</button>
+
+<!-- MOBILE OVERLAY -->
+<div class="mobile-overlay @(IsMobileMenuOpen ? "active" : "")" @onclick="CloseMobileMenu"></div>
 
 <div class="app-layout">
 
     <!-- SIDEBAR -->
-    <aside class="sidebar">
+    <aside class="sidebar @(IsMobileMenuOpen ? "mobile-open" : "")">
         <NavMenu />
     </aside>
 
@@ -77,6 +88,7 @@
 @code {
     private bool IsChatOpen;
     private bool IsFullscreen;
+    private bool IsMobileMenuOpen;
 
     private void ToggleChat()
     {
@@ -87,6 +99,16 @@
 
     private void ToggleFullscreen()
         => IsFullscreen = !IsFullscreen;
+
+    private void ToggleMobileMenu()
+    {
+        IsMobileMenuOpen = !IsMobileMenuOpen;
+    }
+
+    private void CloseMobileMenu()
+    {
+        IsMobileMenuOpen = false;
+    }
 
     protected override void OnInitialized()
     {

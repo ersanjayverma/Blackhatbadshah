@@ -315,7 +315,7 @@ public class LogsController : ControllerBase
     // Queue log analysis job (non-blocking)
     // -----------------------------------------
     [HttpPost("{id:guid}/analyze")]
-    public async Task<IActionResult> QueueAnalysis(Guid id)
+    public async Task<IActionResult> QueueAnalysis(Guid id, [FromBody] AnalyzeLogRequest? request = null)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
                     ?? User.FindFirstValue("sub");
@@ -338,14 +338,18 @@ public class LogsController : ControllerBase
 
         var accessToken = authHeader["Bearer ".Length..].Trim();
 
-        // Queue the analysis job with user's token
+        // Get model from request or use default
+        var model = request?.Model;
+
+        // Queue the analysis job with user's token and model
         try
         {
-            _analysisQueue.QueueAnalysisJob(id, userId, accessToken);
+            _analysisQueue.QueueAnalysisJob(id, userId, accessToken, model);
             return Accepted(new
             {
                 message = "Analysis job queued successfully. The report will be available in the Reports section soon.",
-                logId = id
+                logId = id,
+                model = model ?? ModelMapping.DefaultModel
             });
         }
         catch (Exception ex)
@@ -359,7 +363,7 @@ public class LogsController : ControllerBase
     // Analyze log content + save report as TEXT (LEGACY - Synchronous)
     // -----------------------------------------
     [HttpGet("{id:guid}/analyze")]
-    public async Task<IActionResult> AnalyseContent(Guid id)
+    public async Task<IActionResult> AnalyseContent(Guid id, [FromQuery] string? model = null)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
                     ?? User.FindFirstValue("sub");
@@ -397,8 +401,8 @@ public class LogsController : ControllerBase
         if (string.IsNullOrWhiteSpace(logContent))
             return BadRequest("Log content is empty");
 
-        // 4. Analyze log (AI / deterministic analyzer)
-        var analysis = await _analyzer.AnalyzeAsync(log.Id, logContent);
+        // 4. Analyze log (AI / deterministic analyzer) with optional model
+        var analysis = await _analyzer.AnalyzeAsync(log.Id, logContent, model);
         if (analysis == null)
             return StatusCode(500, "Analyzer returned no result");
 

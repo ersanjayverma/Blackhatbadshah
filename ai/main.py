@@ -17,6 +17,7 @@ from jose import jwt
 from langchain_community.utilities import StackExchangeAPIWrapper
 from langchain_community.tools import StackExchangeTool
 from langchain_anthropic import ChatAnthropic
+from langchain_openai import ChatOpenAI
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage,AIMessageChunk
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
@@ -81,18 +82,92 @@ async def verify_jwt(
 
 
 # =====================================================
-# LLM
+# LLM MODEL MAPPINGS
+# =====================================================
+# Centralized model configuration matching shared/DTO/ModelMapping.cs
+
+CLAUDE_MODELS = {
+    "claude-sonnet-4-5": "claude-sonnet-4-5-20250929",
+    "claude-opus-4-5": "claude-opus-4-5-20251101",
+    "claude-sonnet-3-5": "claude-3-5-sonnet-20241022",
+}
+
+GPT_MODELS = {
+    "gpt-4o": "gpt-4o",
+    "gpt-4-turbo": "gpt-4-turbo",
+    "gpt-4-turbo-preview": "gpt-4-turbo-preview",
+    "gpt-3.5-turbo": "gpt-3.5-turbo",
+}
+
+TOGETHER_MODELS = {
+    "together-llama-3-70b": "meta-llama/Llama-3-70b-chat-hf",
+    "together-llama-3-8b": "meta-llama/Llama-3-8b-chat-hf",
+    "together-mixtral-8x7b": "mistralai/Mixtral-8x7B-Instruct-v0.1",
+    "together-qwen-2-72b": "Qwen/Qwen2-72B-Instruct",
+}
+
+ALL_MODELS = {**CLAUDE_MODELS, **GPT_MODELS, **TOGETHER_MODELS}
+DEFAULT_MODEL = "claude-sonnet-4-5"
+
+# =====================================================
+# API KEYS
 # =====================================================
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+TOGETHER_API_KEY = os.environ.get("TOGETHER_API_KEY")
 
 if not ANTHROPIC_API_KEY:
     raise RuntimeError("ANTHROPIC_API_KEY is not set in environment")
 
-llm = ChatAnthropic(
-    model="claude-sonnet-4-5-20250929",
-    api_key=ANTHROPIC_API_KEY,
-    streaming=True,
-)
+if not OPENAI_API_KEY:
+    raise RuntimeError("OPENAI_API_KEY is not set in environment")
+
+# TogetherAI is optional
+if not TOGETHER_API_KEY:
+    print("Warning: TOGETHER_API_KEY is not set. TogetherAI models will not be available.")
+
+def get_llm(model_name: str = DEFAULT_MODEL):
+    """
+    Returns the appropriate LLM based on model name.
+
+    Supported providers:
+    - Anthropic (Claude models)
+    - OpenAI (GPT models)
+    - TogetherAI (Open source models)
+    """
+    # Get actual model name from mapping
+    actual_model = ALL_MODELS.get(model_name, model_name)
+
+    # Determine provider and create appropriate LLM
+    if model_name in CLAUDE_MODELS:
+        return ChatAnthropic(
+            model=actual_model,
+            api_key=ANTHROPIC_API_KEY,
+            streaming=True,
+        )
+    elif model_name in GPT_MODELS:
+        return ChatOpenAI(
+            model=actual_model,
+            api_key=OPENAI_API_KEY,
+            streaming=True,
+        )
+    elif model_name in TOGETHER_MODELS:
+        if not TOGETHER_API_KEY:
+            raise RuntimeError(f"TogetherAI model '{model_name}' requested but TOGETHER_API_KEY is not set")
+        return ChatOpenAI(
+            model=actual_model,
+            api_key=TOGETHER_API_KEY,
+            base_url="https://api.together.xyz/v1",
+            streaming=True,
+        )
+    else:
+        # Default to Claude Sonnet if model not recognized
+        print(f"Warning: Unknown model '{model_name}', defaulting to {DEFAULT_MODEL}")
+        return ChatAnthropic(
+            model=CLAUDE_MODELS[DEFAULT_MODEL],
+            api_key=ANTHROPIC_API_KEY,
+            streaming=True,
+        )
 
 # =====================================================
 # DOCUMENT PROCESSING CONSTANTS
@@ -176,12 +251,15 @@ wiki_api = WikipediaAPIWrapper(
 tool_wiki = WikipediaQueryRun(api_wrapper=wiki_api)
 
 tools = [tool_search, tool_wiki,tool_stack]
-llmt = llm.bind_tools(tools)
 
 # =====================================================
 # GRAPH NODES
 # =====================================================
-async def chat_node(state: Data):
+async def chat_node(state: Data, config):
+    # Get model name from config, default to claude-sonnet-4-5
+    model_name = config.get("configurable", {}).get("model", "claude-sonnet-4-5")
+    llm = get_llm(model_name)
+    llmt = llm.bind_tools(tools)
     response = await llmt.ainvoke(state["messages"])
     return {"messages": [response]}
 
@@ -207,6 +285,7 @@ class ChatRequest(BaseModel):
     message: str
     document_base64: str | None = None
     document_name: str | None = None
+    model: str = "claude-sonnet-4-5"  # Default model
 
 class ChatResponse(BaseModel):
     reply: str
@@ -260,7 +339,7 @@ async def chat(
         # Invoke graph with message (string or list)
         result = await request.app.state.graph.ainvoke(
             {"messages": [HumanMessage(content=message_content)]},
-            config={"configurable": {"thread_id": req.thread_id}},
+            config={"configurable": {"thread_id": req.thread_id, "model": req.model}},
         )
     except HTTPException:
         # Re-raise validation errors (with proper status codes)
@@ -307,7 +386,7 @@ async def chat_stream(
             # Use astream with "messages" mode
             async for chunk in request.app.state.graph.astream(
                 {"messages": [HumanMessage(content=req.message)]},
-                config={"configurable": {"thread_id": req.thread_id}},
+                config={"configurable": {"thread_id": req.thread_id, "model": req.model}},
                 stream_mode="messages",
             ):
                 # 1. Handle Tuple Unpacking: chunk is often (AIMessageChunk, metadata)

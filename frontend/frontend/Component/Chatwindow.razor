@@ -2,6 +2,30 @@
 @inject IHttpClientFactory ClientFactory
 @inject AuthenticationStateProvider AuthStateProvider
 @inject IJSRuntime JS
+
+<!-- MODEL SELECTOR -->
+<div class="model-selector">
+    <label for="model-dropdown">Model:</label>
+    <select id="model-dropdown" @bind="selectedModel">
+        <optgroup label="Claude (Anthropic)">
+            <option value="claude-sonnet-4-5">Claude Sonnet 4.5</option>
+            <option value="claude-opus-4-5">Claude Opus 4.5</option>
+            <option value="claude-sonnet-3-5">Claude Sonnet 3.5</option>
+        </optgroup>
+        <optgroup label="GPT (OpenAI)">
+            <option value="gpt-4o">GPT-4o</option>
+            <option value="gpt-4-turbo">GPT-4 Turbo</option>
+            <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+        </optgroup>
+        <optgroup label="Open Source (TogetherAI)">
+            <option value="together-llama-3-70b">Llama 3 70B</option>
+            <option value="together-llama-3-8b">Llama 3 8B</option>
+            <option value="together-mixtral-8x7b">Mixtral 8x7B</option>
+            <option value="together-qwen-2-72b">Qwen 2 72B</option>
+        </optgroup>
+    </select>
+</div>
+
 <!-- BODY -->
 <div class="chat-body">
     @foreach (var msg in messages)
@@ -26,6 +50,7 @@
 @code {
     private string input = string.Empty;
     private string? threadId;
+    private string selectedModel = "claude-sonnet-4-5";
     private readonly List<ChatMessage> messages = new();
 
     protected override async Task OnInitializedAsync()
@@ -52,7 +77,7 @@
     var http = ClientFactory.CreateClient("BlackHatBadshahAi");
     var request = new HttpRequestMessage(HttpMethod.Post, "chat/stream")
     {
-        Content = JsonContent.Create(new { thread_id = threadId, message = input })
+        Content = JsonContent.Create(new { thread_id = threadId, message = input, model = selectedModel })
     };
     input = string.Empty;
     request.SetBrowserResponseStreamingEnabled(true);

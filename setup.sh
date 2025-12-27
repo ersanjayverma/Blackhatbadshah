@@ -47,6 +47,16 @@ if [ -z "$ANTHROPIC_KEY" ]; then
     exit 1
 fi
 
+# OpenAI API Key
+read -p "OpenAI API Key: " OPENAI_KEY
+if [ -z "$OPENAI_KEY" ]; then
+    echo -e "${RED}Error: OpenAI API Key is required${NC}"
+    exit 1
+fi
+
+# TogetherAI API Key (Optional)
+read -p "TogetherAI API Key (optional, press Enter to skip): " TOGETHER_KEY
+
 # AWS Credentials
 read -p "AWS Access Key ID: " AWS_KEY
 read -p "AWS Secret Access Key: " -s AWS_SECRET
@@ -78,6 +88,12 @@ BLOB_CONN_STRING="DefaultEndpointsProtocol=https;AccountName=${STORAGE_ACCOUNT};
 cat > "$ENV_FILE" << EOF
 # Anthropic API Configuration
 ANTHROPIC_API_KEY=${ANTHROPIC_KEY}
+
+# OpenAI API Configuration
+OPENAI_API_KEY=${OPENAI_KEY}
+
+# TogetherAI API Configuration (Optional)
+TOGETHER_API_KEY=${TOGETHER_KEY}
 
 # AWS Configuration
 AWS_ACCESS_KEY_ID=${AWS_KEY}

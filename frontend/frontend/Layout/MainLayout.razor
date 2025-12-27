@@ -14,18 +14,18 @@
 <!-- MOBILE OVERLAY -->
 <div class="mobile-overlay @(IsMobileMenuOpen ? "active" : "")" @onclick="CloseMobileMenu"></div>
 
-<div class="app-layout">
+<div id="app-layout">
 
     <!-- SIDEBAR -->
-    <aside class="sidebar @(IsMobileMenuOpen ? "mobile-open" : "")">
+    <aside id="main-sidebar" class="@(IsMobileMenuOpen ? "mobile-open" : "")">
         <NavMenu />
     </aside>
 
     <!-- MAIN CONTENT -->
-    <section class="main">
+    <section id="main-content-area">
 
         <!-- PAGE CONTENT -->
-        <main class="content">
+        <main id="page-content">
             @Body
         </main>
 
@@ -47,7 +47,7 @@
                 <!-- FLOATING BUTTON -->
                 @if (!IsChatOpen)
                 {
-                    <button class="chat-fab" @onclick="ToggleChat">
+                    <button id="main-chat-fab" @onclick="ToggleChat">
                         <span class="material-icons">chat</span>
                     </button>
                 }
@@ -55,7 +55,7 @@
                 <!-- CHAT OVERLAY -->
                @if (IsChatOpen)
                 {
-                    <div class="chat-overlay @(IsFullscreen ? "fullscreen" : "")">
+                    <div id="main-chat-overlay" class="@(IsFullscreen ? "fullscreen" : "")">
 
                         <!-- HEADER -->
                         <div class="chat-header">

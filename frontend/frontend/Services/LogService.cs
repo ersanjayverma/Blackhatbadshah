@@ -79,7 +79,7 @@ public class LogService
     // GET /api/logs/{id}/analyze
     // Read log content as TEXT & Analyse text (LEGACY - Synchronous)
     // -------------------------------------------------
-    public async Task<ChatResponse> AnalyzeAsync(Guid id, string? model = null)
+    public async Task<ChatResponse?> AnalyzeAsync(Guid id, string? model = null)
     {
         var url = model != null ? $"/api/logs/{id}/analyze?model={model}" : $"/api/logs/{id}/analyze";
         return await  _http.GetFromJsonAsync<ChatResponse>(url);

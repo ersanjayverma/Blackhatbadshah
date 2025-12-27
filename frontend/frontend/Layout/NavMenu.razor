@@ -1,8 +1,8 @@
 ﻿@inject IJSRuntime JS
 
-<nav class="nav">
+<nav id="main-nav">
     <!-- Brand -->
-    <NavLink href="" Match="NavLinkMatch.All" class="nav-brand" @onclick="HandleNavClick">
+    <NavLink href="" Match="NavLinkMatch.All" id="nav-brand-logo" @onclick="HandleNavClick">
         <img src="/images/logobhb.png" alt="BlackHatBadshah" />
     </NavLink>
 
@@ -31,7 +31,7 @@
     {
         // Close mobile menu when a nav link is clicked
         await JS.InvokeVoidAsync("eval", @"
-            const sidebar = document.querySelector('.sidebar');
+            const sidebar = document.getElementById('main-sidebar');
             const overlay = document.querySelector('.mobile-overlay');
             if (sidebar) sidebar.classList.remove('mobile-open');
             if (overlay) overlay.classList.remove('active');

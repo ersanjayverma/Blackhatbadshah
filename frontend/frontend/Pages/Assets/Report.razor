@@ -9,152 +9,166 @@
 <AuthorizeView>
     <Authorized>
 
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h3 class="mb-0">Reports</h3>
-            @if (_reports.Count > 0)
-            {
-                <button class="btn btn-danger" @onclick="ConfirmDeleteAll">
-                    Clear All Reports
-                </button>
-            }
-        </div>
+        <div class="container-fluid px-4 py-4">
 
-        @if (_loading)
-        {
-            <p>Loading reports…</p>
-        }
-        else if (_reports.Count == 0)
-        {
-            <div class="alert alert-info">
-                <i class="bi bi-info-circle me-2"></i>
-                No reports available. Upload and analyze logs to generate reports.
+            <!-- HEADER -->
+            <div class="d-flex justify-content-between align-items-center flex-wrap mb-4">
+                <div>
+                    <h2 class="mb-1 fw-bold text-gradient">
+                        <i class="bi bi-file-earmark-bar-graph me-2"></i>Reports
+                    </h2>
+                    <p class="text-muted mb-0">View and manage analysis reports</p>
+                </div>
+
+                @if (_reports.Count > 0)
+                {
+                    <button class="btn btn-danger btn-lg shadow-sm" @onclick="ConfirmDeleteAll">
+                        <i class="bi bi-trash me-2"></i>Clear All Reports
+                    </button>
+                }
             </div>
-        }
-        else
-        {
-            <table class="table table-striped table-hover">
-                <thead class="table-dark">
-                    <tr>
-                        <th>Report</th>
-                        <th>Log File</th>
-                        <th>Status</th>
-                        <th>Created</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var report in _reports)
+
+            <!-- REPORTS LIST -->
+            <div class="card modern-card shadow-lg">
+                <div class="card-header gradient-header-dark d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="bi bi-list-ul me-2"></i>Your Reports
+                    </h5>
+                    <span class="badge bg-light text-dark px-3 py-2 rounded-pill">@_reports.Count Total</span>
+                </div>
+
+                <div class="card-body p-0">
+
+                    @if (_loading)
                     {
-                        <tr>
-                            <td>@report.Title</td>
-                            <td>
-                                @if (report.FileName == "Log Deleted")
-                                {
-                                    <span class="text-muted">@report.FileName</span>
-                                }
-                                else
-                                {
-                                    @report.FileName
-                                }
-                            </td>
-                            <td>
-                                @switch (report.Status)
-                                {
-                                    case ReportStatus.InProgress:
-                                        <span class="badge bg-warning text-dark">
-                                            <i class="bi bi-hourglass-split me-1"></i>In Progress
-                                        </span>
-                                        break;
-                                    case ReportStatus.Completed:
-                                        <span class="badge bg-success">
-                                            <i class="bi bi-check-circle me-1"></i>Completed
-                                        </span>
-                                        break;
-                                    case ReportStatus.Failed:
-                                        <span class="badge bg-danger">
-                                            <i class="bi bi-x-circle me-1"></i>Failed
-                                        </span>
-                                        break;
-                                }
-                            </td>
-                            <td>@report.CreatedAtUtc.ToLocalTime().ToString("g")</td>
-                            <td>
-                                <button class="btn btn-sm btn-success me-2"
-                                        @onclick="() => OpenModal(report.Id)"
-                                        disabled="@(report.Status != ReportStatus.Completed)">
-                                    <i class="bi bi-eye me-1"></i>View
-                                </button>
-
-                                <button class="btn btn-sm btn-primary me-2"
-                                        @onclick="() => DownloadReport(report.Id)"
-                                        disabled="@(report.Status != ReportStatus.Completed)">
-                                    <i class="bi bi-download me-1"></i>Download
-                                </button>
-
-                                <button class="btn btn-sm btn-danger"
-                                        @onclick="() => ConfirmDelete(report.Id, report.Title)">
-                                    <i class="bi bi-trash me-1"></i>Delete
-                                </button>
-                            </td>
-                        </tr>
+                        <div class="text-center py-5">
+                            <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;"></div>
+                            <p class="text-muted fw-semibold">Loading reports...</p>
+                        </div>
                     }
-                </tbody>
-            </table>
-        }
-
-        @* ================= REPORT VIEWER MODAL ================= *@
-        @if (_showContent)
-        {
-            <div class="modal-backdrop show"></div>
-
-            <div class="modal show d-block">
-                <div class="modal-dialog modal-xl">
-                    <div class="modal-content">
-
-                        <div class="modal-header bg-dark text-white">
-                            <h5 class="modal-title">
-                                <i class="bi bi-file-earmark-text me-2"></i>@_activeReportTitle
-                            </h5>
-                            <button class="btn-close btn-close-white" @onclick="CloseViewer"></button>
+                    else if (_reports.Count == 0)
+                    {
+                        <div class="empty-state-box">
+                            <i class="bi bi-file-earmark-bar-graph display-1 text-muted mb-3"></i>
+                            <h5 class="fw-bold">No reports available</h5>
+                            <p class="text-muted">Upload and analyze logs to generate reports</p>
                         </div>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0 modern-table">
+                                <thead>
+                                    <tr>
+                                        <th><i class="bi bi-file-text me-2"></i>Report</th>
+                                        <th><i class="bi bi-paperclip me-2"></i>Log File</th>
+                                        <th><i class="bi bi-activity me-2"></i>Status</th>
+                                        <th><i class="bi bi-calendar me-2"></i>Created</th>
+                                        <th class="text-center"><i class="bi bi-gear me-2"></i>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var report in _reports)
+                                    {
+                                        <tr class="table-row-hover">
+                                            <td class="fw-semibold">@report.Title</td>
 
-                        <div class="modal-body">
-                            <div style="max-height:70vh; overflow:auto; padding: 20px;">
-                                @_reportContent
-                            </div>
+                                            <td>
+                                                @if (report.FileName == "Log Deleted")
+                                                {
+                                                    <span class="text-muted fst-italic">@report.FileName</span>
+                                                }
+                                                else
+                                                {
+                                                    <span>@report.FileName</span>
+                                                }
+                                            </td>
+
+                                            <td>
+                                                @switch (report.Status)
+                                                {
+                                                    case ReportStatus.InProgress:
+                                                        <span class="badge bg-warning text-dark px-3 py-2">
+                                                            <i class="bi bi-hourglass-split me-1"></i>In Progress
+                                                        </span>
+                                                        break;
+
+                                                    case ReportStatus.Completed:
+                                                        <span class="badge bg-success px-3 py-2">
+                                                            <i class="bi bi-check-circle me-1"></i>Completed
+                                                        </span>
+                                                        break;
+
+                                                    case ReportStatus.Failed:
+                                                        <span class="badge bg-danger px-3 py-2">
+                                                            <i class="bi bi-x-circle me-1"></i>Failed
+                                                        </span>
+                                                        break;
+                                                }
+                                            </td>
+
+                                            <td class="text-muted">@report.CreatedAtUtc.ToLocalTime().ToString("g")</td>
+
+                                            <td class="text-center">
+                                                <div class="btn-group shadow-sm" role="group">
+                                                    <button class="btn btn-sm btn-success"
+                                                            @onclick="() => OpenModal(report.Id)"
+                                                            disabled="@(report.Status != ReportStatus.Completed)"
+                                                            title="View">
+                                                        <i class="bi bi-eye me-1"></i>View
+                                                    </button>
+
+                                                    <button class="btn btn-sm btn-info"
+                                                            @onclick="() => DownloadReport(report.Id)"
+                                                            disabled="@(report.Status != ReportStatus.Completed)"
+                                                            title="Download">
+                                                        <i class="bi bi-download me-1"></i>Download
+                                                    </button>
+
+                                                    <button class="btn btn-sm btn-danger"
+                                                            @onclick="() => ConfirmDelete(report.Id, report.Title)"
+                                                            title="Delete">
+                                                        <i class="bi bi-trash"></i>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
                         </div>
+                    }
 
-                    </div>
                 </div>
             </div>
-        }
 
-        @* ================= DELETE CONFIRMATION MODAL ================= *@
-        @if (_showDeleteConfirm)
+        </div>
+
+        <!-- VIEWER MODAL -->
+        @if (_showContent)
         {
-            <div class="modal-backdrop show"></div>
+            <div class="custom-modal-backdrop" @onclick="CloseViewer"></div>
 
-            <div class="modal show d-block">
-                <div class="modal-dialog">
-                    <div class="modal-content">
+            <div class="custom-modal">
+                <div class="custom-modal-dialog">
+                    <div class="custom-modal-content">
 
-                        <div class="modal-header bg-danger text-white">
-                            <h5 class="modal-title">
-                                <i class="bi bi-exclamation-triangle me-2"></i>Confirm Deletion
+                        <div class="custom-modal-header">
+                            <h5 class="custom-modal-title">
+                                <i class="bi bi-file-earmark-bar-graph me-2"></i>@_activeReportTitle
                             </h5>
-                            <button class="btn-close btn-close-white" @onclick="CancelDelete"></button>
+                            <button class="custom-modal-close" @onclick="CloseViewer">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
                         </div>
 
-                        <div class="modal-body">
-                            <p>Are you sure you want to delete this report?</p>
-                            <p class="fw-bold">@_reportToDeleteTitle</p>
-                            <p class="text-muted">This action cannot be undone.</p>
+                        <div class="custom-modal-body">
+                            @_reportContent
                         </div>
 
-                        <div class="modal-footer">
-                            <button class="btn btn-secondary" @onclick="CancelDelete">Cancel</button>
-                            <button class="btn btn-danger" @onclick="DeleteReport">
-                                <i class="bi bi-trash me-1"></i>Delete
+                        <div class="custom-modal-footer">
+                            <button class="btn btn-secondary" @onclick="CloseViewer">
+                                <i class="bi bi-x-lg me-2"></i>Close
                             </button>
                         </div>
 
@@ -163,31 +177,90 @@
             </div>
         }
 
-        @* ================= DELETE ALL CONFIRMATION MODAL ================= *@
+        <!-- DELETE CONFIRMATION MODAL -->
+        @if (_showDeleteConfirm)
+        {
+            <div class="custom-modal-backdrop" @onclick="CancelDelete"></div>
+
+            <div class="custom-modal">
+                <div class="custom-modal-dialog custom-modal-dialog-sm">
+                    <div class="custom-modal-content">
+
+                        <div class="custom-modal-header bg-danger">
+                            <h5 class="custom-modal-title">
+                                <i class="bi bi-exclamation-triangle-fill me-2"></i>Confirm Deletion
+                            </h5>
+                            <button class="custom-modal-close" @onclick="CancelDelete">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
+
+                        <div class="custom-modal-body">
+                            <div class="text-center mb-3">
+                                <i class="bi bi-trash text-danger" style="font-size: 3rem;"></i>
+                            </div>
+                            <p class="mb-2">Are you sure you want to delete this report?</p>
+                            <div class="alert alert-light border">
+                                <i class="bi bi-file-earmark-bar-graph me-2"></i>
+                                <strong>@_reportToDeleteTitle</strong>
+                            </div>
+                            <p class="text-muted small mb-0">
+                                <i class="bi bi-info-circle me-1"></i>This action cannot be undone.
+                            </p>
+                        </div>
+
+                        <div class="custom-modal-footer">
+                            <button class="btn btn-light" @onclick="CancelDelete">
+                                <i class="bi bi-x-lg me-2"></i>Cancel
+                            </button>
+                            <button class="btn btn-danger" @onclick="DeleteReport">
+                                <i class="bi bi-trash me-2"></i>Delete
+                            </button>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        }
+
+        <!-- DELETE ALL CONFIRMATION MODAL -->
         @if (_showDeleteAllConfirm)
         {
-            <div class="modal-backdrop show"></div>
+            <div class="custom-modal-backdrop" @onclick="CancelDeleteAll"></div>
 
-            <div class="modal show d-block">
-                <div class="modal-dialog">
-                    <div class="modal-content">
+            <div class="custom-modal">
+                <div class="custom-modal-dialog custom-modal-dialog-sm">
+                    <div class="custom-modal-content">
 
-                        <div class="modal-header bg-danger text-white">
-                            <h5 class="modal-title">
-                                <i class="bi bi-exclamation-triangle me-2"></i>Clear All Reports
+                        <div class="custom-modal-header bg-danger">
+                            <h5 class="custom-modal-title">
+                                <i class="bi bi-exclamation-triangle-fill me-2"></i>Clear All Reports
                             </h5>
-                            <button class="btn-close btn-close-white" @onclick="CancelDeleteAll"></button>
+                            <button class="custom-modal-close" @onclick="CancelDeleteAll">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
                         </div>
 
-                        <div class="modal-body">
-                            <p>Are you sure you want to delete <strong>all @_reports.Count reports</strong>?</p>
-                            <p class="text-danger fw-bold">This action cannot be undone!</p>
+                        <div class="custom-modal-body">
+                            <div class="text-center mb-3">
+                                <i class="bi bi-exclamation-octagon text-danger" style="font-size: 3rem;"></i>
+                            </div>
+                            <p class="mb-2">Are you sure you want to delete <strong class="text-danger">all @_reports.Count reports</strong>?</p>
+                            <div class="alert alert-danger border-danger">
+                                <i class="bi bi-shield-exclamation me-2"></i>
+                                <strong>Warning:</strong> This will permanently delete all your reports.
+                            </div>
+                            <p class="text-muted small mb-0">
+                                <i class="bi bi-info-circle me-1"></i>This action cannot be undone.
+                            </p>
                         </div>
 
-                        <div class="modal-footer">
-                            <button class="btn btn-secondary" @onclick="CancelDeleteAll">Cancel</button>
+                        <div class="custom-modal-footer">
+                            <button class="btn btn-light" @onclick="CancelDeleteAll">
+                                <i class="bi bi-x-lg me-2"></i>Cancel
+                            </button>
                             <button class="btn btn-danger" @onclick="DeleteAllReports">
-                                <i class="bi bi-trash me-1"></i>Delete All
+                                <i class="bi bi-trash me-2"></i>Delete All
                             </button>
                         </div>
 
@@ -199,13 +272,17 @@
     </Authorized>
 
     <NotAuthorized>
-        <p>You must be logged in to view reports.</p>
+        <div class="container mt-5">
+            <div class="alert alert-warning shadow-sm">
+                <i class="bi bi-lock me-2"></i>
+                You must be logged in to view reports.
+            </div>
+        </div>
     </NotAuthorized>
 </AuthorizeView>
 
 @code {
 
-    // ---------- State ----------
     private bool _loading = true;
     private bool _showContent = false;
     private bool _showDeleteConfirm = false;
@@ -224,7 +301,6 @@
     private IDisposable? _reportDeletedSubscription;
     private IDisposable? _allReportsDeletedSubscription;
 
-    // ---------- Lifecycle ----------
     protected override async Task OnInitializedAsync()
     {
         await LoadReports();
@@ -238,7 +314,6 @@
             await HubService.InitializeAsync();
             await HubService.StartAsync();
 
-            // Subscribe to real-time report events
             _reportCreatedSubscription = HubService.On<ReportListItem>("ReportCreated", async (report) =>
             {
                 _reports.Insert(0, report);
@@ -288,11 +363,9 @@
         _loading = false;
     }
 
-    // ---------- View Actions ----------
     private async Task OpenModal(Guid reportId)
     {
         var report = await ReportService.GetAsync(reportId);
-
         if (report == null)
             return;
 
@@ -331,7 +404,6 @@
         }
     }
 
-    // ---------- Delete Actions ----------
     private void ConfirmDelete(Guid reportId, string title)
     {
         _reportToDeleteId = reportId;
@@ -384,7 +456,6 @@
         }
     }
 
-    // ---------- Markdown ----------
     private string ConvertToHtml(string markdown)
     {
         if (string.IsNullOrWhiteSpace(markdown))
@@ -392,7 +463,7 @@
 
         var pipeline = new Markdig.MarkdownPipelineBuilder()
             .UseAdvancedExtensions()
-            .DisableHtml()  // Disable raw HTML for XSS protection
+            .DisableHtml()
             .Build();
 
         return Markdig.Markdown.ToHtml(markdown, pipeline);

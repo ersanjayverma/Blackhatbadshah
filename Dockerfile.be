@@ -9,13 +9,13 @@ WORKDIR /app
 EXPOSE 8080
 
 # -----------------------------
-# AWS credentials (DEV ONLY)
+# AWS credentials (from environment)
 # -----------------------------
-# ⚠️ Do NOT use this in production images
-ENV AWS_ACCESS_KEY_ID=AKIAZJNV77H4QUEUL5VO
-ENV AWS_SECRET_ACCESS_KEY=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
-ENV AWS_REGION=ap-south-1
-ENV AWS_DEFAULT_REGION=ap-south-1
+# Pass these at runtime via docker run -e or docker-compose
+ENV AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+ENV AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+ENV AWS_REGION=${AWS_REGION:-ap-south-1}
+ENV AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-ap-south-1}
 
 # =========================================================
 # Build stage

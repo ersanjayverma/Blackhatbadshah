@@ -917,19 +917,73 @@ input[type="file"].form-control::file-selector-button:hover {
 }
 
 /* ======================================================
-   LOADING PROGRESS
+   LOADING PROGRESS - WASM LOADER
 ====================================================== */
+
+/* Only center during loading */
+#app:has(.loading-progress) {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+}
+
+.loading-progress {
+    position: relative;
+    display: block;
+    width: 8rem;
+    height: 8rem;
+    margin: 2rem auto;
+    z-index: 10000;
+}
+
+.loading-progress circle {
+    fill: none;
+    stroke: rgba(0, 255, 65, 0.2);
+    stroke-width: 0.6rem;
+    transform-origin: 50% 50%;
+    transform: rotate(-90deg);
+}
 
 .loading-progress circle:last-child {
     stroke: var(--neon-green);
-    filter: drop-shadow(0 0 10px var(--neon-green));
+    stroke-dasharray: calc(3.141 * var(--blazor-load-percentage, 0%) * 0.8), 500%;
+    transition: stroke-dasharray 0.05s ease-in-out;
+    filter: drop-shadow(0 0 10px var(--neon-green))
+            drop-shadow(0 0 20px var(--neon-green));
+    animation: glowPulse 2s ease-in-out infinite;
+}
+
+@keyframes glowPulse {
+    0%, 100% {
+        filter: drop-shadow(0 0 10px var(--neon-green))
+                drop-shadow(0 0 20px var(--neon-green));
+    }
+    50% {
+        filter: drop-shadow(0 0 20px var(--neon-green))
+                drop-shadow(0 0 40px var(--neon-green));
+    }
 }
 
 .loading-progress-text {
+    position: relative;
+    text-align: center;
+    font-weight: bold;
     color: var(--neon-green);
     font-family: 'Orbitron', monospace;
     text-transform: uppercase;
     letter-spacing: 0.2em;
+    font-size: 0.9rem;
+    margin-top: 1rem;
+    text-shadow: 0 0 10px var(--neon-green),
+                 0 0 20px var(--neon-green);
+    z-index: 10001;
+}
+
+.loading-progress-text:after {
+    content: var(--blazor-load-percentage-text, "Loading");
 }
 
 /* ======================================================
@@ -1065,23 +1119,215 @@ input[type="file"].form-control::file-selector-button:hover {
 }
 
 /* ======================================================
-   BLAZOR ERROR UI
+   CUSTOM ERROR MODAL - BLACK HAT STYLE
 ====================================================== */
 
-#blazor-error-ui {
-    background: linear-gradient(90deg, var(--neon-pink), #ff0000);
-    color: #ffffff;
-    font-family: 'Orbitron', monospace;
-    border-top: 2px solid var(--neon-pink);
-    box-shadow: 0 0 30px var(--neon-pink);
+.error-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.95);
+    backdrop-filter: blur(10px);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: fadeIn 0.3s ease;
 }
 
-.blazor-error-boundary {
+.error-modal {
+    background: linear-gradient(135deg, #0f0f0f 0%, #000000 100%);
+    border: 2px solid var(--neon-pink);
+    max-width: 800px;
+    width: 90%;
+    max-height: 80vh;
+    overflow: hidden;
+    box-shadow: 0 0 50px rgba(255, 0, 110, 0.5),
+                0 0 100px rgba(255, 0, 110, 0.3);
+    clip-path: polygon(
+        20px 0, 100% 0, 100% calc(100% - 20px),
+        calc(100% - 20px) 100%, 0 100%, 0 20px
+    );
+    animation: glitchIn 0.5s ease;
+}
+
+@keyframes glitchIn {
+    0% {
+        opacity: 0;
+        transform: scale(0.8) translateY(20px);
+        filter: blur(10px);
+    }
+    50% {
+        transform: translateX(-5px);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+        filter: blur(0);
+    }
+}
+
+.error-modal-header {
+    background: linear-gradient(90deg,
+        rgba(255, 0, 110, 0.3) 0%,
+        rgba(255, 0, 0, 0.3) 100%
+    );
+    border-bottom: 2px solid var(--neon-pink);
+    padding: 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.error-modal-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 1.5rem;
+    font-weight: 900;
+    text-transform: uppercase;
+    color: var(--neon-pink);
+    text-shadow: 0 0 10px var(--neon-pink),
+                 0 0 20px var(--neon-pink);
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    letter-spacing: 0.15em;
+}
+
+.error-modal-title::before {
+    content: "⚠";
+    font-size: 2rem;
+    animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.7; transform: scale(1.1); }
+}
+
+.error-modal-close {
+    background: transparent;
+    border: 2px solid var(--neon-pink);
+    color: var(--neon-pink);
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 1.5rem;
+    font-family: 'Orbitron', monospace;
+    transition: all 0.3s ease;
+}
+
+.error-modal-close:hover {
     background: var(--neon-pink);
-    color: #ffffff;
-    font-family: 'Orbitron', monospace;
+    color: #000000;
+    box-shadow: 0 0 20px var(--neon-pink);
+    transform: rotate(90deg);
 }
 
-.blazor-error-boundary::after {
-    content: "[!] SYSTEM ERROR [!]";
+.error-modal-body {
+    padding: 2rem;
+    overflow-y: auto;
+    max-height: 60vh;
+    color: #c0c0c0;
+}
+
+.error-message {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 1.1rem;
+    color: var(--neon-pink);
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    background: rgba(255, 0, 110, 0.1);
+    border-left: 4px solid var(--neon-pink);
+    line-height: 1.6;
+}
+
+.error-stack-title {
+    font-family: 'Orbitron', monospace;
+    color: var(--neon-cyan);
+    text-transform: uppercase;
+    font-size: 0.9rem;
+    margin-bottom: 0.75rem;
+    letter-spacing: 0.1em;
+}
+
+.error-stack {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.85rem;
+    color: var(--neon-green);
+    background: rgba(0, 0, 0, 0.7);
+    border: 1px solid rgba(0, 255, 65, 0.3);
+    padding: 1rem;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    line-height: 1.5;
+}
+
+.error-modal-footer {
+    background: rgba(255, 0, 110, 0.05);
+    border-top: 2px solid rgba(255, 0, 110, 0.3);
+    padding: 1.5rem;
+    display: flex;
+    gap: 1rem;
+    justify-content: flex-end;
+}
+
+.error-btn {
+    padding: 0.75rem 1.5rem;
+    font-family: 'Orbitron', monospace;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    border: 2px solid;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    clip-path: polygon(
+        8px 0, 100% 0, 100% calc(100% - 8px),
+        calc(100% - 8px) 100%, 0 100%, 0 8px
+    );
+}
+
+.error-btn-reload {
+    background: var(--neon-pink);
+    color: #000000;
+    border-color: var(--neon-pink);
+}
+
+.error-btn-reload:hover {
+    box-shadow: 0 0 30px var(--neon-pink);
+    transform: translateY(-2px);
+}
+
+.error-btn-dismiss {
+    background: transparent;
+    color: var(--neon-cyan);
+    border-color: var(--neon-cyan);
+}
+
+.error-btn-dismiss:hover {
+    background: rgba(0, 240, 255, 0.1);
+    box-shadow: 0 0 20px var(--neon-cyan);
+    transform: translateY(-2px);
+}
+
+/* Scrollbar for error modal */
+.error-modal-body::-webkit-scrollbar {
+    width: 8px;
+}
+
+.error-modal-body::-webkit-scrollbar-track {
+    background: #000000;
+    border: 1px solid rgba(255, 0, 110, 0.2);
+}
+
+.error-modal-body::-webkit-scrollbar-thumb {
+    background: var(--neon-pink);
+    box-shadow: 0 0 10px var(--neon-pink);
+}
+
+.error-modal-body::-webkit-scrollbar-thumb:hover {
+    background: var(--neon-cyan);
+    box-shadow: 0 0 15px var(--neon-cyan);
 }

@@ -1,22 +1,50 @@
 {
-  "name": "frontend",
-  "short_name": "frontend",
+  "name": "BlackHat-Badshah - AI Log Analysis",
+  "short_name": "BlackHat-Badshah",
+  "description": "AI-powered log analysis and root-cause detection. Diagnose invisible failures and get actionable fixes for production systems.",
   "id": "./",
   "start_url": "./",
+  "scope": "/",
   "display": "standalone",
+  "orientation": "any",
   "background_color": "#ffffff",
   "theme_color": "#03173d",
   "prefer_related_applications": false,
+  "categories": ["productivity", "developer tools", "utilities"],
   "icons": [
     {
       "src": "icon-512.png",
       "type": "image/png",
-      "sizes": "512x512"
+      "sizes": "512x512",
+      "purpose": "any maskable"
     },
     {
       "src": "icon-192.png",
       "type": "image/png",
-      "sizes": "192x192"
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "favicon.png",
+      "type": "image/png",
+      "sizes": "48x48"
+    }
+  ],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Run Audit",
+      "short_name": "Audit",
+      "description": "Start a new log analysis audit",
+      "url": "/logs",
+      "icons": []
+    },
+    {
+      "name": "Security & Privacy",
+      "short_name": "Security",
+      "description": "View security and privacy information",
+      "url": "/security",
+      "icons": []
     }
   ]
 }

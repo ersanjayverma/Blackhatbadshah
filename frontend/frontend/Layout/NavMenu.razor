@@ -1,26 +1,41 @@
-﻿
+﻿@inject IJSRuntime JS
 
 <nav class="nav">
     <!-- Brand -->
-    <NavLink href="" Match="NavLinkMatch.All" class="nav-brand">
+    <NavLink href="" Match="NavLinkMatch.All" class="nav-brand" @onclick="HandleNavClick">
         <img src="/images/logobhb.png" alt="BlackHatBadshah" />
     </NavLink>
 
     <!-- Public -->
-    <NavLink href="" Match="NavLinkMatch.All" class="nav-link">Home</NavLink>
+    <NavLink href="" Match="NavLinkMatch.All" class="nav-link" @onclick="HandleNavClick">Home</NavLink>
 
     <AuthorizeView>
         <Authorized>
-            <NavLink href="reports" class="nav-link">Reports</NavLink>
-            <NavLink href="logs" class="nav-link">Log Ingester</NavLink>
-            <NavLink class="nav-link" href="logout">
+            <NavLink href="reports" class="nav-link" @onclick="HandleNavClick">Reports</NavLink>
+            <NavLink href="logs" class="nav-link" @onclick="HandleNavClick">Log Ingester</NavLink>
+            <NavLink href="security" class="nav-link" @onclick="HandleNavClick">Security & Privacy</NavLink>
+            <NavLink class="nav-link" href="logout" @onclick="HandleNavClick">
                 Logout
             </NavLink>
         </Authorized>
 
         <NotAuthorized>
-            <NavLink href="login" class="nav-link">Login</NavLink>
+            <NavLink href="security" class="nav-link" @onclick="HandleNavClick">Security & Privacy</NavLink>
+            <NavLink href="login" class="nav-link" @onclick="HandleNavClick">Login</NavLink>
         </NotAuthorized>
     </AuthorizeView>
 </nav>
+
+@code {
+    private async Task HandleNavClick()
+    {
+        // Close mobile menu when a nav link is clicked
+        await JS.InvokeVoidAsync("eval", @"
+            const sidebar = document.querySelector('.sidebar');
+            const overlay = document.querySelector('.mobile-overlay');
+            if (sidebar) sidebar.classList.remove('mobile-open');
+            if (overlay) overlay.classList.remove('active');
+        ");
+    }
+}
 

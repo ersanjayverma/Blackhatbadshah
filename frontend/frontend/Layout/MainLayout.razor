@@ -1,8 +1,15 @@
 ﻿@inherits LayoutComponentBase
 @using frontend.Component
+@using frontend.Services
 @using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.WebAssembly.Authentication
+@using shared.Dto
 @inject ApiLoaderService Loader
 @inject IJSRuntime JS
+@inject ToastService ToastService
+@inject HubConnectionService HubService
+@inject IAccessTokenProvider TokenProvider
+@implements IAsyncDisposable
 
 <!-- MOBILE HAMBURGER MENU TOGGLE -->
 <button class="nav-toggle" @onclick="ToggleMobileMenu" aria-label="Toggle navigation">
@@ -110,10 +117,30 @@
     </section>
 </div>
 
+<!-- TOAST NOTIFICATIONS CONTAINER -->
+<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 9999;">
+    @foreach (var toast in _toasts)
+    {
+        <div class="toast show @GetToastClass(toast.Type)" role="alert">
+            <div class="toast-header">
+                <i class="bi @GetToastIcon(toast.Type) me-2"></i>
+                <strong class="me-auto">@toast.Title</strong>
+                <small>@GetTimeAgo(toast.Timestamp)</small>
+                <button type="button" class="btn-close" @onclick="() => RemoveToast(toast)"></button>
+            </div>
+            <div class="toast-body">
+                @toast.Message
+            </div>
+        </div>
+    }
+</div>
+
 @code {
     private bool IsChatOpen;
     private bool IsFullscreen;
     private bool IsMobileMenuOpen;
+    private List<ToastMessage> _toasts = new();
+    private IDisposable? _reportStatusChangedSubscription;
 
     private void ToggleChat()
     {
@@ -135,13 +162,114 @@
         IsMobileMenuOpen = false;
     }
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         Loader.OnChange += StateHasChanged;
+        ToastService.OnShow += HandleToastShow;
+        await InitializeSignalR();
     }
 
-    public void Dispose()
+    private async Task InitializeSignalR()
+    {
+        try
+        {
+            await HubService.InitializeAsync(async () =>
+            {
+                var tokenResult = await TokenProvider.RequestAccessToken();
+                if (tokenResult.TryGetToken(out var token))
+                {
+                    return token.Value;
+                }
+                return null;
+            });
+            await HubService.StartAsync();
+
+            _reportStatusChangedSubscription = HubService.On<Guid, ReportStatus>("ReportStatusChanged", async (reportId, status) =>
+            {
+                var message = status switch
+                {
+                    ReportStatus.InProgress => "Report analysis is in progress",
+                    ReportStatus.Completed => "Report analysis completed successfully",
+                    ReportStatus.Failed => "Report analysis failed",
+                    _ => "Report status updated"
+                };
+
+                switch (status)
+                {
+                    case ReportStatus.InProgress:
+                        ToastService.ShowInfo(message, "Report Status");
+                        break;
+                    case ReportStatus.Completed:
+                        ToastService.ShowSuccess(message, "Report Ready");
+                        break;
+                    case ReportStatus.Failed:
+                        ToastService.ShowError(message, "Report Error");
+                        break;
+                }
+
+                await InvokeAsync(StateHasChanged);
+            });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"SignalR connection failed: {ex.Message}");
+        }
+    }
+
+    private void HandleToastShow(ToastMessage toast)
+    {
+        _toasts.Add(toast);
+        StateHasChanged();
+
+        // Auto-remove toast after 5 seconds
+        Task.Delay(5000).ContinueWith(_ =>
+        {
+            InvokeAsync(() =>
+            {
+                RemoveToast(toast);
+            });
+        });
+    }
+
+    private void RemoveToast(ToastMessage toast)
+    {
+        _toasts.Remove(toast);
+        StateHasChanged();
+    }
+
+    private string GetToastClass(ToastType type) => type switch
+    {
+        ToastType.Success => "bg-success text-white",
+        ToastType.Warning => "bg-warning text-dark",
+        ToastType.Error => "bg-danger text-white",
+        ToastType.Info => "bg-info text-white",
+        _ => ""
+    };
+
+    private string GetToastIcon(ToastType type) => type switch
+    {
+        ToastType.Success => "bi-check-circle-fill",
+        ToastType.Warning => "bi-exclamation-triangle-fill",
+        ToastType.Error => "bi-x-circle-fill",
+        ToastType.Info => "bi-info-circle-fill",
+        _ => ""
+    };
+
+    private string GetTimeAgo(DateTime timestamp)
+    {
+        var diff = DateTime.Now - timestamp;
+        if (diff.TotalSeconds < 60)
+            return "just now";
+        if (diff.TotalMinutes < 60)
+            return $"{(int)diff.TotalMinutes}m ago";
+        return $"{(int)diff.TotalHours}h ago";
+    }
+
+    public async ValueTask DisposeAsync()
     {
         Loader.OnChange -= StateHasChanged;
+        ToastService.OnShow -= HandleToastShow;
+        _reportStatusChangedSubscription?.Dispose();
+        await HubService.DisposeAsync();
     }
 }

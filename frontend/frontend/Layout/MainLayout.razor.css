@@ -1,0 +1,42 @@
+/* Toast Notifications Styling */
+.toast-container .toast {
+    min-width: 300px;
+    max-width: 400px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    border: none;
+    animation: slideInRight 0.3s ease-out;
+    margin-bottom: 0.75rem;
+}
+
+@keyframes slideInRight {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+.toast-container .toast .toast-header {
+    border-bottom: none;
+    font-weight: 600;
+}
+
+.toast-container .toast .toast-body {
+    font-size: 0.9rem;
+}
+
+.toast-container .toast .btn-close {
+    filter: brightness(0) invert(1);
+}
+
+.toast-container .toast.bg-warning .btn-close {
+    filter: brightness(0);
+}
+
+/* Ensure toasts appear above chat and modals */
+.toast-container {
+    z-index: 9999 !important;
+}

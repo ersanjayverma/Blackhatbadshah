@@ -26,6 +26,7 @@ builder.Services.AddScoped<LogService>();
 builder.Services.AddScoped<ReportService>();
 builder.Services.AddSingleton<ApiLoaderService>();
 builder.Services.AddSingleton<HubConnectionService>();
+builder.Services.AddSingleton<ToastService>();
 builder.Services.AddTransient<ApiLoaderHandler>();
 builder.Services.AddScoped<CustomAuthorizationMessageHandler>();
 builder.Services.AddBlazoredLocalStorage();

@@ -1,41 +1,46 @@
 ﻿@inject IJSRuntime JS
-
+@inject NavigationManager Nav
 <nav id="main-nav">
     <!-- Brand -->
-    <NavLink href="" Match="NavLinkMatch.All" id="nav-brand-logo" @onclick="HandleNavClick">
+    <NavLink href="" Match="NavLinkMatch.All" id="nav-brand-logo" >
         <img src="/images/logobhb.png" alt="BlackHatBadshah" />
     </NavLink>
 
     <!-- Public -->
-    <NavLink href="" Match="NavLinkMatch.All" class="nav-link" @onclick="HandleNavClick">Home</NavLink>
+    <NavLink href="/" Match="NavLinkMatch.All" class="nav-link" >Home</NavLink>
 
     <AuthorizeView>
         <Authorized>
-            <NavLink href="reports" class="nav-link" @onclick="HandleNavClick">Reports</NavLink>
-            <NavLink href="logs" class="nav-link" @onclick="HandleNavClick">Log Ingester</NavLink>
-            <NavLink href="security" class="nav-link" @onclick="HandleNavClick">Security & Privacy</NavLink>
-            <NavLink class="nav-link" href="logout" @onclick="HandleNavClick">
+            <NavLink href="reports" class="nav-link" >Reports</NavLink>
+            <NavLink href="logs" class="nav-link" >Log Ingester</NavLink>
+            <NavLink href="security" class="nav-link" >Security & Privacy</NavLink>
+            <NavLink class="nav-link" href="logout" >
                 Logout
             </NavLink>
         </Authorized>
 
         <NotAuthorized>
-            <NavLink href="security" class="nav-link" @onclick="HandleNavClick">Security & Privacy</NavLink>
-            <NavLink href="login" class="nav-link" @onclick="HandleNavClick">Login</NavLink>
+            <NavLink href="security" class="nav-link" >Security & Privacy</NavLink>
+            <NavLink href="login" class="nav-link" >Login/Register</NavLink>
         </NotAuthorized>
     </AuthorizeView>
 </nav>
 
 @code {
-    private async Task HandleNavClick()
+      protected override void OnInitialized()
     {
-        // Close mobile menu when a nav link is clicked
-        await JS.InvokeVoidAsync("eval", @"
-            const sidebar = document.getElementById('main-sidebar');
-            const overlay = document.querySelector('.mobile-overlay');
-            if (sidebar) sidebar.classList.remove('mobile-open');
-            if (overlay) overlay.classList.remove('active');
-        ");
+        Nav.LocationChanged += OnLocationChanged;
     }
+
+    private async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        await JS.InvokeVoidAsync("closeMobileNav");
+    }
+
+    public void Dispose()
+    {
+        Nav.LocationChanged -= OnLocationChanged;
+    }
+
 }
 

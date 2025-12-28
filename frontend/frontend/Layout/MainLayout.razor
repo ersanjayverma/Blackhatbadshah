@@ -76,9 +76,34 @@
             </Authorized>
 
             <NotAuthorized>
-                <button class="chat-fab disabled" disabled>
-                    <span class="material-icons">chat</span>
-                </button>
+                <!-- FLOATING BUTTON -->
+                @if (!IsChatOpen)
+                {
+                    <button id="main-chat-fab" @onclick="ToggleChat">
+                        <span class="material-icons">chat</span>
+                    </button>
+                }
+
+                <!-- CHAT OVERLAY -->
+               @if (IsChatOpen)
+                {
+                    <div id="main-chat-overlay" class="@(IsFullscreen ? "fullscreen" : "")">
+
+                        <!-- HEADER -->
+                        <div class="chat-header">
+                            <span>Blackhat AI</span>
+                            <div>
+                                <button title="Fullscreen"
+                                        @onclick="ToggleFullscreen">⛶</button>
+                                <button title="Close"
+                                        @onclick="ToggleChat">✕</button>
+                            </div>
+                        </div>
+
+                        <!-- CHAT CONTENT -->
+                        <Chatwindow />
+                    </div>
+                }
             </NotAuthorized>
         </AuthorizeView>
 

@@ -7,6 +7,8 @@
 <div class="model-selector">
     <label for="model-dropdown">Model:</label>
     <select id="model-dropdown" @bind="selectedModel">
+    <AuthorizeView>
+    <Authorized>
         <optgroup label="Claude (Anthropic)">
             <option value="claude-sonnet-4-5">Claude Sonnet 4.5</option>
             <option value="claude-opus-4-5">Claude Opus 4.5</option>
@@ -17,6 +19,8 @@
             <option value="gpt-4-turbo">GPT-4 Turbo</option>
             <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
         </optgroup>
+        </Authorized>
+        </AuthorizeView>
         <optgroup label="Open Source (TogetherAI)">
             <option value="together-llama-3-70b">Llama 3 70B</option>
             <option value="together-llama-3.1-405b">Llama 3.1 405B</option>
@@ -50,7 +54,7 @@
 @code {
     private string input = string.Empty;
     private string? threadId;
-    private string selectedModel = "claude-sonnet-4-5";
+    private string selectedModel = "together-qwen";
     private readonly List<ChatMessage> messages = new();
 
     protected override async Task OnInitializedAsync()

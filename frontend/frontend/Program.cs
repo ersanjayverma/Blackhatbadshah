@@ -35,9 +35,9 @@ builder.Services.AddHttpClient("BlackHatBadshahApi", client =>
     .AddHttpMessageHandler<CustomAuthorizationMessageHandler>();
 builder.Services.AddHttpClient("BlackHatBadshahAi", client => 
     client.BaseAddress = new Uri("https://ai.blackhatbadshah.com"))
-    .AddHttpMessageHandler<ApiLoaderHandler>()
     .AddHttpMessageHandler<CustomAuthorizationMessageHandler>();
 builder.Services.AddScoped(sp => sp.GetRequiredService<IHttpClientFactory>()
     .CreateClient("BlackHatBadshahApi"));
-
+builder.Services.AddHttpClient("BlackHatBadshahAi-free", client => 
+    client.BaseAddress = new Uri("https://ai.blackhatbadshah.com"));
 await builder.Build().RunAsync(); // Use RunAsync() for WASM

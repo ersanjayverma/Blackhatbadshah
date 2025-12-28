@@ -33,8 +33,15 @@ AUDIENCE = "blackhatbadshah-api"
 ALGORITHMS = ["RS256"]
 JWKS_URL = f"{AUTHORITY}/protocol/openid-connect/certs"
 
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 _jwks_cache = None
+async def optional_jwt(
+    creds: HTTPAuthorizationCredentials = Depends(security),
+):
+    if creds is None:
+        return None  # guest
+
+    return await verify_jwt(creds)
 
 @asynccontextmanager
 async def lifespan(api: FastAPI):
@@ -314,6 +321,25 @@ async def chat(
     token=Depends(verify_jwt),
 ):
     try:
+        model = req.model
+
+        # GUEST ALLOWED MODELS
+        if model  not in TOGETHER_MODELS:
+            #  EVERYTHING ELSE REQUIRES AUTH
+            if token is None:
+                raise HTTPException(
+                    status_code=401,
+                    detail="Authentication required for this model",
+                )
+
+            # Optional: enforce plan / limits
+            user_plan = token.get("plan", "free")
+
+            if user_plan == "free":
+                raise HTTPException(
+                    status_code=403,
+                    detail="Upgrade required for this model",
+                )
         # Build message content
         message_content = req.message
 
@@ -377,8 +403,27 @@ async def chat(
 async def chat_stream(
     req: ChatRequest,
     request: Request, 
-    token=Depends(verify_jwt),
-):
+    token=Depends(optional_jwt),
+):  
+    model = req.model
+
+        # GUEST ALLOWED MODELS
+    if model  not in TOGETHER_MODELS:
+        #  EVERYTHING ELSE REQUIRES AUTH
+        if token is None:
+            raise HTTPException(
+                status_code=401,
+                detail="Authentication required for this model",
+            )
+
+        # Optional: enforce plan / limits
+        user_plan = token.get("plan", "free")
+
+        if user_plan == "free":
+            raise HTTPException(
+                status_code=403,
+                detail="Upgrade required for this model",
+            )
     async def event_generator():
         try:
             yield ": connected\n\n"

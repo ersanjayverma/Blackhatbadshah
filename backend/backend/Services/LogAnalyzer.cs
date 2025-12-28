@@ -17,84 +17,85 @@ public class LogAnalyzer : ILogAnalyzer
         _http = http;
     }
 
-    public async Task<ChatResponse> AnalyzeAsync(Guid logId, string logContent, string? model = null)
-{
-    if (string.IsNullOrWhiteSpace(logContent))
-        return new ChatResponse("Analyzer failed: log content is empty");
-
-    var threadId = $"log-{logId}";
-
-    // Convert log content to base64
-    var contentBytes = Encoding.UTF8.GetBytes(logContent);
-    var base64Content = Convert.ToBase64String(contentBytes);
-
-    var prompt = BuildPrompt();
-
-    // Use default model if none specified
-    var selectedModel = model ?? ModelMapping.DefaultModel;
-
-    HttpResponseMessage response;
-    try
+    public async Task<ChatResponse> AnalyzeAsync(Guid logId, string logContent, string? model = null,bool isChart = false)
     {
-        response = await _http.PostAsJsonAsync(
-            "chat",
-            new
-            {
-                thread_id = threadId,
-                message = prompt,
-                document_base64 = base64Content,
-                document_name = $"{logId}.txt",
-                model = selectedModel
-            });
-    }
-    catch (Exception ex)
-    {
+        if (string.IsNullOrWhiteSpace(logContent))
+            return new ChatResponse("Analyzer failed: log content is empty");
+
+        var threadId = $"log-{logId}";
+
+        // Convert log content to base64
+        var contentBytes = Encoding.UTF8.GetBytes(logContent);
+        var base64Content = Convert.ToBase64String(contentBytes);
+
+        var prompt = BuildPrompt(isChart);
+        // Use default model if none specified
+        var selectedModel = model ?? ModelMapping.DefaultModel;
+
+        HttpResponseMessage response;
+        try
+        {
+            var endpoint = isChart ? "chart" : "chat";
+            response = await _http.PostAsJsonAsync(
+                endpoint,
+                new
+                {
+                    thread_id = threadId,
+                    message = prompt,
+                    document_base64 = base64Content,
+                    document_name = $"{logId}.txt",
+                    model = selectedModel
+                });
+        }
+        catch (Exception ex)
+        {
+            return new ChatResponse(
+                $"Analyzer failed: connection error ({ex.Message})");
+        }
+
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            // guest tried to access protected model
+            var body = await response.Content.ReadAsStringAsync();
         return new ChatResponse(
-            $"Analyzer failed: connection error ({ex.Message})");
-    }
+                $"Analyzer failed:({body})");
+        }
 
-    if (response.StatusCode == HttpStatusCode.Unauthorized)
-    {
-        // guest tried to access protected model
-        var body = await response.Content.ReadAsStringAsync();
-      return new ChatResponse(
-            $"Analyzer failed:({body})");
-    }
+        if (response.StatusCode == HttpStatusCode.Forbidden)
+        {
+            var body = await response.Content.ReadAsStringAsync();
+            return new ChatResponse(
+                $"Analyzer failed:({body})");
+        }
 
-    if (response.StatusCode == HttpStatusCode.Forbidden)
-    {
-        var body = await response.Content.ReadAsStringAsync();
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync();
         return new ChatResponse(
-            $"Analyzer failed:({body})");
+                $"Analyzer failed: AI Server Error :- ({body})");
+        }
+
+        ChatResponse? result;
+        try
+        {
+            result = await response.Content.ReadFromJsonAsync<ChatResponse>();
+        }
+        catch (Exception ex)
+        {
+            return new ChatResponse(
+                $"Analyzer failed: invalid response ({ex.Message})");
+        }
+
+        if (result == null || string.IsNullOrWhiteSpace(result.reply))
+            return new ChatResponse("Analyzer returned empty response");
+
+        return result;
     }
 
-    if (!response.IsSuccessStatusCode)
+    private static string BuildPrompt(bool isChart = false)
     {
-        var body = await response.Content.ReadAsStringAsync();
-       return new ChatResponse(
-            $"Analyzer failed: AI Server Error :- ({body})");
-    }
-
-    ChatResponse? result;
-    try
-    {
-        result = await response.Content.ReadFromJsonAsync<ChatResponse>();
-    }
-    catch (Exception ex)
-    {
-        return new ChatResponse(
-            $"Analyzer failed: invalid response ({ex.Message})");
-    }
-
-    if (result == null || string.IsNullOrWhiteSpace(result.reply))
-        return new ChatResponse("Analyzer returned empty response");
-
-    return result;
-}
-
-
-    private static string BuildPrompt()
-    {
+        
+        // ----- Analysis Mode -----
         return """
         You are a senior production engineer and site reliability expert performing comprehensive log analysis.
 
@@ -126,6 +127,7 @@ public class LogAnalyzer : ILogAnalyzer
         - Chronological sequence of significant events
         - Help establish cause-and-effect relationships
         - Identify patterns or cascading failures
+        - Include matrices that can be used to visulise key events
 
         ### 5. SYSTEM HEALTH INDICATORS
         - Performance metrics (if available in logs)
@@ -170,4 +172,7 @@ public class LogAnalyzer : ILogAnalyzer
         - Be concise but thorough - focus on actionable insights
         """;
     }
+
+
+
 }

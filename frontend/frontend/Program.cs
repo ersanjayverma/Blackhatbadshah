@@ -5,6 +5,8 @@ using frontend;
 using Microsoft.Extensions.Http;
 using Blazored.LocalStorage;
 using frontend.Services;
+using System.Text.Json;
+
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 
 builder.RootComponents.Add<App>("#app");

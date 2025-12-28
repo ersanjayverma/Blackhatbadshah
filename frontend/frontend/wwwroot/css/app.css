@@ -2325,3 +2325,36 @@ input[type="file"].form-control::file-selector-button:hover {
         font-size: 1.2rem;
     }
 }
+
+/* ======================================================
+   CHART CONTAINER STYLES
+====================================================== */
+
+.chart-container {
+    position: relative;
+    width: 100%;
+    max-width: 800px;
+    min-height: 400px;
+    margin: 1rem auto;
+    padding: 1.5rem;
+    background: var(--card-bg);
+    border: 1px solid var(--border-subtle);
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.chart-container canvas {
+    max-height: 400px;
+    min-height: 300px;
+    width: 100% !important;
+}
+
+@media (max-width: 768px) {
+    .chart-container {
+        padding: 1rem;
+    }
+    
+    .chart-container canvas {
+        max-height: 300px;
+    }
+}

@@ -101,6 +101,7 @@ public class LogAnalysisBackgroundWorker : BackgroundService
                 Title = $"Analysis Report – {log.FileName}",
                 Summary = "Analysis in progress...",
                 ReportPath = $"reports/{log.Id}/{reportId}.txt",
+                ChartPath = $"reports/{log.Id}/{reportId}.json",
                 Status = ReportStatus.InProgress,
                 CreatedAtUtc = DateTime.UtcNow
             };
@@ -163,14 +164,40 @@ public class LogAnalysisBackgroundWorker : BackgroundService
                 ?? throw new InvalidOperationException("Analysis produced no text");
 
             // 7. Upload analysis to blob
+           
             await using (var textStream = new MemoryStream(Encoding.UTF8.GetBytes(analysisText)))
             {
                 await container
                     .GetBlobClient(report.ReportPath)
                     .UploadAsync(textStream, overwrite: true, cancellationToken: cancellationToken);
             }
+            // 8. Repeat for Chart
+            var chart = await analyzer.AnalyzeAsync(log.Id, analysisText, "together-qwen", isChart: true);
+            if (chart == null)
+            {
+                _logger.LogWarning("Chart returned no result for LogId: {LogId}", logId);
+            }
+            var chartText = chart?.reply;
+              if (string.IsNullOrWhiteSpace(chartText))
+                    {
+                        var sb = new StringBuilder();
+                        sb.AppendLine("{");
+                        sb.AppendLine("  \"chartType\": \"None\",");
+                        sb.AppendLine("  \"title\": \"\",");
+                        sb.AppendLine("  \"xAxis\": { \"labels\": [] },");
+                        sb.AppendLine("  \"series\": []");
+                        sb.AppendLine("}");
 
-            // 8. Update report status to completed
+                        chartText = sb.ToString();
+                    }
+
+            await using (var textStream = new MemoryStream(Encoding.UTF8.GetBytes(chartText)))
+            {
+                await container
+                    .GetBlobClient(report.ChartPath)
+                    .UploadAsync(textStream, overwrite: true, cancellationToken: cancellationToken);
+            }
+            // 9. Update report status to completed
             report.Status = ReportStatus.Completed;
             report.Summary = analysisText.Length > 500
                 ? analysisText[..500]
@@ -179,8 +206,10 @@ public class LogAnalysisBackgroundWorker : BackgroundService
             await db.SaveChangesAsync(cancellationToken);
 
             // 9. Notify completion
-            await hubNotification.NotifyReportStatusChangedAsync(userId, reportId.Value, ReportStatus.Completed);
-
+            if(!analysisText.StartsWith("Analyzer failed:", StringComparison.Ordinal))
+                await hubNotification.NotifyReportStatusChangedAsync(userId, reportId.Value, ReportStatus.Completed);
+            else
+                await hubNotification.NotifyReportStatusChangedAsync(userId, reportId.Value, ReportStatus.Failed);
             _logger.LogInformation("Successfully completed analysis for LogId: {LogId}, ReportId: {ReportId}", logId, reportId);
         }
         catch (Exception ex)

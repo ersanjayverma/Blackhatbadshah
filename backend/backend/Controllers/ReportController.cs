@@ -94,11 +94,35 @@ public class ReportsController : ControllerBase
             content = await reader.ReadToEndAsync();
         }
 
+        // Fetch chart data if available
+        string? chartData = null;
+        if (!string.IsNullOrWhiteSpace(report.ChartPath))
+        {
+            var chartBlob = container.GetBlobClient(report.ChartPath);
+            if (await chartBlob.ExistsAsync())
+            {
+                await using var chartStream = await chartBlob.OpenReadAsync();
+                using var chartReader = new StreamReader(chartStream);
+                chartData = await chartReader.ReadToEndAsync();
+                Console.WriteLine($"[Chart Debug] Report {id}: ChartPath={report.ChartPath}, DataLength={chartData?.Length ?? 0}");
+                Console.WriteLine($"[Chart Debug] Chart data content: {chartData}");
+            }
+            else
+            {
+                Console.WriteLine($"[Chart Debug] Report {id}: Chart blob does not exist at path: {report.ChartPath}");
+            }
+        }
+        else
+        {
+            Console.WriteLine($"[Chart Debug] Report {id}: ChartPath is null or empty");
+        }
+
         return new ReportDetail
         {
             Id = report.Id,
             Title = report.Title,
             Content = content,
+            ChartData = chartData,
             Status = report.Status
         };
     }
@@ -168,9 +192,15 @@ public class ReportsController : ControllerBase
                 ?? throw new InvalidOperationException("AzureBlob:Container missing");
 
             var container = _blobService.GetBlobContainerClient(containerName);
-            var blob = container.GetBlobClient(report.ReportPath);
 
-            await blob.DeleteIfExistsAsync();
+            var reportBlob = container.GetBlobClient(report.ReportPath);
+            await reportBlob.DeleteIfExistsAsync();
+
+            if (!string.IsNullOrWhiteSpace(report.ChartPath))
+            {
+                var chartBlob = container.GetBlobClient(report.ChartPath);
+                await chartBlob.DeleteIfExistsAsync();
+            }
         }
         catch (Exception ex)
         {
@@ -216,8 +246,14 @@ public class ReportsController : ControllerBase
         {
             try
             {
-                var blob = container.GetBlobClient(report.ReportPath);
-                await blob.DeleteIfExistsAsync();
+                var reportBlob = container.GetBlobClient(report.ReportPath);
+                await reportBlob.DeleteIfExistsAsync();
+
+                if (!string.IsNullOrWhiteSpace(report.ChartPath))
+                {
+                    var chartBlob = container.GetBlobClient(report.ChartPath);
+                    await chartBlob.DeleteIfExistsAsync();
+                }
             }
             catch (Exception ex)
             {

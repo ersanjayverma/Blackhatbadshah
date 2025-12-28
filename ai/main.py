@@ -397,6 +397,71 @@ async def chat(
     # Fallback (should rarely happen)
     return ChatResponse(reply=str(last))
 
+@api.post("/chart", response_model=ChatResponse)
+async def chart(
+    req: ChatRequest,
+    token = Depends(verify_jwt),
+):
+    try:
+        model = req.model
+
+        # GUEST ALLOWED MODELS
+        if model not in TOGETHER_MODELS:
+            if token is None:
+                raise HTTPException(
+                    status_code=401,
+                    detail="Authentication required for this model",
+                )
+
+            user_plan = token.get("plan", "free")
+
+            if user_plan == "free":
+                raise HTTPException(
+                    status_code=403,
+                    detail="Upgrade required for this model",
+                )
+
+        # -----------------------------
+        # BUILD MESSAGE CONTENT
+        # -----------------------------
+        message_content = req.message
+
+        if req.document_base64:
+            decoded_text, filename = validate_and_decode_document(
+                req.document_base64,
+                req.document_name
+            )
+
+            message_content = (
+                f"Document ({filename}):\n\n{decoded_text}\n\n---\n\n{req.message}"
+            )
+
+        # -----------------------------
+        # DIRECT LLM CALL (NO GRAPH)
+        # -----------------------------
+        llm = get_llm(model)
+
+        ai_message = await llm.ainvoke(
+            [HumanMessage(content=message_content)]
+        )
+
+        reply = ai_message.content
+
+        # Claude sometimes returns list segments
+        if isinstance(reply, list):
+            reply = "".join(
+                part.get("text", "") if isinstance(part, dict) else str(part)
+                for part in reply
+            )
+
+        reply = str(reply)
+
+        return ChatResponse(reply=reply)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        return ChatResponse(reply=f"Analyzer failed: {str(e)}")
 
 
 @api.post("/chat/stream")

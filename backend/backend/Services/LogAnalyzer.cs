@@ -1,6 +1,10 @@
 using System.Text;
 using System.Text.Json;
 using shared.Dto;
+using System.Net;
+using System.Net.Http;
+using System.Net.Http.Json;
+using Microsoft.Extensions.Http;
 
 namespace backend.Services;
 
@@ -49,9 +53,27 @@ public class LogAnalyzer : ILogAnalyzer
             $"Analyzer failed: connection error ({ex.Message})");
     }
 
-    if (!response.IsSuccessStatusCode)
+    if (response.StatusCode == HttpStatusCode.Unauthorized)
+    {
+        // guest tried to access protected model
+        var body = await response.Content.ReadAsStringAsync();
+      return new ChatResponse(
+            $"Analyzer failed:({body})");
+    }
+
+    if (response.StatusCode == HttpStatusCode.Forbidden)
+    {
+        var body = await response.Content.ReadAsStringAsync();
         return new ChatResponse(
-            $"Analyzer failed: HTTP {(int)response.StatusCode}");
+            $"Analyzer failed:({body})");
+    }
+
+    if (!response.IsSuccessStatusCode)
+    {
+        var body = await response.Content.ReadAsStringAsync();
+       return new ChatResponse(
+            $"Analyzer failed: AI Server Error :- ({body})");
+    }
 
     ChatResponse? result;
     try

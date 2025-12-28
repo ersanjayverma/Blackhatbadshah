@@ -45,15 +45,15 @@
                     {
                         <div class="text-center py-5">
                             <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;"></div>
-                            <p class="text-muted fw-semibold">Loading reports...</p>
+                            <p class="fw-semibold">Loading reports...</p>
                         </div>
                     }
                     else if (_reports.Count == 0)
                     {
                         <div class="empty-state-box">
-                            <i class="bi bi-file-earmark-bar-graph display-1 text-muted mb-3"></i>
+                            <i class="bi bi-file-earmark-bar-graph display-1 mb-3"></i>
                             <h5 class="fw-bold">No reports available</h5>
-                            <p class="text-muted">Upload and analyze logs to generate reports</p>
+                            <p>Upload and analyze logs to generate reports</p>
                         </div>
                     }
                     else
@@ -78,7 +78,7 @@
                                             <td>
                                                 @if (report.FileName == "Log Deleted")
                                                 {
-                                                    <span class="text-muted fst-italic">@report.FileName</span>
+                                                    <span class="fst-italic">@report.FileName</span>
                                                 }
                                                 else
                                                 {
@@ -109,7 +109,7 @@
                                                 }
                                             </td>
 
-                                            <td class="text-muted">@report.CreatedAtUtc.ToLocalTime().ToString("g")</td>
+                                            <td>@report.CreatedAtUtc.ToLocalTime().ToString("g")</td>
 
                                             <td class="text-center">
                                                 <div class="btn-group shadow-sm" role="group">
@@ -206,7 +206,7 @@
                                 <i class="bi bi-file-earmark-bar-graph me-2"></i>
                                 <strong>@_reportToDeleteTitle</strong>
                             </div>
-                            <p class="text-muted small mb-0">
+                            <p class="small mb-0">
                                 <i class="bi bi-info-circle me-1"></i>This action cannot be undone.
                             </p>
                         </div>
@@ -252,7 +252,7 @@
                                 <i class="bi bi-shield-exclamation me-2"></i>
                                 <strong>Warning:</strong> This will permanently delete all your reports.
                             </div>
-                            <p class="text-muted small mb-0">
+                            <p class="small mb-0">
                                 <i class="bi bi-info-circle me-1"></i>This action cannot be undone.
                             </p>
                         </div>

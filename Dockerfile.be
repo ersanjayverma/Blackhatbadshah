@@ -7,6 +7,20 @@
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
 WORKDIR /app
 EXPOSE 8080
+# Install wkhtmltopdf IN RUNTIME IMAGE
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    wkhtmltopdf \
+    fontconfig \
+    libfreetype6 \
+    libjpeg-turbo8 \
+    libpng16-16 \
+    libx11-6 \
+    libxcb1 \
+    libxext6 \
+    libxrender1 \
+    xfonts-75dpi \
+    xfonts-base \
+    && rm -rf /var/lib/apt/lists/*
 
 # -----------------------------
 # AWS credentials (from environment)

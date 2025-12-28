@@ -404,8 +404,8 @@
 
             await JS.InvokeVoidAsync(
                 "downloadFile",
-                $"report-{reportId}.txt",
-                "text/plain",
+                $"BHB-ANALYSIS-REPORT-{reportId}.pdf",
+                "application/pdf",
                 bytes);
         }
         catch (Exception ex)

@@ -7,7 +7,7 @@ using backend.Data.Entities;
 using backend.Services;
 using shared.Dto;
 using System.Security.Claims;
-
+using System.IO;
 namespace backend.Controllers;
 
 [ApiController]
@@ -131,10 +131,17 @@ public class ReportsController : ControllerBase
         if (!await blob.ExistsAsync())
             return NotFound("Report file not found");
 
-        var stream = await blob.OpenReadAsync();
-        var fileName = Path.GetFileName(report.ReportPath);
+        await using var stream = await blob.OpenReadAsync();
+        using var reader = new StreamReader(stream);
+        var markdown = await reader.ReadToEndAsync();
 
-        return File(stream, "text/plain", fileName);
+        var originalName = Path.GetFileNameWithoutExtension(report.ReportPath);
+        var fileName = $"{originalName}.pdf";
+
+        var pdfBytes = PdfGenerator.FromMarkdown(markdown);
+
+        return File(pdfBytes, "application/pdf", fileName);
+
     }
 
     // ----------------------------------------------------

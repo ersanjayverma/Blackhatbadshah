@@ -1,49 +1,50 @@
 /* ===============================
-   CHAT FAB & OVERLAY
+   CHAT FAB & OVERLAY - CLAUDE STYLE
    =============================== */
-.chat-fab {
+#main-chat-fab {
     position: fixed;
     bottom: 24px;
     right: 24px;
     width: 60px;
     height: 60px;
     border-radius: 50%;
-    background: linear-gradient(135deg, #1f6feb 0%, #1557b0 100%);
+    background: #d97706;
     color: #fff;
     border: none;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    box-shadow: 0 8px 24px rgba(31, 111, 235, 0.4), 0 4px 12px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     z-index: 1200;
-    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease;
+    transition: all 0.2s ease;
 }
 
-.chat-fab:hover {
-    transform: scale(1.1) rotate(5deg);
-    box-shadow: 0 12px 32px rgba(31, 111, 235, 0.6), 0 6px 16px rgba(0, 0, 0, 0.6);
+#main-chat-fab:hover {
+    transform: scale(1.05);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
 }
 
-.chat-fab:active {
-    transform: scale(0.95) rotate(0deg);
+#main-chat-fab:active {
+    transform: scale(0.95);
 }
 
-.chat-overlay {
+#main-chat-overlay {
     position: fixed;
     bottom: 100px;
     right: 24px;
     width: 360px;
     height: 70vh;
     max-height: 520px;
-    background: #0f1115;
-    border-radius: 16px;
+    background: #1a1a1a;
+    border-radius: 12px;
+    border: 1px solid #3a3a3a;
     display: flex;
     flex-direction: column;
-    box-shadow: 0 16px 50px rgba(0, 0, 0, 0.6);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
     z-index: 1200;
     overflow: hidden;
-    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     animation: slideUp 0.25s ease-out;
 }
 
@@ -60,32 +61,32 @@
 
 .chat-header {
     padding: 14px 16px;
-    background: #141821;
-    color: #e6e9ef;
+    background: #2a2a2a;
+    color: #e5e5e5;
     font-weight: 600;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 1px solid #1f2430;
+    border-bottom: 1px solid #3a3a3a;
 }
 
 .chat-header button {
     background: none;
     border: none;
-    color: #9aa4b2;
+    color: #a3a3a3;
     cursor: pointer;
     font-size: 14px;
 }
 
 .chat-header button:hover {
-    color: #fff;
+    color: #e5e5e5;
 }
 
 .chat-body {
     flex: 1;
     padding: 16px;
     overflow-y: auto;
-    background-color: #0f1115;
+    background-color: #1a1a1a;
     display: flex;
     flex-direction: column;
     gap: 12px;
@@ -101,56 +102,82 @@
 
 .chat-msg.sent {
     align-self: flex-end;
-    background: linear-gradient(135deg, #1f6feb 0%, #1557b0 100%);
+    background: #d97706;
     color: #fff;
     border-bottom-right-radius: 4px;
-    box-shadow: 0 2px 8px rgba(31, 111, 235, 0.3), 0 1px 3px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+    border-right: 3px solid #ea580c;
+    position: relative;
+}
+
+.chat-msg.sent::before {
+    content: "You";
+    font-weight: 600;
+    font-size: 0.7rem;
+    opacity: 0.9;
+    display: block;
+    margin-bottom: 0.25rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
 }
 
 .chat-msg.received {
     align-self: flex-start;
-    background: linear-gradient(135deg, #1a1f2b 0%, #151923 100%);
-    color: #d6d9df;
+    background: #2a2a2a;
+    color: #e5e5e5;
     border-bottom-left-radius: 4px;
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+    border: 1px solid #3a3a3a;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    border-left: 3px solid #3a3a3a;
+    position: relative;
+}
+
+.chat-msg.received::before {
+    content: "Assistant";
+    font-weight: 600;
+    font-size: 0.7rem;
+    opacity: 0.8;
+    display: block;
+    margin-bottom: 0.25rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
 }
 
 .chat-input {
     display: flex;
     padding: 12px;
-    background: #141821;
-    border-top: 1px solid #1f2430;
+    background: #2a2a2a;
+    border-top: 1px solid #3a3a3a;
     gap: 8px;
 }
 
 .chat-input input {
     flex: 1;
     padding: 10px 16px;
-    background: #0f1115;
-    color: #e6e9ef;
-    border: 1px solid #2a3140;
+    background: #1a1a1a;
+    color: #e5e5e5;
+    border: 1px solid #3a3a3a;
     border-radius: 20px;
     outline: none;
 }
 
 .chat-input input::placeholder {
-    color: #6c7685;
+    color: #737373;
 }
 
 .chat-input input:focus {
-    border-color: #0d6efd;
+    border-color: #d97706;
 }
 
 .chat-input button {
     background: none;
     border: none;
-    color: #0d6efd;
+    color: #d97706;
     font-weight: 600;
     cursor: pointer;
 }
 
-.chat-overlay.fullscreen {
+#main-chat-overlay.fullscreen {
     top: 0;
     left: 0;
     right: 0;
@@ -165,85 +192,81 @@
    LOG & REPORT PAGES - MODERN DESIGN
    =============================== */
 
-/* Gradient Title */
+/* Gradient Title - Claude Style */
 .text-gradient {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(90deg, #d97706 0%, #f59e0b 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
 }
 
-/* Modern Cards */
+/* Modern Cards - Claude Style */
 .modern-card {
-    border: none;
-    border-radius: 16px;
+    border: 1px solid #3a3a3a;
+    border-radius: 12px;
     overflow: hidden;
-    background: #ffffff;
-    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-    animation: fadeInUp 0.5s ease-out;
+    background: #2a2a2a;
+    transition: all 0.2s ease;
+    animation: fadeInUp 0.3s ease-out;
+    color: #f5f5f5;
 }
 
 .modern-card:hover {
-    transform: translateY(-4px);
+    transform: translateY(-2px);
+    border-color: #d97706;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
 }
 
-/* Card Headers with Gradients */
+/* Card Headers - Claude Style */
 .gradient-header {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    padding: 1rem 1.5rem;
+    background: linear-gradient(135deg, #d97706 0%, #f59e0b 100%);
+    color: #ffffff;
+    padding: 0.875rem 1.25rem;
     font-weight: 600;
-    position: relative;
-    overflow: hidden;
-}
-
-.gradient-header::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(135deg, transparent 0%, rgba(255, 255, 255, 0.15) 100%);
-    pointer-events: none;
+    font-size: 0.95rem;
+    border-bottom: 1px solid #d97706;
 }
 
 .gradient-header-dark {
-    background: linear-gradient(135deg, #2d3748 0%, #1a202c 100%);
-    color: white;
-    padding: 1rem 1.5rem;
+    background: #1a1a1a;
+    color: #ffffff;
+    padding: 0.875rem 1.25rem;
     font-weight: 600;
+    font-size: 0.95rem;
+    border-bottom: 1px solid #3a3a3a;
 }
 
-/* Upload Box */
+/* Upload Box - Claude Style */
 .upload-box {
     padding: 2rem;
-    border: 3px dashed #cbd5e1;
-    border-radius: 16px;
-    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-    transition: all 0.3s ease;
+    border: 2px dashed #3a3a3a;
+    border-radius: 12px;
+    background: #2a2a2a;
+    transition: all 0.2s ease;
     text-align: center;
 }
 
 .upload-box:hover {
-    border-color: #667eea;
-    background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+    border-color: #d97706;
+    background: #343434;
     transform: translateY(-2px);
 }
 
-/* Monospace Textarea */
+/* Monospace Textarea - Claude Style */
 .monospace-textarea {
-    font-family: 'Courier New', Consolas, Monaco, monospace;
+    font-family: 'SF Mono', Monaco, 'Courier New', monospace;
     font-size: 0.9rem;
-    border: 2px solid #e2e8f0;
-    border-radius: 12px;
-    transition: all 0.3s ease;
+    background: #1a1a1a;
+    color: #e5e5e5;
+    border: 1px solid #3a3a3a;
+    border-radius: 8px;
+    transition: all 0.2s ease;
     resize: vertical;
 }
 
 .monospace-textarea:focus {
-    border-color: #667eea;
-    box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.15);
+    border-color: #d97706;
+    box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.1);
 }
 
 /* Empty State */
@@ -252,49 +275,61 @@
     text-align: center;
 }
 
-/* Modern Table Styling */
+/* Modern Table Styling - Claude Style */
 .modern-table {
-    font-size: 0.95rem;
+    font-size: 0.9rem;
+    background: #2a2a2a;
 }
 
 .modern-table thead {
-    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-    border-bottom: 2px solid #e2e8f0;
+    background: #1a1a1a;
+    border-bottom: 1px solid #3a3a3a;
 }
 
 .modern-table thead th {
-    font-weight: 700;
-    color: #475569;
+    font-weight: 600;
+    color: #ffffff;
     text-transform: uppercase;
-    font-size: 0.8rem;
+    font-size: 0.85rem;
     letter-spacing: 0.5px;
-    padding: 1rem 1.25rem;
+    padding: 0.75rem 1rem;
     border: none;
 }
 
+.modern-table tbody tr {
+    background: #2a2a2a;
+}
+
 .modern-table tbody td {
-    padding: 1rem 1.25rem;
+    padding: 0.75rem 1rem;
     vertical-align: middle;
-    border-bottom: 1px solid #f1f5f9;
+    border-bottom: 1px solid #3a3a3a;
+    color: #f5f5f5;
+    background: transparent;
+}
+
+.modern-table tbody td.fw-semibold {
+    color: #ffffff;
+    font-weight: 600;
 }
 
 .table-row-hover {
     transition: all 0.2s ease;
+    background: #2a2a2a;
 }
 
 .table-row-hover:hover {
-    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-    transform: scale(1.005);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    background: #343434 !important;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
 }
 
-/* Badge Custom */
+/* Badge Custom - Claude Style */
 .badge-custom {
-    background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e1 100%);
-    color: #475569;
-    font-weight: 700;
+    background: #3a3a3a;
+    color: #e5e5e5;
+    font-weight: 600;
     padding: 0.5rem 0.875rem;
-    border-radius: 8px;
+    border-radius: 6px;
     font-size: 0.8rem;
 }
 
@@ -310,39 +345,51 @@
 }
 
 .btn-success {
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    background: #10b981;
     border: none;
+    color: #ffffff;
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
 }
 
 .btn-success:hover {
-    background: linear-gradient(135deg, #059669 0%, #047857 100%);
+    background: #059669;
 }
 
 .btn-info {
-    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    background: #3b82f6;
     border: none;
+    color: #ffffff;
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
 }
 
 .btn-info:hover {
-    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+    background: #2563eb;
 }
 
 .btn-danger {
-    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    background: #ef4444;
     border: none;
+    color: #ffffff;
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
 }
 
 .btn-danger:hover {
-    background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+    background: #dc2626;
 }
 
 .btn-primary {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: #d97706;
     border: none;
+    color: #ffffff;
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
 }
 
 .btn-primary:hover {
-    background: linear-gradient(135deg, #764ba2 0%, #5a3a7d 100%);
+    background: #ea580c;
 }
 
 /* ===============================
@@ -389,71 +436,72 @@
     max-width: 500px;
 }
 
-/* Modal Content - Dark Theme */
+/* Modal Content - Claude Dark Theme */
 .custom-modal-content {
-    background: #1a1d24;
-    border-radius: 20px;
-    box-shadow: 0 25px 100px rgba(0, 0, 0, 0.5);
+    background: #2a2a2a;
+    border-radius: 12px;
+    border: 1px solid #3a3a3a;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
     overflow: hidden;
     display: flex;
     flex-direction: column;
     max-height: 90vh;
 }
 
-/* Modal Header - Dark Theme */
+/* Modal Header - Claude Dark Theme */
 .custom-modal-header {
-    background: linear-gradient(135deg, #2d3748 0%, #1a202c 100%);
-    color: white;
-    padding: 1.5rem 2rem;
+    background: #1a1a1a;
+    color: #ffffff;
+    padding: 1.25rem 1.5rem;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid #3a3a3a;
     flex-shrink: 0;
 }
 
 .custom-modal-header.bg-danger {
-    background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
+    background: #ef4444;
+    color: #ffffff;
 }
 
 .custom-modal-title {
-    font-size: 1.25rem;
-    font-weight: 700;
+    font-size: 1.1rem;
+    font-weight: 600;
     margin: 0;
-    color: white;
+    color: inherit;
 }
 
 /* Modal Close Button */
 .custom-modal-close {
-    background: rgba(255, 255, 255, 0.1);
-    border: none;
-    color: white;
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
+    background: transparent;
+    border: 1px solid #3a3a3a;
+    color: #ffffff;
+    width: 30px;
+    height: 30px;
+    border-radius: 6px;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
     transition: all 0.2s ease;
-    font-size: 1rem;
+    font-size: 0.95rem;
 }
 
 .custom-modal-close:hover {
-    background: rgba(255, 255, 255, 0.2);
-    transform: rotate(90deg);
+    background: #343434;
 }
 
-/* Modal Body - Dark Theme with Scrolling */
+/* Modal Body - Claude Dark Theme with Scrolling */
 .custom-modal-body {
-    padding: 2rem;
+    padding: 1.5rem;
     overflow-y: auto;
     flex: 1;
-    background: #0f1115;
-    color: #e5e7eb;
-    font-family: 'Courier New', Consolas, Monaco, monospace;
+    background: #1a1a1a;
+    color: #f5f5f5;
+    font-family: 'SF Mono', Monaco, 'Courier New', monospace;
     font-size: 0.9rem;
-    line-height: 1.7;
+    line-height: 1.6;
 }
 
 .custom-modal-body::-webkit-scrollbar {
@@ -461,31 +509,31 @@
 }
 
 .custom-modal-body::-webkit-scrollbar-track {
-    background: #1a1d24;
+    background: #1a1a1a;
 }
 
 .custom-modal-body::-webkit-scrollbar-thumb {
-    background: #374151;
+    background: #3a3a3a;
     border-radius: 5px;
 }
 
 .custom-modal-body::-webkit-scrollbar-thumb:hover {
-    background: #4b5563;
+    background: #4a4a4a;
 }
 
 /* Code Blocks in Modal */
 .custom-modal-body pre {
-    background: #1a1d24;
-    border: 1px solid #374151;
-    border-radius: 8px;
+    background: #2a2a2a;
+    border: 1px solid #3a3a3a;
+    border-radius: 6px;
     padding: 1.5rem;
     overflow-x: auto;
     margin: 1rem 0;
 }
 
 .custom-modal-body code {
-    background: #1a1d24;
-    color: #a78bfa;
+    background: rgba(217, 119, 6, 0.1);
+    color: #d97706;
     padding: 0.2rem 0.5rem;
     border-radius: 4px;
     font-size: 0.875rem;
@@ -494,30 +542,37 @@
 .custom-modal-body h1,
 .custom-modal-body h2,
 .custom-modal-body h3 {
-    color: #f3f4f6;
+    color: #ffffff;
     margin-top: 1.5rem;
     margin-bottom: 1rem;
 }
 
 .custom-modal-body p {
     margin-bottom: 1rem;
+    color: #d4d4d4;
 }
 
 .custom-modal-body ul,
 .custom-modal-body ol {
     margin-left: 1.5rem;
     margin-bottom: 1rem;
+    color: #d4d4d4;
 }
 
-/* Modal Footer - Dark Theme */
+/* Modal Footer - Claude Dark Theme */
 .custom-modal-footer {
-    background: #1a1d24;
-    padding: 1.25rem 2rem;
-    border-top: 2px solid rgba(255, 255, 255, 0.1);
+    background: #1a1a1a;
+    padding: 1rem 1.5rem;
+    border-top: 1px solid #3a3a3a;
     display: flex;
     justify-content: flex-end;
     gap: 0.75rem;
     flex-shrink: 0;
+}
+
+.custom-modal-footer .btn {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
 }
 
 /* Modal Animations */
@@ -609,8 +664,8 @@ a, button, .btn, .card, .badge {
     transition: all 0.3s ease;
 }
 
-/* Focus states */
+/* Focus states - Claude Style */
 :focus-visible {
-    outline: 2px solid #667eea;
+    outline: 2px solid #d97706;
     outline-offset: 2px;
 }

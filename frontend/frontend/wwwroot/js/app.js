@@ -13,3 +13,10 @@ window.downloadFile = (fileName, contentType, bytes) => {
 
     URL.revokeObjectURL(url);
 };
+window.closeMobileNav = () => {
+    const overlay = document.querySelector('.mobile-overlay');
+    const sidebar = document.getElementById('main-sidebar');
+
+    if (overlay) overlay.classList.remove('active');
+    if (sidebar) sidebar.classList.remove('mobile-open');
+};

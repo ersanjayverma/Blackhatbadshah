@@ -2,20 +2,31 @@
 @inject HttpClient Http
 <PageTitle>Home</PageTitle>
 
-<section class="hero">
+<section id="hero-section">
+    <div class="contact-info-top">
+        <div class="contact-item-inline">
+            <i class="bi bi-envelope"></i>
+            <a href="mailto:admin@blackhatbadshah.com">admin@blackhatbadshah.com</a>
+        </div>
+        <div class="contact-item-inline">
+            <i class="bi bi-telephone"></i>
+            <a href="tel:+918580400366">+91 8580 400 366</a>
+        </div>
+    </div>
+
     <h1>
         Diagnose invisible failures.<br />
-        <span>Fix what’s actually costing you money.</span>
+        <span>Fix what's actually costing you money.</span>
     </h1>
 
-    <p class="hero-sub">
+    <p id="hero-subtitle">
         Upload logs, headers, or system data.
         We perform AI-assisted root-cause analysis and return
         actionable, engineering-grade fixes.
     </p>
   <AuthorizeView>
         <Authorized>
-            <div class="hero-actions">
+            <div id="hero-actions">
                 <a class="btn-primary" href="/logs">Run an Audit</a>
                 <a class="btn-secondary" href="/security">Security & Privacy</a>
             </div>
@@ -23,7 +34,7 @@
     </AuthorizeView>
 </section>
 
-<section class="features">
+<section id="features-section">
     <div class="feature">
         <h3>Root Cause, Not Symptoms</h3>
         <p>
@@ -56,7 +67,10 @@
 
     public async Task checkHealth(){
         var response  = await Http.GetFromJsonAsync<HealthResponse>("api/health");
-        HealthStatus = response.Status;
+        if (response != null)
+        {
+            HealthStatus = response.Status;
+        }
         await InvokeAsync(StateHasChanged);
     }
 }

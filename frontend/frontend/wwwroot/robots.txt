@@ -1,0 +1,50 @@
+# robots.txt for BlackHat-Badshah AI Log Analysis Platform
+
+User-agent: *
+Allow: /
+Disallow: /authentication/
+Disallow: /logout/
+Disallow: /_framework/
+Disallow: /_content/
+Disallow: /lib/
+Disallow: /sample-data/
+
+# Allow crawling of public pages
+Allow: /$
+Allow: /login
+Allow: /security
+
+# Sitemap location
+Sitemap: https://blackhatbadshah.com/sitemap.xml
+
+# Crawl delay (be nice to the server)
+Crawl-delay: 1
+
+# Specific bot directives for better indexing
+User-agent: Googlebot
+Allow: /
+Disallow: /authentication/
+Disallow: /logout/
+Disallow: /_framework/
+
+User-agent: Bingbot
+Allow: /
+Disallow: /authentication/
+Disallow: /logout/
+Disallow: /_framework/
+
+# Block AI scrapers that don't respect content
+User-agent: GPTBot
+Disallow: /
+
+User-agent: ChatGPT-User
+Disallow: /
+
+User-agent: CCBot
+Disallow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+User-agent: Claude-Web
+Allow: /

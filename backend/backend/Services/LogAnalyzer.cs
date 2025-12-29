@@ -94,7 +94,58 @@ public class LogAnalyzer : ILogAnalyzer
 
     private static string BuildPrompt(bool isChart = false)
     {
-        
+        if (isChart)
+    {
+        // ----- Chart Mode -----
+        return """
+        You are a data visualization expert. Analyze the provided log data and generate a chart specification.
+
+        ## Your Task
+        Create a JSON chart configuration that visualizes the most important patterns or metrics from the logs.
+
+        ## Chart Types Available
+        - LineChart: For trends over time
+        - BarChart: For comparing categories
+        - ColumnChart: For vertical comparisons
+        - PieChart: For showing proportions
+        - StackedColumnChart: For showing composition over categories
+
+        ## Output Format
+        Return ONLY valid JSON in this exact structure (no markdown, no explanation):
+
+        {
+          "chartType": "LineChart",
+          "title": "Error Rate Over Time",
+          "xAxis": {
+            "labels": ["10:00", "11:00", "12:00", "13:00", "14:00"]
+          },
+          "series": [
+            {
+              "name": "Errors",
+              "values": [5, 12, 8, 15, 3]
+            },
+            {
+              "name": "Warnings",
+              "values": [10, 15, 12, 20, 8]
+            }
+          ]
+        }
+
+        ## Guidelines
+        - Choose the chart type that best represents the data
+        - Keep labels concise (max 15 characters)
+        - Limit series to 3-4 for readability
+        - Limit data points to 10-15 for clarity
+        - If no meaningful data to chart, return:
+        {
+          "chartType": "None",
+          "title": "",
+          "xAxis": { "labels": [] },
+          "series": []
+        }
+        - Return ONLY the JSON object, no other text
+        """;
+    }
         // ----- Analysis Mode -----
         return """
         You are a senior production engineer and site reliability expert performing comprehensive log analysis.

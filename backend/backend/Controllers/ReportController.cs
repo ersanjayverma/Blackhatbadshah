@@ -158,11 +158,18 @@ public class ReportsController : ControllerBase
         await using var stream = await blob.OpenReadAsync();
         using var reader = new StreamReader(stream);
         var markdown = await reader.ReadToEndAsync();
+      var blob2 = container.GetBlobClient(report.ChartPath);
 
+        if (!await blob2.ExistsAsync())
+            return NotFound("Report file not found");
+
+        await using var stream2 = await blob2.OpenReadAsync();
+        using var reader2 = new StreamReader(stream2);
+        var markdown2 = await reader2.ReadToEndAsync();
         var originalName = Path.GetFileNameWithoutExtension(report.ReportPath);
         var fileName = $"{originalName}.pdf";
 
-        var pdfBytes = PdfGenerator.FromMarkdown(markdown);
+        var pdfBytes = await PdfGenerator.FromMarkdownAsync(markdown,markdown2);
 
         return File(pdfBytes, "application/pdf", fileName);
 

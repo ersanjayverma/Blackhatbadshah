@@ -24,126 +24,158 @@ window.closeMobileNav = () => {
 let currentChart = null;
 
 window.renderChart = (chartData) => {
+    console.log('renderChart called with:', chartData);
+    
     try {
-        console.log('=== Chart Rendering Started ===');
-        console.log('Chart data received:', chartData);
-
-        // Check if Chart.js is loaded
         if (typeof Chart === 'undefined') {
-            console.error('Chart.js library not loaded');
+            console.error('Chart.js not loaded');
+            window.__chartRendered = true;
             return;
         }
-        console.log('Chart.js library loaded successfully');
 
         const canvas = document.getElementById('reportChart');
         if (!canvas) {
-            console.error('Canvas element not found - modal may not be rendered yet');
+            console.error('Canvas element not found');
+            window.__chartRendered = true;
             return;
         }
-        console.log('Canvas element found:', canvas);
-        console.log('Canvas dimensions:', canvas.offsetWidth, 'x', canvas.offsetHeight);
 
-        // Destroy existing chart if any
-        if (currentChart) {
-            console.log('Destroying existing chart');
-            currentChart.destroy();
-            currentChart = null;
-        }
-
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-            console.error('Could not get 2D context');
-            return;
-        }
-        console.log('Canvas 2D context obtained');
-
-        // Validate chart data
         if (!chartData || !chartData.series || chartData.series.length === 0) {
-            console.error('Invalid or empty chart data');
+            console.error('Invalid chart data');
+            window.__chartRendered = true;
             return;
         }
-        console.log('Chart data validation passed');
-        console.log('Chart type:', chartData.chartType);
-        console.log('Series count:', chartData.series.length);
-        console.log('Labels count:', chartData.xAxis?.labels?.length);
 
-        // Map chart types
-        const chartTypeMap = {
-            'LineChart': 'line',
-            'BarChart': 'bar',
-            'ColumnChart': 'bar',
-            'PieChart': 'pie',
-            'StackedColumnChart': 'bar'
+        const typeMap = {
+            LineChart: 'line',
+            BarChart: 'bar',
+            ColumnChart: 'bar',
+            PieChart: 'pie',
+            StackedColumnChart: 'bar'
         };
 
-        const chartType = chartTypeMap[chartData.chartType] || 'bar';
-        console.log('Mapped chart type:', chartType);
+        const chartType = typeMap[chartData.chartType] || 'bar';
+        console.log('Chart type:', chartType);
 
-        // Prepare datasets
-        const datasets = chartData.series.map((series, index) => {
-            const colors = [
-                'rgb(54, 162, 235)',
-                'rgb(255, 99, 132)',
-                'rgb(255, 205, 86)',
-                'rgb(75, 192, 192)',
-                'rgb(153, 102, 255)',
-                'rgb(255, 159, 64)'
-            ];
-            const color = colors[index % colors.length];
+        // Professional color palette
+        const colors = [
+            '#dc2626', // red-600
+            '#2563eb', // blue-600
+            '#059669', // emerald-600
+            '#7c3aed', // violet-600
+            '#ea580c', // orange-600
+            '#0891b2', // cyan-600
+            '#9333ea', // purple-600
+            '#16a34a'  // green-600
+        ];
 
+        const datasets = chartData.series.map((s, i) => {
+            const color = colors[i % colors.length];
             return {
-                label: series.name,
-                data: series.values,
-                backgroundColor: chartType === 'pie' ? colors : color.replace('rgb', 'rgba').replace(')', ', 0.5)'),
+                label: s.name,
+                data: s.values,
                 borderColor: color,
-                borderWidth: 2,
-                tension: 0.1
+                backgroundColor: chartType === 'pie'
+                    ? colors
+                    : color + '33', // 20% opacity
+                borderWidth: 2.5,
+                tension: 0.4,
+                pointRadius: chartType === 'line' ? 4 : 0,
+                pointHoverRadius: chartType === 'line' ? 6 : 0,
+                pointBackgroundColor: color,
+                pointBorderColor: '#ffffff',
+                pointBorderWidth: 2
             };
         });
-        console.log('Datasets prepared:', datasets.length);
 
-        // Chart configuration
-        const config = {
+        if (currentChart) {
+            currentChart.destroy();
+        }
+
+        currentChart = new Chart(canvas.getContext('2d'), {
             type: chartType,
             data: {
                 labels: chartData.xAxis.labels,
-                datasets: datasets
+                datasets
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                animation: false,
                 plugins: {
                     legend: {
                         display: true,
-                        position: 'top'
+                        position: 'top',
+                        align: 'start',
+                        labels: {
+                            usePointStyle: true,
+                            pointStyle: 'circle',
+                            padding: 20,
+                            font: {
+                                size: 12,
+                                weight: '500',
+                                family: "'Inter', sans-serif"
+                            },
+                            color: '#334155'
+                        }
                     },
-                    title: {
-                        display: !!chartData.title,
-                        text: chartData.title,
-                        font: {
-                            size: 16,
-                            weight: 'bold'
+                    tooltip: {
+                        backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                        titleColor: '#ffffff',
+                        bodyColor: '#e2e8f0',
+                        borderColor: '#475569',
+                        borderWidth: 1,
+                        padding: 12,
+                        displayColors: true,
+                        titleFont: {
+                            size: 13,
+                            weight: '600'
+                        },
+                        bodyFont: {
+                            size: 12
                         }
                     }
                 },
                 scales: chartType !== 'pie' ? {
-                    y: {
-                        beginAtZero: true,
-                        stacked: chartData.chartType === 'StackedColumnChart'
-                    },
                     x: {
-                        stacked: chartData.chartType === 'StackedColumnChart'
+                        grid: {
+                            color: '#f1f5f9',
+                            drawBorder: false
+                        },
+                        ticks: {
+                            color: '#64748b',
+                            font: {
+                                size: 11,
+                                family: "'Inter', sans-serif"
+                            }
+                        }
+                    },
+                    y: {
+                        grid: {
+                            color: '#f1f5f9',
+                            drawBorder: false
+                        },
+                        ticks: {
+                            color: '#64748b',
+                            font: {
+                                size: 11,
+                                family: "'Inter', sans-serif"
+                            }
+                        }
                     }
-                } : undefined
+                } : {}
             }
-        };
+        });
 
-        console.log('Creating Chart instance...');
-        currentChart = new Chart(ctx, config);
-        console.log('✅ Chart rendered successfully!');
-        console.log('=== Chart Rendering Complete ===');
-    } catch (error) {
-        console.error('❌ Error rendering chart:', error);
-        console.error('Error stack:', error.stack);
+        console.log('Chart created successfully');
+        
+        setTimeout(() => {
+            window.__chartRendered = true;
+            console.log('Chart render completed');
+        }, 500);
+    }
+    catch (err) {
+        console.error('Chart rendering error:', err);
+        window.__chartRendered = true;
     }
 };

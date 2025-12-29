@@ -57,16 +57,16 @@ window.renderChart = (chartData) => {
         const chartType = typeMap[chartData.chartType] || 'bar';
         console.log('Chart type:', chartType);
 
-        // Professional color palette
+        // Vibrant colors for dark background
         const colors = [
-            '#dc2626', // red-600
-            '#2563eb', // blue-600
-            '#059669', // emerald-600
-            '#7c3aed', // violet-600
-            '#ea580c', // orange-600
-            '#0891b2', // cyan-600
-            '#9333ea', // purple-600
-            '#16a34a'  // green-600
+            '#ef4444', // red-500
+            '#3b82f6', // blue-500
+            '#10b981', // emerald-500
+            '#8b5cf6', // violet-500
+            '#f97316', // orange-500
+            '#06b6d4', // cyan-500
+            '#a855f7', // purple-500
+            '#22c55e'  // green-500
         ];
 
         const datasets = chartData.series.map((s, i) => {
@@ -77,13 +77,13 @@ window.renderChart = (chartData) => {
                 borderColor: color,
                 backgroundColor: chartType === 'pie'
                     ? colors
-                    : color + '33', // 20% opacity
+                    : color + '40', // 25% opacity for dark bg
                 borderWidth: 2.5,
                 tension: 0.4,
                 pointRadius: chartType === 'line' ? 4 : 0,
                 pointHoverRadius: chartType === 'line' ? 6 : 0,
                 pointBackgroundColor: color,
-                pointBorderColor: '#ffffff',
+                pointBorderColor: '#1e293b', // dark border
                 pointBorderWidth: 2
             };
         });
@@ -116,11 +116,11 @@ window.renderChart = (chartData) => {
                                 weight: '500',
                                 family: "'Inter', sans-serif"
                             },
-                            color: '#334155'
+                            color: '#e2e8f0' // Light text for dark bg
                         }
                     },
                     tooltip: {
-                        backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                        backgroundColor: 'rgba(30, 41, 59, 0.95)', // Dark tooltip
                         titleColor: '#ffffff',
                         bodyColor: '#e2e8f0',
                         borderColor: '#475569',
@@ -139,11 +139,11 @@ window.renderChart = (chartData) => {
                 scales: chartType !== 'pie' ? {
                     x: {
                         grid: {
-                            color: '#f1f5f9',
+                            color: '#334155', // Dark grid lines
                             drawBorder: false
                         },
                         ticks: {
-                            color: '#64748b',
+                            color: '#94a3b8', // Light gray text
                             font: {
                                 size: 11,
                                 family: "'Inter', sans-serif"
@@ -152,11 +152,11 @@ window.renderChart = (chartData) => {
                     },
                     y: {
                         grid: {
-                            color: '#f1f5f9',
+                            color: '#334155', // Dark grid lines
                             drawBorder: false
                         },
                         ticks: {
-                            color: '#64748b',
+                            color: '#94a3b8', // Light gray text
                             font: {
                                 size: 11,
                                 family: "'Inter', sans-serif"

@@ -101,7 +101,7 @@ public class LogAnalyzer : ILogAnalyzer
         You are a data visualization expert. Analyze the provided log data and generate a chart specification.
 
         ## Your Task
-        Create a JSON chart configuration that visualizes the most important patterns or metrics from the logs.
+        Create a JSON chart configuration that visualizes the most important patterns or metrics from the log Summary report.
 
         ## Chart Types Available
         - LineChart: For trends over time

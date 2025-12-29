@@ -425,7 +425,8 @@ tbody tr:hover {
 }
 
 .chart-container {
-    height: 400px;
+    max-height: 350px;
+    height: auto;
     position: relative;
     background: white;
     border-radius: 8px;

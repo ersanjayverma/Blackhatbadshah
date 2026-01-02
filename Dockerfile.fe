@@ -1,34 +1,19 @@
-# Use Alpine as the base image
-FROM alpine:latest
-
-# Install dependencies, .NET 10 SDK, and Supervisor
-# Note: dotnet10-sdk is available in Alpine 'edge' community repo as of late 2025
-RUN apk add --no-cache \
-    supervisor \
-    icu-libs \
-    krb5-libs \
-    libgcc \
-    libintl \
-    libssl3 \
-    libstdc++ \
-    zlib \
-    bash \
-    --repository=dl-cdn.alpinelinux.org \
-    dotnet10-sdk
-
-# Set working directory
+# Build stage
+FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
 WORKDIR /app
 
-
-# Copy the rest of the source code
 COPY frontend frontend/
 COPY shared shared/
+
 WORKDIR /app/frontend/frontend
 RUN dotnet restore
-# Copy Supervisor configuration
-COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+RUN dotnet publish -c Release -o /app/publish --no-restore
 
-# Set environment variable for Release mode
-ENV DOTNET_CONFIGURATION=Release
-# Run Supervisor
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+# Runtime stage
+FROM nginx:alpine
+
+COPY --from=build /app/publish/wwwroot /usr/share/nginx/html
+COPY nginx.conf.frontend /etc/nginx/conf.d/default.conf
+
+EXPOSE 8080
+CMD ["nginx", "-g", "daemon off;"]

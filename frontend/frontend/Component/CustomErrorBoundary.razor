@@ -60,6 +60,15 @@
 
     private bool IsOidcException(Exception exception)
     {
+        // Check for AccessTokenNotAvailableException by type name
+        var exceptionType = exception.GetType();
+        var typeName = exceptionType.FullName ?? exceptionType.Name;
+        
+        if (typeName.Contains("AccessTokenNotAvailableException") ||
+            typeName.Contains("AccessTokenException"))
+            return true;
+
+        // Check exception message for OIDC error codes
         var message = exception.Message ?? "";
         var lowerMessage = message.ToLower();
         
@@ -73,6 +82,10 @@
             lowerMessage.Contains("invalid_client") ||
             lowerMessage.Contains("invalid_request") ||
             lowerMessage.Contains("unsupported_grant_type"))
+            return true;
+
+        // Check for offline_access scope issues
+        if (lowerMessage.Contains("offline_access"))
             return true;
 
         // Check inner exceptions recursively

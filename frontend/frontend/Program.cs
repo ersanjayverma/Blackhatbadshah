@@ -26,9 +26,9 @@ builder.Services.AddOidcAuthentication(options =>
 });
 builder.Services.AddScoped<LogService>();
 builder.Services.AddScoped<ReportService>();
-builder.Services.AddSingleton<ApiLoaderService>();
-builder.Services.AddSingleton<HubConnectionService>();
-builder.Services.AddSingleton<ToastService>();
+builder.Services.AddScoped<ApiLoaderService>();
+builder.Services.AddScoped<HubConnectionService>();
+builder.Services.AddScoped<ToastService>();
 builder.Services.AddTransient<ApiLoaderHandler>();
 builder.Services.AddScoped<CustomAuthorizationMessageHandler>();
 builder.Services.AddBlazoredLocalStorage();

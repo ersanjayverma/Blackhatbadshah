@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 
 [ApiController]
 [Route("api/health")]
-[Authorize]
+[AllowAnonymous]
 public class HealthController : ControllerBase
 {
     // Ensure the response is a serializable object for JSON output

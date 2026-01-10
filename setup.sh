@@ -66,23 +66,19 @@ AWS_REGION=${AWS_REGION:-ap-south-1}
 
 # Database Connection
 echo ""
-echo "Azure SQL Database Configuration:"
-read -p "Database Server (e.g., your-server.database.windows.net): " DB_SERVER
+echo "MySQL Database Configuration"
+
+# Prompt for input
+read -p "Database Host (e.g., localhost or 127.0.0.1): " DB_HOST
+read -p "Database Port [3306]: " DB_PORT
+DB_PORT=${DB_PORT:-3306}  # default to 3306 if empty
 read -p "Database Name: " DB_NAME
 read -p "Database User: " DB_USER
-read -p "Database Password: " -s DB_PASSWORD
-echo ""
+read -s -p "Database Password: " DB_PASSWORD
+echo ""  # move to a new line after password input
 
-# Azure Blob Storage
-echo ""
-echo "Azure Blob Storage Configuration:"
-read -p "Storage Account Name: " STORAGE_ACCOUNT
-read -p "Storage Account Key: " -s STORAGE_KEY
-echo ""
-
-# Build connection strings
-DB_CONN_STRING="Server=tcp:${DB_SERVER},1433;Initial Catalog=${DB_NAME};Persist Security Info=False;User ID=${DB_USER};Password=${DB_PASSWORD};MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;"
-BLOB_CONN_STRING="DefaultEndpointsProtocol=https;AccountName=${STORAGE_ACCOUNT};AccountKey=${STORAGE_KEY};EndpointSuffix=core.windows.net"
+# Build MySQL connection string
+DB_CONN_STRING="Server=${DB_HOST};Port=${DB_PORT};Database=${DB_NAME};Uid=${DB_USER};Pwd=${DB_PASSWORD};"
 
 # Write to .env file
 cat > "$ENV_FILE" << EOF
@@ -103,9 +99,6 @@ AWS_DEFAULT_REGION=${AWS_REGION}
 
 # Database Configuration (Azure SQL Server)
 ConnectionStrings__DefaultConnection=${DB_CONN_STRING}
-
-# Azure Blob Storage Configuration
-AzureBlob__ConnectionString=${BLOB_CONN_STRING}
 EOF
 
 echo ""

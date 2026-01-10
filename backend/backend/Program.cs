@@ -1,12 +1,13 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.Extensions.Options;
 using Scalar.AspNetCore;
 using Microsoft.EntityFrameworkCore;
 using backend.Hubs;
 using backend.Data;
-using Azure.Storage.Blobs;
 using backend.Services;
 using backend.Handlers;
+using backend.Configuration;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSignalR();
@@ -25,10 +26,15 @@ builder.Services.AddCors(options =>
     });
 });
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(
-        builder.Configuration.GetConnectionString("DefaultConnection")
+    options.UseMySql(
+        builder.Configuration.GetConnectionString("DefaultConnection"),
+        new MySqlServerVersion(new Version(8, 0, 32))
     )
 );
+
+// Plan & Model Configuration
+builder.Services.Configure<PlansConfiguration>(builder.Configuration.GetSection("Plans"));
+builder.Services.Configure<ModelsConfig>(builder.Configuration.GetSection("Models"));
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -63,17 +69,18 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
-builder.Services.AddSingleton(sp =>
-{
-    var cfg = sp.GetRequiredService<IConfiguration>();
-    var cs = cfg["AzureBlob:ConnectionString"];
-    return new BlobServiceClient(cs);
-});
+
 builder.Services.AddSingleton<ITextractService, TextractService>();
 builder.Services.AddScoped<IHubNotificationService, HubNotificationService>();
 builder.Services.AddSingleton<ILogAnalysisQueue, LogAnalysisQueue>();
 builder.Services.AddHostedService<LogAnalysisBackgroundWorker>();
 builder.Services.AddHttpContextAccessor();
+
+// Subscription & Payment Services
+builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
+builder.Services.AddScoped<IPlanEnforcementService, PlanEnforcementService>();
+builder.Services.AddHttpClient<IRazorpayService, RazorpayService>();
+builder.Services.AddHttpClient<IKeycloakAdminService, KeycloakAdminService>();
 
 builder.Services.AddTransient<ForwardAuthHeaderHandler>();
 builder.Services.AddHttpClient<ILogAnalyzer, LogAnalyzer>((sp, client) =>
@@ -88,6 +95,15 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
+
+// Initialize database with seed data
+using (var scope = app.Services.CreateScope())
+{
+    var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var plansConfig = scope.ServiceProvider.GetRequiredService<IOptions<PlansConfiguration>>().Value;
+    await DbInitializer.InitializeAsync(dbContext, plansConfig);
+}
+
 app.UseCors("AllowFrontend");
 app.UseAuthentication();
 app.UseAuthorization();

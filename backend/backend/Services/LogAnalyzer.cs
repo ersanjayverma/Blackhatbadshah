@@ -4,7 +4,6 @@ using shared.Dto;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
-using Microsoft.Extensions.Http;
 
 namespace backend.Services;
 
@@ -17,19 +16,22 @@ public class LogAnalyzer : ILogAnalyzer
         _http = http;
     }
 
-    public async Task<ChatResponse> AnalyzeAsync(Guid logId, string logContent, string? model = null,bool isChart = false)
+    public async Task<ChatResponse> AnalyzeAsync(
+        Guid logId,
+        string logContent,
+        string? model = null,
+        bool isChart = false)
     {
         if (string.IsNullOrWhiteSpace(logContent))
             return new ChatResponse("Analyzer failed: log content is empty");
 
         var threadId = $"log-{logId}";
 
-        // Convert log content to base64
+        // Convert log content to Base64 for transmission
         var contentBytes = Encoding.UTF8.GetBytes(logContent);
         var base64Content = Convert.ToBase64String(contentBytes);
 
         var prompt = BuildPrompt(isChart);
-        // Use default model if none specified
         var selectedModel = model ?? ModelMapping.DefaultModel;
 
         HttpResponseMessage response;
@@ -49,47 +51,39 @@ public class LogAnalyzer : ILogAnalyzer
         }
         catch (Exception ex)
         {
-            return new ChatResponse(
-                $"Analyzer failed: connection error ({ex.Message})");
+            return new ChatResponse($"Analyzer failed: connection error ({ex.Message})");
         }
 
-        if (response.StatusCode == HttpStatusCode.Unauthorized)
-        {
-            // guest tried to access protected model
-            var body = await response.Content.ReadAsStringAsync();
-        return new ChatResponse(
-                $"Analyzer failed:({body})");
-        }
-
-        if (response.StatusCode == HttpStatusCode.Forbidden)
+        // Handle common HTTP errors
+        if (response.StatusCode == HttpStatusCode.Unauthorized ||
+            response.StatusCode == HttpStatusCode.Forbidden)
         {
             var body = await response.Content.ReadAsStringAsync();
-            return new ChatResponse(
-                $"Analyzer failed:({body})");
+            return new ChatResponse($"Analyzer failed: {body}");
         }
 
         if (!response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadAsStringAsync();
-        return new ChatResponse(
-                $"Analyzer failed: AI Server Error :- ({body})");
+            return new ChatResponse($"Analyzer failed: AI Server Error ({body})");
         }
 
+        // Parse response
         ChatResponse? result;
         try
         {
             result = await response.Content.ReadFromJsonAsync<ChatResponse>();
         }
-        catch (Exception ex)
+         catch (Exception ex)
         {
-            return new ChatResponse(
-                $"Analyzer failed: invalid response ({ex.Message})");
+            return new ChatResponse($"Analyzer failed: invalid response ({ex.Message})");
         }
 
         if (result == null || string.IsNullOrWhiteSpace(result.reply))
             return new ChatResponse("Analyzer returned empty response");
 
         return result;
+        
     }
 
     private static string BuildPrompt(bool isChart = false)

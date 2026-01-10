@@ -1,0 +1,210 @@
+@page "/pricing"
+@using shared.Dto
+@using frontend.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@inject SubscriptionService SubscriptionApi
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+@implements IAsyncDisposable
+
+<PageTitle>Pricing - Blackhatbadshah</PageTitle>
+
+<div class="container-fluid px-4 py-5">
+    <div class="text-center mb-5">
+        <h1 class="display-4 fw-bold">Choose Your Plan</h1>
+        <p class="lead text-muted">Scale your log analysis capabilities with our flexible pricing</p>
+
+        <div class="d-flex justify-content-center align-items-center gap-3 mt-4">
+            <span class="@(_billingPeriod == "Monthly" ? "fw-bold" : "text-muted")">Monthly</span>
+            <div class="form-check form-switch form-switch-lg">
+                <input class="form-check-input" type="checkbox" style="width: 3rem; height: 1.5rem;"
+                       @bind="_isYearly" @bind:after="OnBillingToggle" />
+            </div>
+            <span class="@(_billingPeriod == "Yearly" ? "fw-bold" : "text-muted")">
+                Yearly <span class="badge bg-success">Save 20%</span>
+            </span>
+        </div>
+    </div>
+
+    @if (_loading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary"></div>
+        </div>
+    }
+    else
+    {
+        <div class="row g-4 justify-content-center">
+            @foreach (var plan in _plans)
+            {
+                <div class="col-lg-4 col-md-6">
+                    <div class="card h-100 @(plan.Name == "Pro" ? "border-primary shadow-lg" : "shadow")" style="@(plan.Name == "Pro" ? "border-width: 2px;" : "")">
+                        @if (plan.Name == "Pro")
+                        {
+                            <div class="card-header bg-primary text-white text-center py-2">
+                                <small class="fw-bold text-uppercase">Most Popular</small>
+                            </div>
+                        }
+                        <div class="card-body p-4">
+                            <h3 class="card-title fw-bold">@plan.Name</h3>
+                            <p class="text-muted">@plan.Description</p>
+
+                            <div class="my-4">
+                                @if (plan.PriceMonthly == 0)
+                                {
+                                    <span class="display-4 fw-bold">Free</span>
+                                }
+                                else
+                                {
+                                    <span class="display-4 fw-bold">
+                                        ₹@((_isYearly ? plan.PriceYearly / 12 : plan.PriceMonthly).ToString("N0"))
+                                    </span>
+                                    <span class="text-muted">/month</span>
+                                    @if (_isYearly)
+                                    {
+                                        <div class="text-success small">Billed ₹@plan.PriceYearly.ToString("N0") yearly</div>
+                                    }
+                                }
+                            </div>
+
+                            <ul class="list-unstyled mb-4">
+                                @foreach (var feature in plan.Features)
+                                {
+                                    <li class="mb-2">
+                                        <i class="bi bi-check-circle-fill text-success me-2"></i>@feature
+                                    </li>
+                                }
+                            </ul>
+
+                            @if (plan.IsCurrentPlan)
+                            {
+                                <button class="btn btn-outline-success btn-lg w-100" disabled>
+                                    <i class="bi bi-check-lg me-2"></i>Current Plan
+                                </button>
+                            }
+                            else if (plan.PriceMonthly == 0)
+                            {
+                                <button class="btn btn-outline-secondary btn-lg w-100" disabled>
+                                    Free Tier
+                                </button>
+                            }
+                            else
+                            {
+                                <AuthorizeView>
+                                    <Authorized>
+                                        <button class="btn @(plan.Name == "Pro" ? "btn-primary" : "btn-outline-primary") btn-lg w-100"
+                                                @onclick="() => StartCheckout(plan)"
+                                                disabled="@_checkoutLoading">
+                                            @if (_checkoutLoading && _selectedPlanId == plan.Id)
+                                            {
+                                                <span class="spinner-border spinner-border-sm me-2"></span>
+                                            }
+                                            else
+                                            {
+                                                <i class="bi bi-credit-card me-2"></i>
+                                            }
+                                            Subscribe
+                                        </button>
+                                    </Authorized>
+                                    <NotAuthorized>
+                                        <a href="login" class="btn @(plan.Name == "Pro" ? "btn-primary" : "btn-outline-primary") btn-lg w-100">
+                                            <i class="bi bi-box-arrow-in-right me-2"></i>Login to Subscribe
+                                        </a>
+                                    </NotAuthorized>
+                                </AuthorizeView>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private List<PlanDto> _plans = new();
+    private bool _loading = true;
+    private bool _checkoutLoading = false;
+    private bool _isYearly = false;
+    private Guid? _selectedPlanId;
+    private string _billingPeriod => _isYearly ? "Yearly" : "Monthly";
+    private DotNetObjectReference<Pricing>? _objRef;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _objRef = DotNetObjectReference.Create(this);
+        _plans = await SubscriptionApi.GetPlansAsync();
+        _loading = false;
+    }
+
+    private void OnBillingToggle() => StateHasChanged();
+
+    private async Task StartCheckout(PlanDto plan)
+    {
+        try
+        {
+            _checkoutLoading = true;
+            _selectedPlanId = plan.Id;
+            StateHasChanged();
+
+            var checkout = await SubscriptionApi.InitiateCheckoutAsync(plan.Id, _billingPeriod);
+            await OpenRazorpayCheckout(checkout);
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", $"Checkout failed: {ex.Message}");
+        }
+        finally
+        {
+            _checkoutLoading = false;
+            _selectedPlanId = null;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OpenRazorpayCheckout(RazorpayCheckoutDto checkout)
+    {
+        await JS.InvokeVoidAsync("openRazorpayCheckout", new
+        {
+            key = checkout.Key,
+            subscription_id = checkout.SubscriptionId,
+            name = checkout.Name,
+            description = checkout.Description,
+            prefill = new
+            {
+                email = checkout.Email,
+                contact = checkout.Phone
+            }
+        }, _objRef);
+    }
+
+    [JSInvokable]
+    public async Task OnPaymentSuccess(string paymentId, string subscriptionId, string signature)
+    {
+        try
+        {
+            await SubscriptionApi.VerifyPaymentAsync(new VerifyPaymentRequest
+            {
+                RazorpayPaymentId = paymentId,
+                RazorpaySubscriptionId = subscriptionId,
+                RazorpaySignature = signature
+            });
+            Nav.NavigateTo("/subscription", forceLoad: true);
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", $"Payment verification failed: {ex.Message}");
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnPaymentFailed(string error)
+    {
+        await JS.InvokeVoidAsync("alert", $"Payment failed: {error}");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _objRef?.Dispose();
+    }
+}

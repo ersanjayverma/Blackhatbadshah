@@ -10,27 +10,38 @@ public class LogAnalysisQueue : ILogAnalysisQueue
     {
         var options = new BoundedChannelOptions(capacity)
         {
-            FullMode = BoundedChannelFullMode.Wait
+            FullMode = BoundedChannelFullMode.Wait,
+            SingleReader = false,
+            SingleWriter = false
         };
+
         _queue = Channel.CreateBounded<(Guid, string, string, string?)>(options);
     }
 
-    public void QueueAnalysisJob(Guid logId, string userId, string accessToken, string? model = null)
+    public async Task QueueAnalysisJobAsync(
+        Guid logId,
+        string userId,
+        string accessToken,
+        string? model = null,
+        CancellationToken cancellationToken = default)
     {
-        if (!_queue.Writer.TryWrite((logId, userId, accessToken, model)))
-        {
-            throw new InvalidOperationException("Failed to queue analysis job. Queue might be full.");
-        }
+        await _queue.Writer.WriteAsync(
+            (logId, userId, accessToken, model),
+            cancellationToken);
     }
 
-    public async Task<(Guid logId, string userId, string accessToken, string? model)?> DequeueAsync(CancellationToken cancellationToken)
+    public async Task<(Guid logId, string userId, string accessToken, string? model)?>
+        DequeueAsync(CancellationToken cancellationToken)
     {
         try
         {
-            var job = await _queue.Reader.ReadAsync(cancellationToken);
-            return job;
+            return await _queue.Reader.ReadAsync(cancellationToken);
         }
         catch (OperationCanceledException)
+        {
+            return null;
+        }
+        catch (ChannelClosedException)
         {
             return null;
         }

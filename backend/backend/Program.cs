@@ -126,6 +126,7 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddSingleton<ITextractService, TextractService>();
 builder.Services.AddSingleton<IHubNotificationService, HubNotificationService>();
 builder.Services.AddSingleton<ILogAnalysisQueue, LogAnalysisQueue>();
+builder.Services.AddSingleton<ITokenValidationService, TokenValidationService>();
 builder.Services.AddHostedService<LogAnalysisBackgroundWorker>();
 
 // Live Log Services

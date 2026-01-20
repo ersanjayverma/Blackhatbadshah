@@ -35,7 +35,11 @@ public class SubscriptionService : ISubscriptionService
         var planName = await _keycloak.GetUserPlanAsync(userId);
         var planConfig = _plans.GetPlan(planName);
         var tier = Enum.TryParse<PlanTier>(planName, true, out var parsedTier) ? parsedTier : PlanTier.Free;
-        var (proUsed, openUsed) = await GetCurrentMonthUsage(userId);
+        var (proUsed, openUsed, purchasedPro, purchasedOpen) = await GetCurrentMonthUsage(userId);
+
+        // Add purchased credits to the base plan limits
+        var effectiveProLimit = planConfig.ProModelLimit == -1 ? -1 : planConfig.ProModelLimit + purchasedPro;
+        var effectiveOpenLimit = planConfig.OpenModelLimit == -1 ? -1 : planConfig.OpenModelLimit + purchasedOpen;
 
         return new UserSubscriptionDto
         {
@@ -43,12 +47,12 @@ public class SubscriptionService : ISubscriptionService
             PlanTier = tier,
             Status = "Active",
             BillingPeriod = "N/A",
-            ProModelLimit = planConfig.ProModelLimit,
-            OpenModelLimit = planConfig.OpenModelLimit,
+            ProModelLimit = effectiveProLimit,
+            OpenModelLimit = effectiveOpenLimit,
             ProModelUsed = proUsed,
             OpenModelUsed = openUsed,
             UsedThisMonth = proUsed + openUsed,
-            MonthlyLimit = planConfig.ProModelLimit + planConfig.OpenModelLimit,
+            MonthlyLimit = (effectiveProLimit == -1 ? 0 : effectiveProLimit) + (effectiveOpenLimit == -1 ? 0 : effectiveOpenLimit),
             AllowedModels = planConfig.AllowedModels
         };
     }
@@ -307,11 +311,13 @@ public class SubscriptionService : ISubscriptionService
             .ToListAsync();
     }
 
-    private async Task<(int proUsed, int openUsed)> GetCurrentMonthUsage(string userId)
+    private async Task<(int proUsed, int openUsed, int purchasedPro, int purchasedOpen)> GetCurrentMonthUsage(string userId)
     {
         var now = DateTime.UtcNow;
         var usage = await _db.UsageTrackings
             .FirstOrDefaultAsync(u => u.UserId == userId && u.Year == now.Year && u.Month == now.Month);
-        return usage != null ? (usage.ProModelCount, usage.OpenModelCount) : (0, 0);
+        return usage != null
+            ? (usage.ProModelCount, usage.OpenModelCount, usage.PurchasedProCredits, usage.PurchasedOpenCredits)
+            : (0, 0, 0, 0);
     }
 }

@@ -378,11 +378,14 @@ public class RazorpayService : IRazorpayService
         // ₹500 = 50000 paise
         const int amountPaise = 50000;
 
+        // Razorpay receipt has 40 char limit - use short hash of userId + timestamp
+        var receiptId = $"payg_{userId.GetHashCode():X8}_{DateTime.UtcNow.Ticks % 100000000}";
+
         var options = new Dictionary<string, object>
         {
             ["amount"] = amountPaise,
             ["currency"] = "INR",
-            ["receipt"] = $"payg_{userId}_{DateTime.UtcNow.Ticks}",
+            ["receipt"] = receiptId,
             ["notes"] = new Dictionary<string, string>
             {
                 ["keycloak_user_id"] = userId,

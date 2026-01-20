@@ -91,6 +91,7 @@ public sealed class LiveLogSessionStatus
 public sealed class LiveLogAnalyzeRequest
 {
     public string SessionId { get; set; } = string.Empty;
+    public string? WorkerId { get; set; }
     public List<string> LogIds { get; set; } = new();
     public string? Model { get; set; }
 }
@@ -207,4 +208,51 @@ public sealed class KillProcessResponse
     public int Pid { get; set; }
     public bool Success { get; set; }
     public string Message { get; set; } = string.Empty;
+}
+
+// Worker Registration DTOs
+public sealed class WorkerRegistration
+{
+    public string WorkerId { get; set; } = string.Empty;
+    public string Hostname { get; set; } = string.Empty;
+    public string OsVersion { get; set; } = string.Empty;
+    public string ApiUrl { get; set; } = string.Empty;
+    public List<string> AvailableLogPaths { get; set; } = new();
+    public DateTime RegisteredAt { get; set; } = DateTime.UtcNow;
+    public DateTime LastHeartbeat { get; set; } = DateTime.UtcNow;
+    public bool IsOnline { get; set; }
+    public string SessionId { get; set; } = string.Empty;
+    public WorkerMetrics? LastMetrics { get; set; }
+}
+
+public sealed class RegisterWorkerRequest
+{
+    public string Hostname { get; set; } = string.Empty;
+    public string OsVersion { get; set; } = string.Empty;
+    public List<string> AvailableLogPaths { get; set; } = new();
+}
+
+public sealed class WorkerListResponse
+{
+    public List<WorkerRegistration> Workers { get; set; } = new();
+    public int TotalCount { get; set; }
+    public int OnlineCount { get; set; }
+}
+
+public sealed class LogPullRequest
+{
+    public string WorkerId { get; set; } = string.Empty;
+    public string LogPath { get; set; } = string.Empty;
+    public int Lines { get; set; } = 100;
+    public bool FromEnd { get; set; } = true;
+}
+
+public sealed class LogPullResponse
+{
+    public string WorkerId { get; set; } = string.Empty;
+    public string LogPath { get; set; } = string.Empty;
+    public List<string> Lines { get; set; } = new();
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+    public DateTime PulledAt { get; set; } = DateTime.UtcNow;
 }

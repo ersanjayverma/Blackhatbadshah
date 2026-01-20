@@ -1,0 +1,13 @@
+﻿{
+  "chartType": "ColumnChart",
+  "title": "Log Event Severity",
+  "xAxis": {
+    "labels": ["Critical", "Warning", "Anomaly"]
+  },
+  "series": [
+    {
+      "name": "Count",
+      "values": [0, 1, 1]
+    }
+  ]
+}

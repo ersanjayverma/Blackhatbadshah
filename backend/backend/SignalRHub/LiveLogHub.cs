@@ -10,6 +10,7 @@ public class LiveLogHub : Hub
     private readonly ILiveLogBuffer _buffer;
     private readonly ILiveLogAnalysisQueue _analysisQueue;
     private readonly IHubNotificationService _hubNotification;
+    private readonly IWorkerRegistry _workerRegistry;
     private readonly IConfiguration _configuration;
     private readonly ILogger<LiveLogHub> _logger;
 
@@ -36,12 +37,14 @@ public class LiveLogHub : Hub
         ILiveLogBuffer buffer,
         ILiveLogAnalysisQueue analysisQueue,
         IHubNotificationService hubNotification,
+        IWorkerRegistry workerRegistry,
         IConfiguration configuration,
         ILogger<LiveLogHub> logger)
     {
         _buffer = buffer;
         _analysisQueue = analysisQueue;
         _hubNotification = hubNotification;
+        _workerRegistry = workerRegistry;
         _configuration = configuration;
         _logger = logger;
     }
@@ -238,6 +241,7 @@ public class LiveLogHub : Hub
             await _analysisQueue.QueueAnalysisJobAsync(
                 sessionId,
                 workerId,
+                workerId, // userId is workerId for PSK-auth workers
                 "psk-auth",
                 content,
                 chunkNumber,
@@ -286,6 +290,9 @@ public class LiveLogHub : Hub
 
         metrics.WorkerId = workerId;
         metrics.Timestamp = DateTime.UtcNow;
+
+        // Update worker heartbeat in registry
+        _workerRegistry.UpdateHeartbeat(workerId, metrics);
 
         _logger.LogDebug("Received metrics from worker {WorkerId}: CPU={Cpu}%, Memory={Mem}%",
             workerId, metrics.CpuPercent, metrics.MemoryPercent);
@@ -363,7 +370,17 @@ public class LiveLogHub : Hub
         _logCounters[sessionId] = 0;
         await Groups.AddToGroupAsync(sessionId, $"livelog_{workerId}");
 
-        _logger.LogInformation("LiveLogHub: Worker connected - WorkerId {WorkerId}, Session {SessionId}", workerId, sessionId);
+        // Get the API URL from the request for visibility filtering
+        var httpContext = Context.GetHttpContext();
+        var apiUrl = httpContext != null
+            ? $"{httpContext.Request.Scheme}://{httpContext.Request.Host}"
+            : string.Empty;
+
+        // Register worker in the registry with basic info
+        _workerRegistry.RegisterWorker(workerId, sessionId, apiUrl);
+
+        _logger.LogInformation("LiveLogHub: Worker connected - WorkerId {WorkerId}, Session {SessionId}, ApiUrl {ApiUrl}",
+            workerId, sessionId, apiUrl);
         await Clients.Caller.SendAsync("Connected", new { SessionId = sessionId, WorkerId = workerId });
 
         // Notify frontend that a worker session connected
@@ -383,6 +400,9 @@ public class LiveLogHub : Hub
 
             await Groups.RemoveFromGroupAsync(sessionId, $"livelog_{workerId}");
 
+            // Unregister worker from registry
+            _workerRegistry.UnregisterWorker(workerId, sessionId);
+
             // Notify frontend that worker session disconnected
             await _hubNotification.NotifyLiveLogSessionDisconnectedAsync(workerId, sessionId);
         }
@@ -392,5 +412,63 @@ public class LiveLogHub : Hub
 
         _logger.LogInformation("LiveLogHub: Session {SessionId} disconnected", sessionId);
         await base.OnDisconnectedAsync(exception);
+    }
+
+    /// <summary>
+    /// Called by worker to register itself with detailed information.
+    /// </summary>
+    public async Task RegisterWorker(RegisterWorkerRequest request)
+    {
+        var sessionId = GetSessionId();
+
+        if (!_sessionWorkerIds.TryGetValue(sessionId, out var workerId))
+        {
+            await Clients.Caller.SendAsync("Error", "Session not authenticated");
+            return;
+        }
+
+        var httpContext = Context.GetHttpContext();
+        var apiUrl = httpContext != null
+            ? $"{httpContext.Request.Scheme}://{httpContext.Request.Host}"
+            : string.Empty;
+
+        _workerRegistry.RegisterWorker(workerId, sessionId, apiUrl, request);
+
+        _logger.LogInformation(
+            "Worker registered with details: {WorkerId}, Hostname: {Hostname}, LogPaths: {LogPaths}",
+            workerId, request.Hostname, string.Join(", ", request.AvailableLogPaths));
+
+        await Clients.Caller.SendAsync("Registered", new
+        {
+            WorkerId = workerId,
+            Hostname = request.Hostname,
+            LogPaths = request.AvailableLogPaths
+        });
+
+        // Notify frontend about worker registration update
+        await _hubNotification.NotifyWorkerRegisteredAsync(workerId);
+    }
+
+    /// <summary>
+    /// Called by worker to respond to a log pull request.
+    /// </summary>
+    public async Task LogPullResponse(LogPullResponse response)
+    {
+        var sessionId = GetSessionId();
+
+        if (!_sessionWorkerIds.TryGetValue(sessionId, out var workerId))
+        {
+            await Clients.Caller.SendAsync("Error", "Session not authenticated");
+            return;
+        }
+
+        response.WorkerId = workerId;
+
+        _logger.LogInformation(
+            "Log pull response from worker {WorkerId}: Path={Path}, Lines={LineCount}, Success={Success}",
+            workerId, response.LogPath, response.Lines.Count, response.Success);
+
+        // Broadcast log pull response to frontend
+        await _hubNotification.NotifyLogPullResponseAsync(workerId, response);
     }
 }

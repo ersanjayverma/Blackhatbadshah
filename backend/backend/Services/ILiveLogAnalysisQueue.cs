@@ -4,6 +4,7 @@ public interface ILiveLogAnalysisQueue
 {
     Task QueueAnalysisJobAsync(
         string sessionId,
+        string workerId,
         string userId,
         string accessToken,
         string logContent,
@@ -16,6 +17,7 @@ public interface ILiveLogAnalysisQueue
 
 public record LiveLogAnalysisJob(
     string SessionId,
+    string WorkerId,
     string UserId,
     string AccessToken,
     string LogContent,

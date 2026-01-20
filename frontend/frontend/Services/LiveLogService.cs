@@ -26,11 +26,12 @@ public class LiveLogService
     /// <summary>
     /// Triggers AI analysis of live log buffer for a specific session.
     /// </summary>
-    public async Task<AnalyzeResponse> AnalyzeSessionAsync(string sessionId, string? model = null)
+    public async Task<AnalyzeResponse> AnalyzeSessionAsync(string sessionId, string? workerId = null, string? model = null)
     {
         var request = new LiveLogAnalyzeRequest
         {
             SessionId = sessionId,
+            WorkerId = workerId,
             Model = model
         };
 
@@ -44,12 +45,13 @@ public class LiveLogService
     /// <summary>
     /// Analyzes provided log content directly (for selected logs from frontend).
     /// </summary>
-    public async Task<AnalyzeResponse> AnalyzeContentAsync(string content, string? sessionId = null, string? model = null)
+    public async Task<AnalyzeResponse> AnalyzeContentAsync(string content, string? sessionId = null, string? workerId = null, string? model = null)
     {
         var request = new
         {
             Content = content,
             SessionId = sessionId,
+            WorkerId = workerId,
             Model = model
         };
 

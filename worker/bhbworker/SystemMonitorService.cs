@@ -2,9 +2,8 @@ using System.Diagnostics;
 using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
-using shared.Dto;
 
-namespace bhbworker;
+namespace BHBWorker;
 
 public class SystemMonitorService
 {

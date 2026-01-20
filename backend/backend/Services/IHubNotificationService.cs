@@ -29,4 +29,13 @@ public interface IHubNotificationService
     // System monitor notifications
     Task NotifySystemMonitorDataAsync(string workerId, SystemMonitorData data);
     Task NotifyKillProcessResponseAsync(string workerId, KillProcessResponse response);
+
+    // Worker registry notifications
+    Task NotifyWorkerRegisteredAsync(string workerId);
+    Task NotifyLogPullResponseAsync(string workerId, LogPullResponse response);
+
+    // Live log analysis notifications (to frontend)
+    Task NotifyLiveLogAnalysisStartedAsync(string workerId, Guid reportId, int chunkNumber);
+    Task NotifyLiveLogAnalysisCompletedAsync(string workerId, Guid reportId, int chunkNumber, string status, string summary);
+    Task NotifyLiveLogAnalysisFailedAsync(string workerId, Guid reportId, int chunkNumber, string error);
 }

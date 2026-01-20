@@ -78,4 +78,8 @@ builder.Services.AddScoped<LiveLogService>(sp =>
     new LiveLogService(sp.GetRequiredService<IHttpClientFactory>()
         .CreateClient("BlackHatBadshahApi")));
 
+builder.Services.AddScoped<WorkerService>(sp =>
+    new WorkerService(sp.GetRequiredService<IHttpClientFactory>()
+        .CreateClient("BlackHatBadshahApi")));
+
 await builder.Build().RunAsync();

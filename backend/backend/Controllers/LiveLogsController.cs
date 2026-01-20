@@ -63,20 +63,24 @@ public class LiveLogsController : ControllerBase
             return BadRequest(new { error = "No logs in buffer to analyze" });
         }
 
+        // Use workerId from request or generate one based on session
+        var workerId = !string.IsNullOrEmpty(request.WorkerId) ? request.WorkerId : $"user-{userId}";
+
         _logger.LogInformation(
-            "Manual live log analysis requested by user {UserId} for session {SessionId}, bytes {Bytes}",
-            userId, request.SessionId, totalBytes);
+            "Manual live log analysis requested by user {UserId} for session {SessionId}, worker {WorkerId}, bytes {Bytes}",
+            userId, request.SessionId, workerId, totalBytes);
 
         // Queue for analysis
         await _analysisQueue.QueueAnalysisJobAsync(
             request.SessionId,
+            workerId,
             userId,
             token,
             content,
             1, // chunk number
             request.Model);
 
-        await _hubNotification.NotifyLiveLogChunkQueuedAsync(userId, request.SessionId, 1);
+        await _hubNotification.NotifyLiveLogChunkQueuedAsync(workerId, request.SessionId, 1);
 
         return Accepted(new { message = "Analysis queued", sessionId = request.SessionId, bytes = totalBytes });
     }
@@ -107,21 +111,23 @@ public class LiveLogsController : ControllerBase
         if (token == null) return Unauthorized();
 
         var sessionId = request.SessionId ?? $"manual-{Guid.NewGuid():N}";
+        var workerId = !string.IsNullOrEmpty(request.WorkerId) ? request.WorkerId : $"user-{userId}";
 
         _logger.LogInformation(
-            "Direct content analysis requested by user {UserId}, bytes {Bytes}",
-            userId, request.Content.Length);
+            "Direct content analysis requested by user {UserId}, worker {WorkerId}, bytes {Bytes}",
+            userId, workerId, request.Content.Length);
 
         // Queue for analysis
         await _analysisQueue.QueueAnalysisJobAsync(
             sessionId,
+            workerId,
             userId,
             token,
             request.Content,
             1,
             request.Model);
 
-        await _hubNotification.NotifyLiveLogChunkQueuedAsync(userId, sessionId, 1);
+        await _hubNotification.NotifyLiveLogChunkQueuedAsync(workerId, sessionId, 1);
 
         return Accepted(new { message = "Analysis queued", sessionId, bytes = request.Content.Length });
     }
@@ -150,5 +156,6 @@ public class LiveLogContentAnalyzeRequest
 {
     public string Content { get; set; } = string.Empty;
     public string? SessionId { get; set; }
+    public string? WorkerId { get; set; }
     public string? Model { get; set; }
 }

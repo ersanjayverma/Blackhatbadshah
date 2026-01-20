@@ -84,6 +84,7 @@ builder.Services.AddHostedService<LogAnalysisBackgroundWorker>();
 // Live Log Services
 builder.Services.AddSingleton<ILiveLogBuffer, LiveLogBuffer>();
 builder.Services.AddSingleton<ILiveLogAnalysisQueue, LiveLogAnalysisQueue>();
+builder.Services.AddSingleton<IWorkerRegistry, WorkerRegistry>();
 builder.Services.AddHostedService<LiveLogAnalysisBackgroundWorker>();
 builder.Services.AddHttpContextAccessor();
 

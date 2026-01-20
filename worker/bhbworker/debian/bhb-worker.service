@@ -1,0 +1,25 @@
+[Unit]
+Description=BHB Worker - Log streaming and system monitoring agent
+Documentation=https://blackhatbadshah.com
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+ExecStart=/opt/bhb-worker/bhb-worker
+WorkingDirectory=/opt/bhb-worker
+Restart=always
+RestartSec=10
+KillSignal=SIGINT
+SyslogIdentifier=bhb-worker
+User=root
+Environment=DOTNET_ENVIRONMENT=Production
+
+# Hardening
+NoNewPrivileges=false
+ProtectSystem=strict
+ReadWritePaths=/opt/bhb-worker /var/log
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

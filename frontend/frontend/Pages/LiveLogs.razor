@@ -7,6 +7,7 @@
 @using Blazored.LocalStorage
 @inject HubConnectionService HubService
 @inject LiveLogService LiveLogApi
+@inject WorkerService WorkerApi
 @inject IAccessTokenProvider TokenProvider
 @inject ILocalStorageService LocalStorage
 @inject IJSRuntime JS
@@ -46,17 +47,34 @@
                 </div>
             </div>
 
-            <!-- WORKER ID INPUT -->
+            <!-- WORKER SELECTION -->
             <div class="card modern-card shadow-sm mb-4">
                 <div class="card-body">
                     <div class="row g-3 align-items-end">
                         <div class="col-md-6">
                             <label class="form-label fw-bold">
-                                <i class="bi bi-key me-2"></i>Worker ID
+                                <i class="bi bi-hdd-network me-2"></i>Select Worker
                             </label>
                             <div class="input-group">
-                                <input type="text" class="form-control" placeholder="Enter Worker ID (e.g., bhb-a1b2c3d4)"
-                                       @bind="_workerIdInput" @bind:event="oninput" />
+                                <select class="form-select" @bind="_workerIdInput" disabled="@_isSubscribed">
+                                    <option value="">-- Select a worker --</option>
+                                    @foreach (var worker in _availableWorkers)
+                                    {
+                                        <option value="@worker.WorkerId">
+                                            @worker.Hostname (@worker.WorkerId) - @(worker.IsOnline ? "Online" : "Offline")
+                                        </option>
+                                    }
+                                </select>
+                                <button class="btn btn-outline-secondary" @onclick="RefreshWorkers" disabled="@_loadingWorkers" title="Refresh workers">
+                                    @if (_loadingWorkers)
+                                    {
+                                        <span class="spinner-border spinner-border-sm"></span>
+                                    }
+                                    else
+                                    {
+                                        <i class="bi bi-arrow-clockwise"></i>
+                                    }
+                                </button>
                                 @if (_isSubscribed)
                                 {
                                     <button class="btn btn-outline-danger" @onclick="Unsubscribe">
@@ -70,23 +88,30 @@
                                     </button>
                                 }
                             </div>
-                            <small class="text-muted">
-                                Copy the Worker ID from your BHBWorker console output and paste it here.
-                            </small>
+                            <div class="mt-2 d-flex gap-2 align-items-center">
+                                <span class="badge bg-success">@_availableWorkers.Count(w => w.IsOnline) Online</span>
+                                <span class="badge bg-secondary">@_availableWorkers.Count Total</span>
+                            </div>
                         </div>
                         <div class="col-md-6">
                             @if (_isSubscribed)
                             {
+                                var selectedWorker = _availableWorkers.FirstOrDefault(w => w.WorkerId == _subscribedWorkerId);
                                 <div class="alert alert-success mb-0 py-2">
-                                    <i class="bi bi-check-circle me-2"></i>
-                                    Subscribed to worker: <strong>@_subscribedWorkerId</strong>
+                                    <div class="d-flex align-items-center">
+                                        <i class="bi bi-check-circle me-2 fs-5"></i>
+                                        <div>
+                                            <strong>Streaming from: @(selectedWorker?.Hostname ?? _subscribedWorkerId)</strong>
+                                            <div class="small">Worker ID: @_subscribedWorkerId</div>
+                                        </div>
+                                    </div>
                                 </div>
                             }
                             else
                             {
                                 <div class="alert alert-info mb-0 py-2">
                                     <i class="bi bi-info-circle me-2"></i>
-                                    Enter a Worker ID and click Connect to start receiving logs.
+                                    Select a worker from the dropdown and click Connect to start receiving logs.
                                 </div>
                             }
                         </div>
@@ -99,37 +124,37 @@
                 <div class="col-md-2 col-sm-4 col-6">
                     <div class="card modern-card shadow-sm text-center py-3">
                         <div class="fw-bold fs-4">@_logs.Count</div>
-                        <small class="text-muted">Total Logs</small>
+                        <small class="fw-bold">Total Logs</small>
                     </div>
                 </div>
                 <div class="col-md-2 col-sm-4 col-6">
                     <div class="card modern-card shadow-sm text-center py-3">
                         <div class="fw-bold fs-4 text-danger">@_stats.ErrorCount</div>
-                        <small class="text-muted">Errors</small>
+                        <small class="fw-bold">Errors</small>
                     </div>
                 </div>
                 <div class="col-md-2 col-sm-4 col-6">
                     <div class="card modern-card shadow-sm text-center py-3">
                         <div class="fw-bold fs-4 text-warning">@_stats.WarningCount</div>
-                        <small class="text-muted">Warnings</small>
+                        <small class="fw-bold">Warnings</small>
                     </div>
                 </div>
                 <div class="col-md-2 col-sm-4 col-6">
                     <div class="card modern-card shadow-sm text-center py-3">
                         <div class="fw-bold fs-4 text-info">@_stats.InfoCount</div>
-                        <small class="text-muted">Info</small>
+                        <small class="fw-bold">Info</small>
                     </div>
                 </div>
                 <div class="col-md-2 col-sm-4 col-6">
                     <div class="card modern-card shadow-sm text-center py-3">
                         <div class="fw-bold fs-4 text-secondary">@_stats.DebugCount</div>
-                        <small class="text-muted">Debug</small>
+                        <small class="fw-bold">Debug</small>
                     </div>
                 </div>
                 <div class="col-md-2 col-sm-4 col-6">
                     <div class="card modern-card shadow-sm text-center py-3">
                         <div class="fw-bold fs-4">@_stats.BySource.Count</div>
-                        <small class="text-muted">Sources</small>
+                        <small class="fw-bold">Sources</small>
                     </div>
                 </div>
             </div>
@@ -162,7 +187,7 @@
                             </select>
                         </div>
                         <div class="col-md-6">
-                            <small class="text-muted">
+                            <small>
                                 <i class="bi bi-info-circle me-1"></i>
                                 Selected model will be used for live log analysis
                             </small>
@@ -261,7 +286,7 @@
                             <i class="bi bi-broadcast display-1 mb-3"></i>
                             <h5 class="fw-bold">Waiting for logs...</h5>
                             <p>Logs will appear here when your worker starts pushing them</p>
-                            <small class="text-muted">
+                            <small>
                                 <i class="bi bi-info-circle me-1"></i>
                                 Make sure your BHBWorker is running and connected
                             </small>
@@ -301,7 +326,7 @@
                                             <td class="text-truncate" style="max-width: 120px;" title="@log.Source">
                                                 @log.Source
                                             </td>
-                                            <td class="text-muted small">
+                                            <td class="small">
                                                 @log.Timestamp.ToLocalTime().ToString("HH:mm:ss.fff")
                                             </td>
                                             <td class="log-message" title="@log.RawLine">
@@ -422,6 +447,9 @@
     private string _searchText = "";
     private string _selectedModel = "claude-sonnet-4-5";
 
+    private List<WorkerRegistration> _availableWorkers = new();
+    private bool _loadingWorkers;
+
     private const string WorkerIdStorageKey = "bhb_livelog_worker_id";
 
     private IDisposable? _logReceivedSub;
@@ -430,6 +458,9 @@
     private IDisposable? _sessionDisconnectedSub;
     private IDisposable? _chunkQueuedSub;
     private IDisposable? _subscribedToWorkerSub;
+    private IDisposable? _analysisStartedSub;
+    private IDisposable? _analysisCompletedSub;
+    private IDisposable? _analysisFailedSub;
 
     private List<LiveLogEntry> FilteredLogs => _logs
         .Where(l => string.IsNullOrEmpty(_filterLevel) || l.Level == _filterLevel)
@@ -442,7 +473,29 @@
     protected override async Task OnInitializedAsync()
     {
         await InitializeSignalR();
+        await RefreshWorkers();
         await LoadSavedWorkerId();
+    }
+
+    private async Task RefreshWorkers()
+    {
+        _loadingWorkers = true;
+        StateHasChanged();
+
+        try
+        {
+            var response = await WorkerApi.GetWorkersAsync();
+            _availableWorkers = response.Workers;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to load workers: {ex.Message}");
+        }
+        finally
+        {
+            _loadingWorkers = false;
+            StateHasChanged();
+        }
     }
 
     private async Task LoadSavedWorkerId()
@@ -572,6 +625,25 @@
                 Console.WriteLine($"Confirmed subscription to worker: {workerId}");
                 await InvokeAsync(StateHasChanged);
             });
+
+            // Analysis status notifications
+            _analysisStartedSub = HubService.On<object>("AnalysisStarted", async (data) =>
+            {
+                Toast.ShowInfo("Analysis started...");
+                await InvokeAsync(StateHasChanged);
+            });
+
+            _analysisCompletedSub = HubService.On<object>("AnalysisCompleted", async (data) =>
+            {
+                Toast.ShowSuccess("Analysis completed! Check the Reports page.");
+                await InvokeAsync(StateHasChanged);
+            });
+
+            _analysisFailedSub = HubService.On<object>("AnalysisFailed", async (data) =>
+            {
+                Toast.ShowError("Analysis failed. Please try again.");
+                await InvokeAsync(StateHasChanged);
+            });
         }
         catch (Exception ex)
         {
@@ -686,7 +758,7 @@
             var selectedEntries = _logs.Where(l => _selectedLogs.Contains(l.Id)).ToList();
             var content = string.Join("\n", selectedEntries.Select(e => e.RawLine));
 
-            await LiveLogApi.AnalyzeContentAsync(content, _sessionId, _selectedModel);
+            await LiveLogApi.AnalyzeContentAsync(content, _sessionId, _subscribedWorkerId, _selectedModel);
 
             Toast.ShowSuccess($"Analysis queued for {_selectedLogs.Count} logs!");
             _selectedLogs.Clear();
@@ -743,6 +815,9 @@
         _sessionDisconnectedSub?.Dispose();
         _chunkQueuedSub?.Dispose();
         _subscribedToWorkerSub?.Dispose();
+        _analysisStartedSub?.Dispose();
+        _analysisCompletedSub?.Dispose();
+        _analysisFailedSub?.Dispose();
 
         // Unsubscribe from worker when leaving page
         if (_isSubscribed && !string.IsNullOrEmpty(_subscribedWorkerId))

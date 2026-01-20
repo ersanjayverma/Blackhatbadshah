@@ -20,6 +20,7 @@ public class LiveLogAnalysisQueue : ILiveLogAnalysisQueue
 
     public async Task QueueAnalysisJobAsync(
         string sessionId,
+        string workerId,
         string userId,
         string accessToken,
         string logContent,
@@ -29,6 +30,7 @@ public class LiveLogAnalysisQueue : ILiveLogAnalysisQueue
     {
         var job = new LiveLogAnalysisJob(
             sessionId,
+            workerId,
             userId,
             accessToken,
             logContent,

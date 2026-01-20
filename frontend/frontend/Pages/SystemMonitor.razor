@@ -8,6 +8,7 @@
 @inject HubConnectionService HubService
 @inject IAccessTokenProvider TokenProvider
 @inject ILocalStorageService LocalStorage
+@inject WorkerService WorkerApi
 @inject IJSRuntime JS
 @inject ToastService Toast
 @implements IAsyncDisposable
@@ -42,17 +43,34 @@
                 </div>
             </div>
 
-            <!-- WORKER ID INPUT -->
+            <!-- WORKER SELECTION -->
             <div class="card modern-card shadow-sm mb-4">
                 <div class="card-body">
                     <div class="row g-3 align-items-end">
                         <div class="col-md-6">
                             <label class="form-label fw-bold">
-                                <i class="bi bi-key me-2"></i>Worker ID
+                                <i class="bi bi-hdd-network me-2"></i>Select Worker
                             </label>
                             <div class="input-group">
-                                <input type="text" class="form-control" placeholder="Enter Worker ID (e.g., bhb-a1b2c3d4)"
-                                       @bind="_workerIdInput" @bind:event="oninput" />
+                                <select class="form-select" @bind="_workerIdInput" disabled="@_isSubscribed">
+                                    <option value="">-- Select a worker --</option>
+                                    @foreach (var worker in _availableWorkers)
+                                    {
+                                        <option value="@worker.WorkerId">
+                                            @worker.Hostname (@worker.WorkerId) - @(worker.IsOnline ? "Online" : "Offline")
+                                        </option>
+                                    }
+                                </select>
+                                <button class="btn btn-outline-secondary" @onclick="RefreshWorkers" disabled="@_loadingWorkers" title="Refresh workers">
+                                    @if (_loadingWorkers)
+                                    {
+                                        <span class="spinner-border spinner-border-sm"></span>
+                                    }
+                                    else
+                                    {
+                                        <i class="bi bi-arrow-clockwise"></i>
+                                    }
+                                </button>
                                 @if (_isSubscribed)
                                 {
                                     <button class="btn btn-outline-danger" @onclick="Unsubscribe">
@@ -66,23 +84,34 @@
                                     </button>
                                 }
                             </div>
-                            <small class="text-muted">
-                                Copy the Worker ID from your BHBWorker console output and paste it here.
-                            </small>
+                            <div class="mt-2 d-flex gap-2 align-items-center">
+                                <span class="badge bg-success">@_availableWorkers.Count(w => w.IsOnline) Online</span>
+                                <span class="badge bg-secondary">@_availableWorkers.Count Total</span>
+                                @if (_availableWorkers.Count == 0 && !_loadingWorkers)
+                                {
+                                    <span class="small">No workers registered. Start a BHBWorker to see it here.</span>
+                                }
+                            </div>
                         </div>
                         <div class="col-md-6">
                             @if (_isSubscribed)
                             {
+                                var selectedWorker = _availableWorkers.FirstOrDefault(w => w.WorkerId == _subscribedWorkerId);
                                 <div class="alert alert-success mb-0 py-2">
-                                    <i class="bi bi-check-circle me-2"></i>
-                                    Monitoring worker: <strong>@_subscribedWorkerId</strong>
+                                    <div class="d-flex align-items-center">
+                                        <i class="bi bi-check-circle me-2 fs-5"></i>
+                                        <div>
+                                            <strong>Connected to: @(selectedWorker?.Hostname ?? _subscribedWorkerId)</strong>
+                                            <div class="small">Worker ID: @_subscribedWorkerId</div>
+                                        </div>
+                                    </div>
                                 </div>
                             }
                             else
                             {
                                 <div class="alert alert-info mb-0 py-2">
                                     <i class="bi bi-info-circle me-2"></i>
-                                    Enter a Worker ID and click Connect to start monitoring.
+                                    Select a worker from the dropdown and click Connect to start monitoring.
                                 </div>
                             }
                         </div>
@@ -93,23 +122,23 @@
             @if (_isSubscribed && _data != null)
             {
                 <!-- SYSTEM INFO HEADER -->
-                <div class="card modern-card shadow-sm mb-4">
+                <div class="card modern-card shadow-sm mb-4 border-primary border-2">
                     <div class="card-body py-3">
                         <div class="row align-items-center">
                             <div class="col-auto">
                                 <i class="bi bi-pc-display fs-2 text-primary"></i>
                             </div>
                             <div class="col">
-                                <h5 class="mb-0">@_data.Hostname</h5>
-                                <small class="text-muted">@_data.OsVersion</small>
+                                <h5 class="mb-0 fw-bold">@_data.Hostname</h5>
+                                <small>@_data.OsVersion</small>
                             </div>
                             <div class="col-auto text-end">
-                                <div class="text-muted small">Kernel: @_data.KernelVersion</div>
-                                <div class="text-muted small">Uptime: @_data.UptimeFormatted</div>
+                                <div class="small"><strong>Kernel:</strong> @_data.KernelVersion</div>
+                                <div class="small"><strong>Uptime:</strong> @_data.UptimeFormatted</div>
                             </div>
                             <div class="col-auto text-end">
-                                <div class="text-muted small">Load: @_data.LoadAverage1.ToString("F2") / @_data.LoadAverage5.ToString("F2") / @_data.LoadAverage15.ToString("F2")</div>
-                                <div class="text-muted small">Updated: @_data.Timestamp.ToLocalTime().ToString("HH:mm:ss")</div>
+                                <div class="small"><strong>Load:</strong> @_data.LoadAverage1.ToString("F2") / @_data.LoadAverage5.ToString("F2") / @_data.LoadAverage15.ToString("F2")</div>
+                                <div class="small"><strong>Updated:</strong> @_data.Timestamp.ToLocalTime().ToString("HH:mm:ss")</div>
                             </div>
                         </div>
                     </div>
@@ -123,7 +152,7 @@
                             <div class="card-body">
                                 <div class="d-flex justify-content-between align-items-start mb-3">
                                     <div>
-                                        <h6 class="text-muted mb-1">CPU Usage</h6>
+                                        <h6 class="fw-bold mb-1">CPU Usage</h6>
                                         <h3 class="mb-0 @GetCpuColorClass(_data.CpuPercent)">@_data.CpuPercent.ToString("F1")%</h3>
                                     </div>
                                     <div class="bg-primary bg-opacity-10 rounded-circle p-2">
@@ -133,7 +162,7 @@
                                 <div class="progress mb-2" style="height: 8px;">
                                     <div class="progress-bar @GetCpuProgressClass(_data.CpuPercent)" style="width: @_data.CpuPercent.ToString("F0")%"></div>
                                 </div>
-                                <small class="text-muted">@_data.CpuCores Cores @((_data.CpuTemperature > 0) ? $"| {_data.CpuTemperature:F0}C" : "")</small>
+                                <small><strong>@_data.CpuCores Cores</strong> @((_data.CpuTemperature > 0) ? $"| {_data.CpuTemperature:F0}°C" : "")</small>
                             </div>
                         </div>
                     </div>
@@ -144,7 +173,7 @@
                             <div class="card-body">
                                 <div class="d-flex justify-content-between align-items-start mb-3">
                                     <div>
-                                        <h6 class="text-muted mb-1">Memory Usage</h6>
+                                        <h6 class="fw-bold mb-1">Memory Usage</h6>
                                         <h3 class="mb-0 @GetMemoryColorClass(_data.MemoryPercent)">@_data.MemoryPercent.ToString("F1")%</h3>
                                     </div>
                                     <div class="bg-success bg-opacity-10 rounded-circle p-2">
@@ -154,7 +183,7 @@
                                 <div class="progress mb-2" style="height: 8px;">
                                     <div class="progress-bar @GetMemoryProgressClass(_data.MemoryPercent)" style="width: @_data.MemoryPercent.ToString("F0")%"></div>
                                 </div>
-                                <small class="text-muted">@FormatMB(_data.MemoryUsedMB) / @FormatMB(_data.MemoryTotalMB)</small>
+                                <small><strong>@FormatMB(_data.MemoryUsedMB)</strong> / <strong>@FormatMB(_data.MemoryTotalMB)</strong></small>
                             </div>
                         </div>
                     </div>
@@ -165,7 +194,7 @@
                             <div class="card-body">
                                 <div class="d-flex justify-content-between align-items-start mb-3">
                                     <div>
-                                        <h6 class="text-muted mb-1">Swap Usage</h6>
+                                        <h6 class="fw-bold mb-1">Swap Usage</h6>
                                         @{
                                             var swapPercent = _data.SwapTotalMB > 0 ? (_data.SwapUsedMB / _data.SwapTotalMB * 100) : 0;
                                         }
@@ -178,7 +207,7 @@
                                 <div class="progress mb-2" style="height: 8px;">
                                     <div class="progress-bar @GetMemoryProgressClass(swapPercent)" style="width: @swapPercent.ToString("F0")%"></div>
                                 </div>
-                                <small class="text-muted">@FormatMB(_data.SwapUsedMB) / @FormatMB(_data.SwapTotalMB)</small>
+                                <small><strong>@FormatMB(_data.SwapUsedMB)</strong> / <strong>@FormatMB(_data.SwapTotalMB)</strong></small>
                             </div>
                         </div>
                     </div>
@@ -189,7 +218,7 @@
                             <div class="card-body">
                                 <div class="d-flex justify-content-between align-items-start mb-3">
                                     <div>
-                                        <h6 class="text-muted mb-1">Network I/O</h6>
+                                        <h6 class="fw-bold mb-1">Network I/O</h6>
                                         <h3 class="mb-0 text-info">@FormatBytesPerSec(_data.NetworkRxBytesPerSec + _data.NetworkTxBytesPerSec)</h3>
                                     </div>
                                     <div class="bg-info bg-opacity-10 rounded-circle p-2">
@@ -197,8 +226,8 @@
                                     </div>
                                 </div>
                                 <div class="d-flex justify-content-between small">
-                                    <span class="text-success"><i class="bi bi-arrow-down"></i> @FormatBytesPerSec(_data.NetworkRxBytesPerSec)</span>
-                                    <span class="text-danger"><i class="bi bi-arrow-up"></i> @FormatBytesPerSec(_data.NetworkTxBytesPerSec)</span>
+                                    <span class="text-success fw-bold"><i class="bi bi-arrow-down"></i> @FormatBytesPerSec(_data.NetworkRxBytesPerSec)</span>
+                                    <span class="text-danger fw-bold"><i class="bi bi-arrow-up"></i> @FormatBytesPerSec(_data.NetworkTxBytesPerSec)</span>
                                 </div>
                             </div>
                         </div>
@@ -211,7 +240,7 @@
                     <div class="col-md-6">
                         <div class="card modern-card shadow-sm h-100">
                             <div class="card-header bg-transparent border-0 pb-0">
-                                <h6 class="mb-0"><i class="bi bi-device-hdd me-2"></i>Disk Usage</h6>
+                                <h6 class="mb-0 fw-bold"><i class="bi bi-device-hdd me-2"></i>Disk Usage</h6>
                             </div>
                             <div class="card-body">
                                 @if (_data.Disks.Any())
@@ -220,18 +249,25 @@
                                     {
                                         <div class="mb-3">
                                             <div class="d-flex justify-content-between mb-1">
-                                                <span class="small fw-bold">@disk.MountPoint</span>
-                                                <span class="small text-muted">@disk.UsedPercent.ToString("F1")% (@disk.UsedGB.ToString("F1")/@disk.TotalGB.ToString("F1") GB)</span>
+                                                <span class="fw-bold">@disk.MountPoint</span>
+                                                <span>
+                                                    <span class="badge @GetDiskBadgeClass(disk.UsedPercent)">@disk.UsedPercent.ToString("F1")%</span>
+                                                    <strong>@FormatGB(disk.UsedGB)</strong> / <strong>@FormatGB(disk.TotalGB)</strong>
+                                                </span>
                                             </div>
-                                            <div class="progress" style="height: 6px;">
+                                            <div class="progress" style="height: 8px;">
                                                 <div class="progress-bar @GetDiskProgressClass(disk.UsedPercent)" style="width: @disk.UsedPercent.ToString("F0")%"></div>
+                                            </div>
+                                            <div class="d-flex justify-content-between small mt-1">
+                                                <span>Free: <strong>@FormatGB(disk.FreeGB)</strong></span>
+                                                <span>@disk.FileSystem</span>
                                             </div>
                                         </div>
                                     }
                                 }
                                 else
                                 {
-                                    <p class="text-muted mb-0">No disk information available</p>
+                                    <p class="mb-0">No disk information available</p>
                                 }
                             </div>
                         </div>
@@ -241,7 +277,7 @@
                     <div class="col-md-6">
                         <div class="card modern-card shadow-sm h-100">
                             <div class="card-header bg-transparent border-0 pb-0">
-                                <h6 class="mb-0"><i class="bi bi-diagram-3 me-2"></i>Network Interfaces</h6>
+                                <h6 class="mb-0 fw-bold"><i class="bi bi-diagram-3 me-2"></i>Network Interfaces</h6>
                             </div>
                             <div class="card-body">
                                 @if (_data.NetworkInterfaces.Any())
@@ -251,9 +287,9 @@
                                             <thead>
                                                 <tr>
                                                     <th>Interface</th>
-                                                    <th>IP</th>
-                                                    <th>RX</th>
-                                                    <th>TX</th>
+                                                    <th>IP Address</th>
+                                                    <th>Download</th>
+                                                    <th>Upload</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -262,11 +298,11 @@
                                                     <tr>
                                                         <td>
                                                             <i class="bi @(nic.IsUp ? "bi-wifi text-success" : "bi-wifi-off text-danger") me-1"></i>
-                                                            @nic.Name
+                                                            <strong>@nic.Name</strong>
                                                         </td>
-                                                        <td class="small">@nic.IpAddress</td>
-                                                        <td class="small text-success">@FormatBytesPerSec(nic.RxBytesPerSec)</td>
-                                                        <td class="small text-danger">@FormatBytesPerSec(nic.TxBytesPerSec)</td>
+                                                        <td>@nic.IpAddress</td>
+                                                        <td class="text-success fw-bold">@FormatBytesPerSec(nic.RxBytesPerSec)</td>
+                                                        <td class="text-danger fw-bold">@FormatBytesPerSec(nic.TxBytesPerSec)</td>
                                                     </tr>
                                                 }
                                             </tbody>
@@ -275,7 +311,7 @@
                                 }
                                 else
                                 {
-                                    <p class="text-muted mb-0">No network interfaces found</p>
+                                    <p class="mb-0">No network interfaces found</p>
                                 }
                             </div>
                         </div>
@@ -284,23 +320,41 @@
 
                 <!-- PROCESSES -->
                 <div class="card modern-card shadow-sm">
-                    <div class="card-header bg-transparent border-0 d-flex justify-content-between align-items-center">
-                        <h6 class="mb-0">
-                            <i class="bi bi-list-task me-2"></i>Top Processes
-                            <span class="badge bg-secondary ms-2">@_data.TotalProcesses total</span>
-                            <span class="badge bg-success ms-1">@_data.RunningProcesses running</span>
-                            <span class="badge bg-secondary ms-1">@_data.SleepingProcesses sleeping</span>
-                        </h6>
-                        <div class="d-flex gap-2">
-                            <select class="form-select form-select-sm" style="width: auto;" @bind="_processSortBy">
-                                <option value="cpu">Sort by CPU</option>
-                                <option value="memory">Sort by Memory</option>
-                                <option value="pid">Sort by PID</option>
-                                <option value="name">Sort by Name</option>
-                            </select>
-                            <input type="text" class="form-control form-control-sm" style="width: 200px;"
-                                   placeholder="Filter processes..." @bind="_processFilter" @bind:event="oninput" />
+                    <div class="card-header bg-transparent border-0">
+                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                            <h6 class="mb-0 fw-bold">
+                                <i class="bi bi-list-task me-2"></i>Processes
+                                <span class="badge bg-primary ms-2">@_data.TotalProcesses Total</span>
+                                <span class="badge bg-success ms-1">@_data.RunningProcesses Running</span>
+                                <span class="badge bg-warning text-dark ms-1">@_data.SleepingProcesses Sleeping</span>
+                            </h6>
+                            <div class="d-flex gap-2 align-items-center">
+                                <div class="input-group" style="width: 280px;">
+                                    <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                                    <input type="text" class="form-control"
+                                           placeholder="Search by name or PID..."
+                                           @bind="_processFilter" @bind:event="oninput" />
+                                    @if (!string.IsNullOrEmpty(_processFilter))
+                                    {
+                                        <button class="btn btn-outline-secondary" type="button" @onclick="@(() => _processFilter = string.Empty)">
+                                            <i class="bi bi-x"></i>
+                                        </button>
+                                    }
+                                </div>
+                                <select class="form-select" style="width: auto;" @bind="_processSortBy">
+                                    <option value="cpu">Sort: CPU</option>
+                                    <option value="memory">Sort: Memory</option>
+                                    <option value="pid">Sort: PID</option>
+                                    <option value="name">Sort: Name</option>
+                                </select>
+                            </div>
                         </div>
+                        @if (!string.IsNullOrEmpty(_processFilter))
+                        {
+                            <div class="mt-2">
+                                <span class="badge bg-info">Showing @GetFilteredProcesses().Count() matching "@_processFilter"</span>
+                            </div>
+                        }
                     </div>
                     <div class="card-body p-0">
                         <div class="table-responsive">
@@ -308,48 +362,50 @@
                                 <thead class="table-light">
                                     <tr>
                                         <th style="width: 80px;">PID</th>
-                                        <th>Name</th>
-                                        <th style="width: 100px;">CPU %</th>
-                                        <th style="width: 100px;">Memory</th>
+                                        <th>Process Name</th>
+                                        <th style="width: 120px;">CPU %</th>
+                                        <th style="width: 120px;">Memory</th>
                                         <th style="width: 100px;">Status</th>
                                         <th style="width: 120px;">Runtime</th>
-                                        <th style="width: 80px;">Actions</th>
+                                        <th style="width: 100px;">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     @foreach (var proc in GetFilteredProcesses())
                                     {
                                         <tr>
-                                            <td class="font-monospace">@proc.Pid</td>
+                                            <td class="font-monospace fw-bold">@proc.Pid</td>
                                             <td>
                                                 <span class="fw-bold">@proc.Name</span>
                                                 @if (!string.IsNullOrEmpty(proc.User))
                                                 {
-                                                    <small class="text-muted ms-2">(@proc.User)</small>
+                                                    <span class="ms-2 badge bg-light text-dark">@proc.User</span>
                                                 }
                                             </td>
                                             <td>
                                                 <div class="d-flex align-items-center gap-2">
-                                                    <div class="progress flex-grow-1" style="height: 6px; width: 50px;">
+                                                    <div class="progress flex-grow-1" style="height: 8px; width: 60px;">
                                                         <div class="progress-bar @GetCpuProgressClass(proc.CpuPercent)" style="width: @Math.Min(proc.CpuPercent, 100).ToString("F0")%"></div>
                                                     </div>
-                                                    <span class="small">@proc.CpuPercent.ToString("F1")%</span>
+                                                    <span class="fw-bold">@proc.CpuPercent.ToString("F1")%</span>
                                                 </div>
                                             </td>
-                                            <td class="small">@FormatMB(proc.MemoryMB)</td>
+                                            <td class="fw-bold">@FormatMB(proc.MemoryMB)</td>
                                             <td>
-                                                <span class="badge @(proc.Status == "Running" ? "bg-success" : "bg-warning")">@proc.Status</span>
+                                                <span class="badge @(proc.Status == "Running" ? "bg-success" : "bg-warning text-dark")">@proc.Status</span>
                                             </td>
-                                            <td class="small text-muted">@FormatTimeSpan(proc.RunTime)</td>
+                                            <td>@FormatTimeSpan(proc.RunTime)</td>
                                             <td>
-                                                <button class="btn btn-sm btn-outline-danger" @onclick="() => KillProcess(proc.Pid, false)"
-                                                        title="Terminate process">
-                                                    <i class="bi bi-x-circle"></i>
-                                                </button>
-                                                <button class="btn btn-sm btn-danger ms-1" @onclick="() => KillProcess(proc.Pid, true)"
-                                                        title="Force kill process">
-                                                    <i class="bi bi-x-octagon"></i>
-                                                </button>
+                                                <div class="btn-group btn-group-sm">
+                                                    <button class="btn btn-outline-danger" @onclick="() => KillProcess(proc.Pid, false)"
+                                                            title="Terminate process (SIGTERM)">
+                                                        <i class="bi bi-x-circle"></i>
+                                                    </button>
+                                                    <button class="btn btn-danger" @onclick="() => KillProcess(proc.Pid, true)"
+                                                            title="Force kill process (SIGKILL)">
+                                                        <i class="bi bi-x-octagon"></i>
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     }
@@ -367,7 +423,7 @@
                         <div class="spinner-border text-primary mb-3" role="status">
                             <span class="visually-hidden">Loading...</span>
                         </div>
-                        <p class="text-muted mb-0">Waiting for system data from worker...</p>
+                        <p class="mb-0">Waiting for system data from worker...</p>
                     </div>
                 </div>
             }
@@ -376,9 +432,9 @@
                 <!-- NOT CONNECTED STATE -->
                 <div class="card modern-card shadow-sm">
                     <div class="card-body text-center py-5">
-                        <i class="bi bi-activity fs-1 text-muted mb-3 d-block"></i>
-                        <h5 class="text-muted">Connect to a Worker</h5>
-                        <p class="text-muted mb-0">Enter your Worker ID above and click Connect to start monitoring system metrics.</p>
+                        <i class="bi bi-activity fs-1 text-secondary mb-3 d-block"></i>
+                        <h5>Connect to a Worker</h5>
+                        <p class="mb-0">Enter your Worker ID above and click Connect to start monitoring system metrics.</p>
                     </div>
                 </div>
             }
@@ -400,12 +456,18 @@
     private string _processSortBy = "cpu";
     private string _processFilter = "";
 
+    private List<WorkerRegistration> _availableWorkers = new();
+    private bool _loadingWorkers;
+
     private const string WorkerIdStorageKey = "systemmonitor_workerId";
 
     protected override async Task OnInitializedAsync()
     {
         HubService.OnConnectionStateChanged += OnConnectionStateChanged;
         await HubService.StartAsync();
+
+        // Load available workers
+        await RefreshWorkers();
 
         // Load saved worker ID
         try
@@ -417,6 +479,27 @@
             }
         }
         catch { }
+    }
+
+    private async Task RefreshWorkers()
+    {
+        _loadingWorkers = true;
+        StateHasChanged();
+
+        try
+        {
+            var response = await WorkerApi.GetWorkersAsync();
+            _availableWorkers = response.Workers;
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to load workers: {ex.Message}");
+        }
+        finally
+        {
+            _loadingWorkers = false;
+            StateHasChanged();
+        }
     }
 
     private void OnConnectionStateChanged(bool isConnected)
@@ -575,11 +658,27 @@
         _ => "bg-primary"
     };
 
+    private string GetDiskBadgeClass(double percent) => percent switch
+    {
+        >= 90 => "bg-danger",
+        >= 80 => "bg-warning text-dark",
+        _ => "bg-success"
+    };
+
     private string FormatMB(double mb)
     {
         if (mb >= 1024)
             return $"{mb / 1024:F1} GB";
         return $"{mb:F0} MB";
+    }
+
+    private string FormatGB(double gb)
+    {
+        if (gb >= 1024)
+            return $"{gb / 1024:F2} TB";
+        if (gb >= 1)
+            return $"{gb:F1} GB";
+        return $"{gb * 1024:F0} MB";
     }
 
     private string FormatBytesPerSec(double bytes)

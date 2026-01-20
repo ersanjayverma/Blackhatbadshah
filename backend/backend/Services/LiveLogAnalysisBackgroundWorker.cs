@@ -13,20 +13,20 @@ public class LiveLogAnalysisBackgroundWorker : BackgroundService
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly ILiveLogAnalysisQueue _queue;
-    private readonly IHubContext<LiveLogHub> _hubContext;
+    private readonly IHubNotificationService _hubNotification;
     private readonly ModelsConfig _modelsConfig;
     private readonly ILogger<LiveLogAnalysisBackgroundWorker> _logger;
 
     public LiveLogAnalysisBackgroundWorker(
         IServiceProvider serviceProvider,
         ILiveLogAnalysisQueue queue,
-        IHubContext<LiveLogHub> hubContext,
+        IHubNotificationService hubNotification,
         IOptions<ModelsConfig> modelsConfig,
         ILogger<LiveLogAnalysisBackgroundWorker> logger)
     {
         _serviceProvider = serviceProvider;
         _queue = queue;
-        _hubContext = hubContext;
+        _hubNotification = hubNotification;
         _modelsConfig = modelsConfig.Value;
         _logger = logger;
     }
@@ -83,12 +83,8 @@ public class LiveLogAnalysisBackgroundWorker : BackgroundService
 
         try
         {
-            // Notify client that analysis started
-            await NotifyClientAsync(job.SessionId, "AnalysisStarted", new
-            {
-                ChunkNumber = job.ChunkNumber,
-                ReportId = reportId
-            });
+            // Notify frontend that analysis started
+            await _hubNotification.NotifyLiveLogAnalysisStartedAsync(job.WorkerId, reportId, job.ChunkNumber);
 
             // Create directories for live log reports
             var liveLogDir = Path.Combine(storageRoot, "livelog-reports", job.UserId);
@@ -177,31 +173,22 @@ public class LiveLogAnalysisBackgroundWorker : BackgroundService
                 await planEnforcement.RecordAnalysisAsync(job.UserId, job.Model);
             }
 
-            // Notify client of completion
-            await NotifyClientAsync(job.SessionId, "AnalysisCompleted", new
-            {
-                ChunkNumber = job.ChunkNumber,
-                ReportId = reportId,
-                Status = report.Status.ToString(),
-                Summary = report.Summary
-            });
+            // Notify frontend of completion
+            await _hubNotification.NotifyLiveLogAnalysisCompletedAsync(
+                job.WorkerId, reportId, job.ChunkNumber, report.Status.ToString(), report.Summary);
 
             _logger.LogInformation(
-                "Completed live log analysis for Session {SessionId}, Chunk {ChunkNumber}, ReportId {ReportId}",
-                job.SessionId, job.ChunkNumber, reportId);
+                "Completed live log analysis for Session {SessionId}, Worker {WorkerId}, Chunk {ChunkNumber}, ReportId {ReportId}",
+                job.SessionId, job.WorkerId, job.ChunkNumber, reportId);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex,
-                "Error processing live log analysis for Session {SessionId}, Chunk {ChunkNumber}",
-                job.SessionId, job.ChunkNumber);
+                "Error processing live log analysis for Session {SessionId}, Worker {WorkerId}, Chunk {ChunkNumber}",
+                job.SessionId, job.WorkerId, job.ChunkNumber);
 
-            await NotifyClientAsync(job.SessionId, "AnalysisFailed", new
-            {
-                ChunkNumber = job.ChunkNumber,
-                ReportId = reportId,
-                Error = ex.Message
-            });
+            await _hubNotification.NotifyLiveLogAnalysisFailedAsync(
+                job.WorkerId, reportId, job.ChunkNumber, ex.Message);
 
             // Update report status in database
             try
@@ -239,29 +226,20 @@ public class LiveLogAnalysisBackgroundWorker : BackgroundService
                 await db.SaveChangesAsync();
             }
 
-            await NotifyClientAsync(job.SessionId, status == ReportStatus.Completed ? "AnalysisCompleted" : "AnalysisFailed", new
+            if (status == ReportStatus.Completed)
             {
-                ChunkNumber = job.ChunkNumber,
-                ReportId = reportId,
-                Status = status.ToString(),
-                Summary = summary
-            });
+                await _hubNotification.NotifyLiveLogAnalysisCompletedAsync(
+                    job.WorkerId, reportId, job.ChunkNumber, status.ToString(), summary);
+            }
+            else
+            {
+                await _hubNotification.NotifyLiveLogAnalysisFailedAsync(
+                    job.WorkerId, reportId, job.ChunkNumber, summary);
+            }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to update report and notify for ReportId {ReportId}", reportId);
-        }
-    }
-
-    private async Task NotifyClientAsync(string connectionId, string method, object data)
-    {
-        try
-        {
-            await _hubContext.Clients.Client(connectionId).SendAsync(method, data);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to notify client {ConnectionId} with method {Method}", connectionId, method);
         }
     }
 }

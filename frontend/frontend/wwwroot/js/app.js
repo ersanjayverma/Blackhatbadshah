@@ -1,3 +1,19 @@
+// Theme handling functions
+window.getTheme = () => {
+    return localStorage.getItem('theme') || 'dark';
+};
+
+window.setTheme = (theme) => {
+    localStorage.setItem('theme', theme);
+    document.body.setAttribute('data-theme', theme);
+};
+
+// Initialize theme on page load
+(function() {
+    const savedTheme = localStorage.getItem('theme') || 'dark';
+    document.body.setAttribute('data-theme', savedTheme);
+})();
+
 window.scrollChatToBottom = () => {
     const el = document.querySelector('.chat-body');
     if (el) el.scrollTop = el.scrollHeight;

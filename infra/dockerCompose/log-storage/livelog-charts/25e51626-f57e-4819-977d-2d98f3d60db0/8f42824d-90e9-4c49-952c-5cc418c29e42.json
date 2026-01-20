@@ -1,0 +1,13 @@
+﻿{
+  "chartType": "BarChart",
+  "title": "Service Exit Status",
+  "xAxis": {
+    "labels": ["bhbworker.service"]
+  },
+  "series": [
+    {
+      "name": "Exit Code 226",
+      "values": [1]
+    }
+  ]
+}

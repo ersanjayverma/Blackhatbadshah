@@ -90,6 +90,10 @@ builder.Services.AddScoped<WorkerService>(sp =>
         .CreateClient("BlackHatBadshahApi")));
 builder.Services.AddScoped<IWorkerService>(sp => sp.GetRequiredService<WorkerService>());
 
+builder.Services.AddScoped<WorkerAgentService>(sp =>
+    new WorkerAgentService(sp.GetRequiredService<IHttpClientFactory>()
+        .CreateClient("BlackHatBadshahApi")));
+
 // -------------------- VIEWMODELS --------------------
 builder.Services.AddScoped<DashboardViewModel>();
 builder.Services.AddScoped<LogsViewModel>();

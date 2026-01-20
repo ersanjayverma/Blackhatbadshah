@@ -38,4 +38,10 @@ public interface IWorkerRegistry
     /// Get workers by hostname
     /// </summary>
     List<WorkerRegistration> GetWorkersByHostname(string hostname);
+
+    /// <summary>
+    /// Remove all stale (offline) worker registrations
+    /// </summary>
+    /// <returns>Number of workers removed</returns>
+    int RemoveStaleWorkers(string? apiUrlFilter = null);
 }

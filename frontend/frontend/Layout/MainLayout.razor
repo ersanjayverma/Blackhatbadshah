@@ -1,4 +1,4 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
 @using frontend.Component
 @using frontend.Services
 @using Microsoft.AspNetCore.Components.Authorization
@@ -26,6 +26,24 @@
     <!-- SIDEBAR -->
     <aside id="main-sidebar" class="@(IsMobileMenuOpen ? "mobile-open" : "")">
         <NavMenu />
+
+        <!-- THEME TOGGLE -->
+        <div class="theme-toggle-container" style="margin-top: auto; padding-top: 1rem; border-top: 1px solid var(--border);">
+            <button class="theme-toggle" @onclick="ToggleTheme" title="Toggle theme">
+                <span class="theme-toggle-icon">
+                    @if (_isDarkTheme)
+                    {
+                        <i class="bi bi-moon-fill"></i>
+                    }
+                    else
+                    {
+                        <i class="bi bi-sun-fill"></i>
+                    }
+                </span>
+                <span class="theme-toggle-label">@(_isDarkTheme ? "Dark" : "Light")</span>
+                <div class="theme-toggle-switch"></div>
+            </button>
+        </div>
     </aside>
 
     <!-- MAIN CONTENT -->
@@ -42,7 +60,7 @@
             <div class="api-loader-overlay">
                 <div class="api-loader-box">
                     <div class="spinner-border text-primary"></div>
-                    <div class="mt-2">Processing…</div>
+                    <div class="mt-2">Processing...</div>
                 </div>
             </div>
         }
@@ -69,9 +87,9 @@
                             <span>Blackhat AI</span>
                             <div>
                                 <button title="Fullscreen"
-                                        @onclick="ToggleFullscreen">⛶</button>
+                                        @onclick="ToggleFullscreen">&#x26F6;</button>
                                 <button title="Close"
-                                        @onclick="ToggleChat">✕</button>
+                                        @onclick="ToggleChat">&#x2715;</button>
                             </div>
                         </div>
 
@@ -101,9 +119,9 @@
                             <span>Blackhat AI</span>
                             <div>
                                 <button title="Fullscreen"
-                                        @onclick="ToggleFullscreen">⛶</button>
+                                        @onclick="ToggleFullscreen">&#x26F6;</button>
                                 <button title="Close"
-                                        @onclick="ToggleChat">✕</button>
+                                        @onclick="ToggleChat">&#x2715;</button>
                             </div>
                         </div>
 
@@ -139,6 +157,7 @@
     private bool IsChatOpen;
     private bool IsFullscreen;
     private bool IsMobileMenuOpen;
+    private bool _isDarkTheme = true;
     private List<ToastMessage> _toasts = new();
     private IDisposable? _reportStatusChangedSubscription;
 
@@ -162,11 +181,30 @@
         IsMobileMenuOpen = false;
     }
 
+    private async Task ToggleTheme()
+    {
+        _isDarkTheme = !_isDarkTheme;
+        var theme = _isDarkTheme ? "dark" : "light";
+        await JS.InvokeVoidAsync("setTheme", theme);
+    }
+
     protected override async Task OnInitializedAsync()
     {
         Loader.OnChange += StateHasChanged;
         ToastService.OnShow += HandleToastShow;
         await InitializeSignalR();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Load theme from localStorage
+            var savedTheme = await JS.InvokeAsync<string>("getTheme");
+            _isDarkTheme = savedTheme != "light";
+            await JS.InvokeVoidAsync("setTheme", _isDarkTheme ? "dark" : "light");
+            StateHasChanged();
+        }
     }
 
     private async Task InitializeSignalR()

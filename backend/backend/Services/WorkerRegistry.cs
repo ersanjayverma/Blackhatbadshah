@@ -135,6 +135,30 @@ public class WorkerRegistry : IWorkerRegistry
             .ToList();
     }
 
+    public int RemoveStaleWorkers(string? apiUrlFilter = null)
+    {
+        var now = DateTime.UtcNow;
+        var staleTimeout = TimeSpan.FromMinutes(5); // Remove workers offline for more than 5 minutes
+        var removedCount = 0;
+
+        var workersToRemove = _workers.Values
+            .Where(w => !w.IsOnline || (now - w.LastHeartbeat) > staleTimeout)
+            .Where(w => string.IsNullOrEmpty(apiUrlFilter) || IsUrlMatch(w.ApiUrl, apiUrlFilter))
+            .Select(w => w.WorkerId)
+            .ToList();
+
+        foreach (var workerId in workersToRemove)
+        {
+            if (_workers.TryRemove(workerId, out _))
+            {
+                removedCount++;
+                _logger.LogInformation("Removed stale worker: {WorkerId}", workerId);
+            }
+        }
+
+        return removedCount;
+    }
+
     /// <summary>
     /// Check if two API URLs belong to the same "API context" for visibility purposes.
     /// This compares the host portion of the URLs.

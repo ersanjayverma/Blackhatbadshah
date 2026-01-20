@@ -13,6 +13,8 @@ public class AppDbContext : DbContext
     public DbSet<UserSubscription> UserSubscriptions => Set<UserSubscription>();
     public DbSet<PaymentHistory> PaymentHistories => Set<PaymentHistory>();
     public DbSet<UsageTracking> UsageTrackings => Set<UsageTracking>();
+    public DbSet<WorkerAgent> WorkerAgents => Set<WorkerAgent>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -64,6 +66,18 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<UsageTracking>()
             .HasIndex(u => new { u.UserId, u.Year, u.Month })
             .IsUnique();
+
+        // Configure WorkerAgent
+        modelBuilder.Entity<WorkerAgent>()
+            .HasIndex(w => new { w.WorkspaceId, w.Status });
+
+        modelBuilder.Entity<WorkerAgent>()
+            .HasIndex(w => new { w.WorkspaceId, w.Name })
+            .IsUnique();
+
+        modelBuilder.Entity<WorkerAgent>()
+            .Property(w => w.Status)
+            .HasConversion<int>();
 
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
     }

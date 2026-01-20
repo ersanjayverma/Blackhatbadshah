@@ -59,44 +59,68 @@ builder.Services.AddScoped<IQueryHandler<GetCurrentMonthUsageQuery, CurrentMonth
 builder.Services.Configure<PlansConfiguration>(builder.Configuration.GetSection("Plans"));
 builder.Services.Configure<ModelsConfig>(builder.Configuration.GetSection("Models"));
 
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
+// SignalR Query Token config (default false for security - prefer Authorization header)
+var allowSignalRQueryToken = builder.Configuration.GetValue<bool>("SignalR:AllowQueryToken", false);
+
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, options =>
+{
+    options.Authority = "https://auth.blackhatbadshah.com/realms/blackhatbadshah";
+
+    options.RequireHttpsMetadata = true;
+
+    options.TokenValidationParameters = new TokenValidationParameters
     {
-        options.Authority = "https://auth.blackhatbadshah.com/realms/blackhatbadshah";
- 
-        options.RequireHttpsMetadata = true;
-
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidAudiences = new[]
-                {
-                    "blackhatbadshah-api",
-                    "account"
-                },
-            ValidateIssuer = true,       
-            ValidateAudience = true,    
-            ValidateLifetime = true,
-            NameClaimType = "sub"
-        };
-
-        // ✅ Enable SignalR authentication from query string
-        options.Events = new JwtBearerEvents
-        {
-            OnMessageReceived = context =>
+        ValidAudiences = new[]
             {
-                var accessToken = context.Request.Query["access_token"];
-                var path = context.HttpContext.Request.Path;
+                "blackhatbadshah-api",
+                "account"
+            },
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        NameClaimType = "sub"
+    };
 
-                // If the request is for SignalR hub and token is in query string
-                if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
+    // SignalR authentication - prefer Authorization header, fallback to query only if explicitly enabled
+    options.Events = new JwtBearerEvents
+    {
+        OnMessageReceived = context =>
+        {
+            var path = context.HttpContext.Request.Path;
+
+            // Only for SignalR hub requests
+            if (path.StartsWithSegments("/hubs"))
+            {
+                // First check Authorization header (preferred)
+                var authHeader = context.Request.Headers["Authorization"].ToString();
+                if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
                 {
-                    context.Token = accessToken;
+                    context.Token = authHeader.Substring(7);
                 }
-
-                return Task.CompletedTask;
+                // Fallback to query string only if explicitly allowed by config
+                else if (allowSignalRQueryToken)
+                {
+                    var accessToken = context.Request.Query["access_token"];
+                    if (!string.IsNullOrEmpty(accessToken))
+                    {
+                        context.Token = accessToken;
+                    }
+                }
             }
-        };
-    });
+
+            return Task.CompletedTask;
+        }
+    };
+})
+// Add WorkerKey authentication scheme for worker API key auth
+.AddScheme<WorkerKeyAuthenticationOptions, WorkerKeyAuthenticationHandler>(
+    WorkerKeyAuthenticationOptions.SchemeName,
+    options => { });
 
 
 builder.Services.AddSingleton<ITextractService, TextractService>();

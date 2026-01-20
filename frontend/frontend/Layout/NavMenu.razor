@@ -1,4 +1,4 @@
-﻿@inject IJSRuntime JS
+@inject IJSRuntime JS
 @inject NavigationManager Nav
 <nav id="main-nav">
     <!-- Brand -->
@@ -13,11 +13,16 @@
     <AuthorizeView>
         <Authorized>
             <NavLink href="dashboard" class="nav-link" >Dashboard</NavLink>
+            <NavLink href="analysis-dashboard" class="nav-link" >Analysis Dashboard</NavLink>
             <NavLink href="reports" class="nav-link" >Reports</NavLink>
             <NavLink href="logs" class="nav-link" >Log Ingester</NavLink>
             <NavLink href="livelogs" class="nav-link" >Live Logs</NavLink>
             <NavLink href="system-monitor" class="nav-link" >System Monitor</NavLink>
             <NavLink href="workers" class="nav-link" >Workers</NavLink>
+            <NavLink href="admin/workers" class="nav-link" >
+                <span>Worker Agents</span>
+                <span class="admin-badge">ADMIN</span>
+            </NavLink>
             <NavLink href="subscription" class="nav-link" >My Plan</NavLink>
             <NavLink href="security" class="nav-link" >Security & Privacy</NavLink>
             <NavLink class="nav-link" href="logout" >
@@ -49,4 +54,3 @@
     }
 
 }
-

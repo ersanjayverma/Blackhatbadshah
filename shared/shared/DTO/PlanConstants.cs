@@ -45,11 +45,10 @@ public static class PlanConstants
         /// </summary>
         public static readonly string[] OpenModels =
         {
-            Models.TogetherLlama370b,
+            Models.GptOss120b,
             Models.TogetherLlama31405b,
             Models.TogetherMixtral8x7b,
             Models.TogetherQwen,
-            Models.Gpt35Turbo
         };
 
         public static bool IsProModel(string model) => ProModels.Contains(model);
@@ -73,7 +72,7 @@ public static class PlanConstants
         public const string Gpt35Turbo = "gpt-3.5-turbo";
 
         // TogetherAI models
-        public const string TogetherLlama370b = "together-llama-3-70b";
+        public const string GptOss120b = "gpt-oss-120b";
         public const string TogetherLlama31405b = "together-llama-3.1-405b";
         public const string TogetherMixtral8x7b = "together-mixtral-8x7b";
         public const string TogetherQwen = "together-qwen";
@@ -100,7 +99,7 @@ public static class PlanConstants
         public const string Gpt35Turbo = "gpt-3.5-turbo";
 
         // TogetherAI
-        public const string TogetherLlama370b = "meta-llama/Llama-3-70b-chat-hf";
+        public const string GptOss120b = "openai/gpt-oss-120b";
         public const string TogetherLlama31405b = "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo";
         public const string TogetherMixtral8x7b = "mistralai/Mixtral-8x7B-Instruct-v0.1";
         public const string TogetherQwen = "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8";

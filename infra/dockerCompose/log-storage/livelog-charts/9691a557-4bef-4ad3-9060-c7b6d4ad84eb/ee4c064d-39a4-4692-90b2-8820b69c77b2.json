@@ -1,0 +1,13 @@
+﻿{
+  "chartType": "StackedColumnChart",
+  "title": "HTTP Response Codes",
+  "xAxis": {
+    "labels": ["200", "400", "404", "405"]
+  },
+  "series": [
+    {
+      "name": "Count",
+      "values": [25, 1, 20, 30]
+    }
+  ]
+}

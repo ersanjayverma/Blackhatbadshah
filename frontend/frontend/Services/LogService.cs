@@ -1,10 +1,11 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using frontend.Services.Interfaces;
 using shared.Dto;
 
 namespace frontend.Services;
 
-public class LogService
+public class LogService : ILogService
 {
     private readonly HttpClient _http;
 

@@ -4,35 +4,24 @@ Documentation=https://github.com/blackhatbadshah/bhbworker
 After=network.target
 
 [Service]
+# Keep notify only if your app calls sd_notify / UseSystemd in WorkerService.
+# If not, change to: Type=simple
 Type=notify
+
 WorkingDirectory=/opt/bhbworker
 ExecStart=/opt/bhbworker/BHBWorker
+
 Restart=always
 RestartSec=10
 KillSignal=SIGINT
 SyslogIdentifier=bhbworker
-User=bhbworker
-Group=bhbworker
 
-# Security hardening
-NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=true
-PrivateTmp=true
-PrivateDevices=true
-ProtectKernelTunables=true
-ProtectKernelModules=true
-ProtectControlGroups=true
-RestrictSUIDSGID=true
-RestrictNamespaces=true
+# RUN AS ROOT (ADMIN)
+# NOTE: do NOT set User/Group, default is root
 
-# Allow read access to log files and system info
-ReadOnlyPaths=/var/log
-ReadOnlyPaths=/proc
-ReadOnlyPaths=/sys/class/net
-
-# Allow write access to working directory for worker ID file
-ReadWritePaths=/opt/bhbworker
+# FULL ACCESS (no sandboxing / no path restrictions)
+# Removed NoNewPrivileges, ProtectSystem, ProtectHome, PrivateTmp, etc.
+# Removed ReadOnlyPaths/ReadWritePaths restrictions
 
 # Environment
 Environment=DOTNET_ENVIRONMENT=Production

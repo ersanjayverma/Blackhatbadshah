@@ -1,9 +1,10 @@
 using System.Net.Http.Json;
+using frontend.Services.Interfaces;
 using shared.Dto;
 
 namespace frontend.Services;
 
-public class LiveLogService
+public class LiveLogService : ILiveLogService
 {
     private readonly HttpClient _http;
 

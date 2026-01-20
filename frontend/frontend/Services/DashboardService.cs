@@ -1,9 +1,10 @@
 using System.Net.Http.Json;
+using frontend.Services.Interfaces;
 using shared.Dto;
 
 namespace frontend.Services;
 
-public class DashboardService
+public class DashboardService : IDashboardService
 {
     private readonly HttpClient _http;
 

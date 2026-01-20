@@ -8,6 +8,15 @@ using backend.Data;
 using backend.Services;
 using backend.Handlers;
 using backend.Configuration;
+using backend.Application.Common.Interfaces;
+using backend.Application.Logs.Commands;
+using backend.Application.Logs.Queries;
+using backend.Application.Logs.Handlers;
+using backend.Application.Subscriptions.Queries;
+using backend.Application.Subscriptions.Handlers;
+using backend.Infrastructure.Persistence;
+using backend.Infrastructure.Persistence.Repositories;
+using backend.Infrastructure.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSignalR();
@@ -31,6 +40,20 @@ builder.Services.AddDbContext<AppDbContext>(options =>
         new MySqlServerVersion(new Version(8, 0, 32))
     )
 );
+
+// Clean Architecture - Infrastructure Layer
+builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
+builder.Services.AddScoped<ILogRepository, LogRepository>();
+builder.Services.AddScoped<IReportRepository, ReportRepository>();
+builder.Services.AddScoped<IUsageTrackingRepository, UsageTrackingRepository>();
+builder.Services.AddSingleton<IFileStorageService, LocalFileStorageService>();
+
+// Clean Architecture - Application Layer Handlers
+builder.Services.AddScoped<ICommandHandler<UploadLogCommand, UploadLogResult>, UploadLogCommandHandler>();
+builder.Services.AddScoped<ICommandHandler<DeleteLogCommand, DeleteLogResult>, DeleteLogCommandHandler>();
+builder.Services.AddScoped<IQueryHandler<ListLogsQuery, List<shared.Dto.LogDto>>, ListLogsQueryHandler>();
+builder.Services.AddScoped<IQueryHandler<GetLogQuery, GetLogResult>, GetLogQueryHandler>();
+builder.Services.AddScoped<IQueryHandler<GetCurrentMonthUsageQuery, CurrentMonthUsageResult>, GetCurrentMonthUsageQueryHandler>();
 
 // Plan & Model Configuration
 builder.Services.Configure<PlansConfiguration>(builder.Configuration.GetSection("Plans"));

@@ -1,9 +1,10 @@
 using System.Net.Http.Json;
+using frontend.Services.Interfaces;
 using shared.Dto;
 
 namespace frontend.Services;
 
-public class SubscriptionService
+public class SubscriptionService : ISubscriptionService
 {
     private readonly HttpClient _http;
     private readonly HttpClient _publicHttp;

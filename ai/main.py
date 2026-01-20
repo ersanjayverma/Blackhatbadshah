@@ -118,7 +118,7 @@ class Models:
     GPT_35_TURBO = "gpt-3.5-turbo"
 
     # TogetherAI models
-    TOGETHER_LLAMA_3_70B = "together-llama-3-70b"
+    GPT_OSS_120B = "gpt-oss-120b"
     TOGETHER_LLAMA_31_405B = "together-llama-3.1-405b"
     TOGETHER_MIXTRAL_8X7B = "together-mixtral-8x7b"
     TOGETHER_QWEN = "together-qwen"
@@ -142,7 +142,7 @@ class ModelApiIds:
     GPT_35_TURBO = "gpt-3.5-turbo"
 
     # TogetherAI
-    TOGETHER_LLAMA_3_70B = "meta-llama/Llama-3-70b-chat-hf"
+    GPT_OSS_120B = "openai/gpt-oss-120b"
     TOGETHER_LLAMA_31_405B = "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo"
     TOGETHER_MIXTRAL_8X7B = "mistralai/Mixtral-8x7B-Instruct-v0.1"
     TOGETHER_QWEN = "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8"
@@ -159,11 +159,10 @@ class ModelTiers:
     ]
 
     OPEN_MODELS = [
-        Models.TOGETHER_LLAMA_3_70B,
+        Models.GPT_OSS_120B,
         Models.TOGETHER_LLAMA_31_405B,
         Models.TOGETHER_MIXTRAL_8X7B,
-        Models.TOGETHER_QWEN,
-        Models.GPT_35_TURBO,
+        Models.TOGETHER_QWEN
     ]
 
     @staticmethod
@@ -196,7 +195,7 @@ GPT_MODELS = {
 }
 
 TOGETHER_MODELS = {
-    Models.TOGETHER_LLAMA_3_70B: ModelApiIds.TOGETHER_LLAMA_3_70B,
+    Models.GPT_OSS_120B: ModelApiIds.GPT_OSS_120B,
     Models.TOGETHER_LLAMA_31_405B: ModelApiIds.TOGETHER_LLAMA_31_405B,
     Models.TOGETHER_MIXTRAL_8X7B: ModelApiIds.TOGETHER_MIXTRAL_8X7B,
     Models.TOGETHER_QWEN: ModelApiIds.TOGETHER_QWEN,

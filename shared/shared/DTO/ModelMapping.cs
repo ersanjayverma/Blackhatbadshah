@@ -32,7 +32,7 @@ public static class ModelMapping
     /// </summary>
     public static readonly Dictionary<string, string> TogetherModels = new()
     {
-        { PlanConstants.Models.TogetherLlama370b, PlanConstants.ModelApiIds.TogetherLlama370b },
+        { PlanConstants.Models.GptOss120b, PlanConstants.ModelApiIds.GptOss120b },
         { PlanConstants.Models.TogetherLlama31405b, PlanConstants.ModelApiIds.TogetherLlama31405b },
         { PlanConstants.Models.TogetherMixtral8x7b, PlanConstants.ModelApiIds.TogetherMixtral8x7b },
         { PlanConstants.Models.TogetherQwen, PlanConstants.ModelApiIds.TogetherQwen }
@@ -122,7 +122,7 @@ public static class ModelMapping
             PlanConstants.Models.Gpt35Turbo => "GPT-3.5 Turbo",
 
             // TogetherAI models
-            PlanConstants.Models.TogetherLlama370b => "Llama 3 70B (Together)",
+            PlanConstants.Models.GptOss120b => "gpt-oss-120b (Together)",
             PlanConstants.Models.TogetherLlama31405b => "Llama 3.1 405B (Together)",
             PlanConstants.Models.TogetherMixtral8x7b => "Mixtral 8x7B (Together)",
             PlanConstants.Models.TogetherQwen => "Qwen Coder 480B (Together)",

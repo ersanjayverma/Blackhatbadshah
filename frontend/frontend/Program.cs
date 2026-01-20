@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Components.WebAssembly.Authentication;
 using Blazored.LocalStorage;
 using frontend;
 using frontend.Services;
+using frontend.Services.Interfaces;
+using frontend.ViewModels;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 
@@ -57,10 +59,12 @@ builder.Services.AddHttpClient("BlackHatBadshahAi", client =>
 builder.Services.AddScoped<LogService>(sp =>
     new LogService(sp.GetRequiredService<IHttpClientFactory>()
         .CreateClient("BlackHatBadshahApi")));
+builder.Services.AddScoped<ILogService>(sp => sp.GetRequiredService<LogService>());
 
 builder.Services.AddScoped<ReportService>(sp =>
     new ReportService(sp.GetRequiredService<IHttpClientFactory>()
         .CreateClient("BlackHatBadshahApi")));
+builder.Services.AddScoped<IReportService>(sp => sp.GetRequiredService<ReportService>());
 
 builder.Services.AddScoped<SubscriptionService>(sp =>
 {
@@ -69,17 +73,25 @@ builder.Services.AddScoped<SubscriptionService>(sp =>
         factory.CreateClient("BlackHatBadshahApi"),
         factory.CreateClient("BlackHatBadshahApiPublic"));
 });
+builder.Services.AddScoped<ISubscriptionService>(sp => sp.GetRequiredService<SubscriptionService>());
 
 builder.Services.AddScoped<DashboardService>(sp =>
     new DashboardService(sp.GetRequiredService<IHttpClientFactory>()
         .CreateClient("BlackHatBadshahApi")));
+builder.Services.AddScoped<IDashboardService>(sp => sp.GetRequiredService<DashboardService>());
 
 builder.Services.AddScoped<LiveLogService>(sp =>
     new LiveLogService(sp.GetRequiredService<IHttpClientFactory>()
         .CreateClient("BlackHatBadshahApi")));
+builder.Services.AddScoped<ILiveLogService>(sp => sp.GetRequiredService<LiveLogService>());
 
 builder.Services.AddScoped<WorkerService>(sp =>
     new WorkerService(sp.GetRequiredService<IHttpClientFactory>()
         .CreateClient("BlackHatBadshahApi")));
+builder.Services.AddScoped<IWorkerService>(sp => sp.GetRequiredService<WorkerService>());
+
+// -------------------- VIEWMODELS --------------------
+builder.Services.AddScoped<DashboardViewModel>();
+builder.Services.AddScoped<LogsViewModel>();
 
 await builder.Build().RunAsync();

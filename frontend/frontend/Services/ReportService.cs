@@ -1,9 +1,10 @@
 using System.Net.Http.Json;
+using frontend.Services.Interfaces;
 using shared.Dto;
 
 namespace frontend.Services;
 
-public class ReportService
+public class ReportService : IReportService
 {
     private readonly HttpClient _http;
 

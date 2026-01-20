@@ -1,3 +1,5 @@
+using backend.Application.Common.Interfaces;
+using backend.Application.Subscriptions.Queries;
 using backend.Configuration;
 using backend.Data;
 using backend.Data.Entities;
@@ -15,19 +17,22 @@ public class SubscriptionService : ISubscriptionService
     private readonly IKeycloakAdminService _keycloak;
     private readonly PlansConfiguration _plans;
     private readonly ILogger<SubscriptionService> _logger;
+    private readonly IQueryHandler<GetCurrentMonthUsageQuery, CurrentMonthUsageResult> _usageQueryHandler;
 
     public SubscriptionService(
         AppDbContext db,
         IRazorpayService razorpay,
         IKeycloakAdminService keycloak,
         IOptions<PlansConfiguration> plans,
-        ILogger<SubscriptionService> logger)
+        ILogger<SubscriptionService> logger,
+        IQueryHandler<GetCurrentMonthUsageQuery, CurrentMonthUsageResult> usageQueryHandler)
     {
         _db = db;
         _razorpay = razorpay;
         _keycloak = keycloak;
         _plans = plans.Value;
         _logger = logger;
+        _usageQueryHandler = usageQueryHandler;
     }
 
     public async Task<UserSubscriptionDto> GetUserSubscriptionAsync(string userId)
@@ -35,7 +40,8 @@ public class SubscriptionService : ISubscriptionService
         var planName = await _keycloak.GetUserPlanAsync(userId);
         var planConfig = _plans.GetPlan(planName);
         var tier = Enum.TryParse<PlanTier>(planName, true, out var parsedTier) ? parsedTier : PlanTier.Free;
-        var (proUsed, openUsed, purchasedPro, purchasedOpen) = await GetCurrentMonthUsage(userId);
+        var usageResult = await _usageQueryHandler.HandleAsync(new GetCurrentMonthUsageQuery(userId));
+        var (proUsed, openUsed, purchasedPro, purchasedOpen) = (usageResult.ProModelUsed, usageResult.OpenModelUsed, usageResult.PurchasedProCredits, usageResult.PurchasedOpenCredits);
 
         // Add purchased credits to the base plan limits
         var effectiveProLimit = planConfig.ProModelLimit == -1 ? -1 : planConfig.ProModelLimit + purchasedPro;
@@ -311,13 +317,4 @@ public class SubscriptionService : ISubscriptionService
             .ToListAsync();
     }
 
-    private async Task<(int proUsed, int openUsed, int purchasedPro, int purchasedOpen)> GetCurrentMonthUsage(string userId)
-    {
-        var now = DateTime.UtcNow;
-        var usage = await _db.UsageTrackings
-            .FirstOrDefaultAsync(u => u.UserId == userId && u.Year == now.Year && u.Month == now.Month);
-        return usage != null
-            ? (usage.ProModelCount, usage.OpenModelCount, usage.PurchasedProCredits, usage.PurchasedOpenCredits)
-            : (0, 0, 0, 0);
-    }
 }

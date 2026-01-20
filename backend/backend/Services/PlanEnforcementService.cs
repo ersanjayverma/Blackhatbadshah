@@ -1,3 +1,5 @@
+using backend.Application.Common.Interfaces;
+using backend.Application.Subscriptions.Queries;
 using backend.Configuration;
 using backend.Data;
 using Microsoft.EntityFrameworkCore;
@@ -13,19 +15,22 @@ public class PlanEnforcementService : IPlanEnforcementService
     private readonly PlansConfiguration _plans;
     private readonly ModelsConfig _models;
     private readonly ILogger<PlanEnforcementService> _logger;
+    private readonly IQueryHandler<GetCurrentMonthUsageQuery, CurrentMonthUsageResult> _usageQueryHandler;
 
     public PlanEnforcementService(
         IKeycloakAdminService keycloak,
         AppDbContext db,
         IOptions<PlansConfiguration> plans,
         IOptions<ModelsConfig> models,
-        ILogger<PlanEnforcementService> logger)
+        ILogger<PlanEnforcementService> logger,
+        IQueryHandler<GetCurrentMonthUsageQuery, CurrentMonthUsageResult> usageQueryHandler)
     {
         _keycloak = keycloak;
         _db = db;
         _plans = plans.Value;
         _models = models.Value;
         _logger = logger;
+        _usageQueryHandler = usageQueryHandler;
     }
 
     public async Task<(bool Allowed, string? Message)> CheckAnalysisAllowedAsync(string userId, string? requestedModel)
@@ -34,7 +39,8 @@ public class PlanEnforcementService : IPlanEnforcementService
         var planConfig = _plans.GetPlan(planName);
 
         // Check if model is allowed for this plan (or if user has purchased credits)
-        var (proUsage, openUsage, purchasedPro, purchasedOpen) = await GetCurrentMonthUsageWithCredits(userId);
+        var usageResult = await _usageQueryHandler.HandleAsync(new GetCurrentMonthUsageQuery(userId));
+        var (proUsage, openUsage, purchasedPro, purchasedOpen) = (usageResult.ProModelUsed, usageResult.OpenModelUsed, usageResult.PurchasedProCredits, usageResult.PurchasedOpenCredits);
         var hasPurchasedCredits = purchasedPro > 0 || purchasedOpen > 0;
 
         if (requestedModel != null && !planConfig.AllowedModels.Contains(requestedModel) && !hasPurchasedCredits)
@@ -125,17 +131,6 @@ public class PlanEnforcementService : IPlanEnforcementService
 
     private bool IsProModel(string model) => _models.ProModels.Contains(model);
     private bool IsOpenModel(string model) => _models.OpenModels.Contains(model);
-
-    private async Task<(int proUsage, int openUsage, int purchasedPro, int purchasedOpen)> GetCurrentMonthUsageWithCredits(string userId)
-    {
-        var now = DateTime.UtcNow;
-        var usage = await _db.UsageTrackings
-            .FirstOrDefaultAsync(u => u.UserId == userId && u.Year == now.Year && u.Month == now.Month);
-
-        return usage != null
-            ? (usage.ProModelCount, usage.OpenModelCount, usage.PurchasedProCredits, usage.PurchasedOpenCredits)
-            : (0, 0, 0, 0);
-    }
 
     public async Task AddPurchasedCreditsAsync(string userId, int proCredits, int openCredits)
     {

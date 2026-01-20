@@ -1,16 +1,25 @@
 #!/bin/bash
 set -e
 
-# Create config directory if needed
+# Create directories with proper ownership
 mkdir -p /opt/bhb-worker
+chown -R root:root /opt/bhb-worker
+chmod 755 /opt/bhb-worker
 
-# Set permissions
+# Ensure the worker executable is executable
 chmod +x /opt/bhb-worker/bhb-worker
 
 # Copy default config if not exists
 if [ ! -f /opt/bhb-worker/appsettings.json ]; then
     cp /opt/bhb-worker/appsettings.json.default /opt/bhb-worker/appsettings.json
+    chmod 644 /opt/bhb-worker/appsettings.json
 fi
+
+# Pre-create the worker-id file location with correct permissions
+# This prevents permission issues on first run
+touch /opt/bhb-worker/.bhb-worker-id 2>/dev/null || true
+chown root:root /opt/bhb-worker/.bhb-worker-id 2>/dev/null || true
+chmod 644 /opt/bhb-worker/.bhb-worker-id 2>/dev/null || true
 
 # Reload systemd and enable service
 systemctl daemon-reload

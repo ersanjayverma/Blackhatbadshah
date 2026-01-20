@@ -7,15 +7,16 @@
 
 ## A) FIX UI COLOR CONTRAST + INVISIBLE TEXT
 
-### A.1 Consolidate Theme Variables in app.css ❌
-- [ ] Define complete CSS variable set in frontend/frontend/wwwroot/css/app.css
-- [ ] Variables: --bg, --surface, --surface-2, --border, --text, --text-muted, --link, --accent, --accent-hover, --danger, --success, --warning, --input-bg, --input-border, --focus-ring
-- [ ] Ensure body, cards, tables, modals, toasts, forms inherit from variables
+### A.1 Consolidate Theme Variables in app.css ✅
+- [x] Define complete CSS variable set in frontend/frontend/wwwroot/css/app.css
+- [x] Variables: --bg, --surface, --surface-2, --border, --text, --text-muted, --link, --accent, --accent-hover, --danger, --success, --warning, --input-bg, --input-border, --focus-ring
+- [x] Ensure body, cards, tables, modals, toasts, forms inherit from variables
+- [x] Added complete light theme support with [data-theme="light"]
 
-### A.2 Eliminate site.css Conflicts ❌
-- [ ] Remove hardcoded colors from frontend/frontend/wwwroot/css/site.css
-- [ ] Replace all fixed colors with CSS variables
-- [ ] Ensure Bootstrap defaults don't override theme
+### A.2 Eliminate site.css Conflicts ✅
+- [x] Remove hardcoded colors from frontend/frontend/wwwroot/css/site.css
+- [x] Replace all fixed colors with CSS variables
+- [x] Ensure Bootstrap defaults don't override theme
 
 ### A.3 Fix Component Readability ❌
 - [ ] Navbar + sidebar nav links
@@ -127,8 +128,12 @@ docker compose up -d
 
 ## Progress Tracking
 
-**Completed**: 0/23 tasks
+**Completed**: 2/23 tasks
 **In Progress**: 0
-**Pending**: 23
+**Pending**: 21
 
-**Current Task**: A.1 - Consolidate Theme Variables in app.css
+**Current Task**: A.3 - Fix Component Readability
+
+**Recent Completions**:
+- ✅ A.1: Consolidated theme variables with dark/light support
+- ✅ A.2: Eliminated all hardcoded colors from site.css

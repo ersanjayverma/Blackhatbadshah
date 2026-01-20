@@ -1,0 +1,16 @@
+#!/bin/bash
+set -e
+
+# Stop the service before removal
+if systemctl is-active --quiet bhb-worker.service; then
+    echo "Stopping bhb-worker service..."
+    systemctl stop bhb-worker.service
+fi
+
+# Disable the service
+if systemctl is-enabled --quiet bhb-worker.service 2>/dev/null; then
+    echo "Disabling bhb-worker service..."
+    systemctl disable bhb-worker.service
+fi
+
+exit 0

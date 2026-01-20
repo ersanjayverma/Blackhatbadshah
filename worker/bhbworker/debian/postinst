@@ -1,0 +1,47 @@
+#!/bin/bash
+set -e
+
+# Create directories with proper ownership
+mkdir -p /opt/bhb-worker
+chown -R root:root /opt/bhb-worker
+chmod 755 /opt/bhb-worker
+
+# Ensure the worker executable is executable
+chmod +x /opt/bhb-worker/bhb-worker
+
+# Copy default config if not exists
+if [ ! -f /opt/bhb-worker/appsettings.json ]; then
+    cp /opt/bhb-worker/appsettings.json.default /opt/bhb-worker/appsettings.json
+    chmod 644 /opt/bhb-worker/appsettings.json
+fi
+
+# Pre-create the worker-id file location with correct permissions
+# This prevents permission issues on first run
+touch /opt/bhb-worker/.bhb-worker-id 2>/dev/null || true
+chown root:root /opt/bhb-worker/.bhb-worker-id 2>/dev/null || true
+chmod 644 /opt/bhb-worker/.bhb-worker-id 2>/dev/null || true
+
+# Reload systemd and enable service
+systemctl daemon-reload
+systemctl enable bhb-worker.service
+
+echo ""
+echo "=========================================="
+echo " BHB Worker installed successfully!"
+echo "=========================================="
+echo ""
+echo " Configure the service by editing:"
+echo "   /opt/bhb-worker/appsettings.json"
+echo ""
+echo " Then start the service with:"
+echo "   sudo systemctl start bhb-worker"
+echo ""
+echo " Check status with:"
+echo "   sudo systemctl status bhb-worker"
+echo ""
+echo " View logs with:"
+echo "   sudo journalctl -u bhb-worker -f"
+echo "=========================================="
+echo ""
+
+exit 0

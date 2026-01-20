@@ -1,0 +1,456 @@
+@page "/admin/workers"
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Authorization
+@using frontend.Services
+@inject WorkerAgentService WorkerAgentApi
+@inject ToastService Toast
+@inject IJSRuntime JS
+@attribute [Authorize]
+
+<AuthorizeView>
+    <Authorized>
+        <div class="container-fluid px-4 py-4">
+
+            <!-- HEADER -->
+            <div class="d-flex justify-content-between align-items-center flex-wrap mb-4">
+                <div>
+                    <h2 class="mb-1 fw-bold text-gradient">
+                        <i class="bi bi-cpu me-2"></i>Worker Agents
+                        <span class="admin-badge">ADMIN</span>
+                    </h2>
+                    <p class="mb-0">Manage API-authenticated worker agents for your workspaces</p>
+                </div>
+                <div class="d-flex gap-2 align-items-center">
+                    <span class="badge bg-success px-3 py-2">
+                        <i class="bi bi-circle-fill me-1" style="font-size: 0.5rem;"></i>
+                        @_workers.Count(w => w.IsActive) Active
+                    </span>
+                    <span class="badge bg-secondary px-3 py-2">
+                        @_workers.Count Total
+                    </span>
+                    <button class="btn btn-primary" @onclick="ShowRegisterModal">
+                        <i class="bi bi-plus-lg me-1"></i>Register Worker
+                    </button>
+                    <button class="btn btn-outline-primary" @onclick="RefreshWorkers" disabled="@_loading">
+                        @if (_loading)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-arrow-clockwise me-1"></i>
+                        }
+                        Refresh
+                    </button>
+                </div>
+            </div>
+
+            <!-- FILTER -->
+            <div class="card modern-card shadow-sm mb-4">
+                <div class="card-body">
+                    <div class="row g-3 align-items-end">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">
+                                <i class="bi bi-funnel me-2"></i>Filter
+                            </label>
+                            <select class="form-select" @bind="_statusFilter" @bind:after="FilterWorkers">
+                                <option value="all">All Workers</option>
+                                <option value="active">Active Only</option>
+                                <option value="revoked">Revoked Only</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">
+                                <i class="bi bi-search me-2"></i>Search
+                            </label>
+                            <input type="text" class="form-control" placeholder="Search by name..."
+                                   @bind="_searchTerm" @bind:event="oninput" @bind:after="FilterWorkers" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- WORKERS LIST -->
+            @if (_loading && _workers.Count == 0)
+            {
+                <div class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-3 fw-bold">Loading workers...</p>
+                </div>
+            }
+            else if (_filteredWorkers.Count == 0)
+            {
+                <div class="card modern-card shadow-sm">
+                    <div class="card-body text-center py-5">
+                        <i class="bi bi-cpu display-1 mb-3"></i>
+                        <h5 class="fw-bold">No Worker Agents Found</h5>
+                        <p class="fw-bold">
+                            @if (!string.IsNullOrEmpty(_searchTerm))
+                            {
+                                <span>No workers matching "@_searchTerm"</span>
+                            }
+                            else
+                            {
+                                <span>Register a worker agent to get started.</span>
+                            }
+                        </p>
+                        <button class="btn btn-primary" @onclick="ShowRegisterModal">
+                            <i class="bi bi-plus-lg me-1"></i>Register Worker
+                        </button>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover modern-table">
+                        <thead>
+                            <tr>
+                                <th><i class="bi bi-tag me-1"></i>Name</th>
+                                <th><i class="bi bi-activity me-1"></i>Status</th>
+                                <th><i class="bi bi-calendar me-1"></i>Created</th>
+                                <th><i class="bi bi-clock me-1"></i>Last Seen</th>
+                                <th><i class="bi bi-gear me-1"></i>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var worker in _filteredWorkers)
+                            {
+                                <tr>
+                                    <td class="fw-semibold">@worker.Name</td>
+                                    <td>
+                                        @if (worker.IsActive)
+                                        {
+                                            <span class="badge bg-success px-3 py-2">
+                                                <i class="bi bi-check-circle me-1"></i>Active
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-danger px-3 py-2">
+                                                <i class="bi bi-x-circle me-1"></i>Revoked
+                                            </span>
+                                        }
+                                    </td>
+                                    <td>@worker.CreatedAt.ToLocalTime().ToString("g")</td>
+                                    <td>
+                                        @if (worker.LastSeenAt.HasValue)
+                                        {
+                                            <span>@worker.LastSeenAt.Value.ToLocalTime().ToString("g")</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-secondary">Never</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        <div class="btn-group">
+                                            @if (worker.IsActive)
+                                            {
+                                                <button class="btn btn-sm btn-outline-warning"
+                                                        @onclick="() => ShowRotateKeyModal(worker)"
+                                                        title="Rotate API Key">
+                                                    <i class="bi bi-key"></i>
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-danger"
+                                                        @onclick="() => RevokeWorker(worker)"
+                                                        title="Revoke Worker">
+                                                    <i class="bi bi-slash-circle"></i>
+                                                </button>
+                                            }
+                                            <button class="btn btn-sm btn-outline-danger"
+                                                    @onclick="() => DeleteWorker(worker)"
+                                                    title="Delete Worker">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+
+        <!-- REGISTER WORKER MODAL -->
+        @if (_showRegisterModal)
+        {
+            <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">
+                                <i class="bi bi-plus-circle me-2"></i>Register Worker Agent
+                            </h5>
+                            <button type="button" class="btn-close" @onclick="CloseRegisterModal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">Worker Name</label>
+                                <input type="text" class="form-control" placeholder="Enter worker name..."
+                                       @bind="_newWorkerName" />
+                                <small class="form-text">A unique name to identify this worker agent.</small>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">Workspace ID</label>
+                                <input type="text" class="form-control" placeholder="Enter workspace GUID..."
+                                       @bind="_newWorkspaceId" />
+                                <small class="form-text">The workspace this worker belongs to.</small>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" @onclick="CloseRegisterModal">Cancel</button>
+                            <button type="button" class="btn btn-primary" @onclick="RegisterWorker"
+                                    disabled="@(string.IsNullOrWhiteSpace(_newWorkerName) || !Guid.TryParse(_newWorkspaceId, out _))">
+                                <i class="bi bi-check-lg me-1"></i>Register
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <!-- API KEY MODAL -->
+        @if (_showApiKeyModal)
+        {
+            <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header bg-warning">
+                            <h5 class="modal-title text-dark">
+                                <i class="bi bi-key me-2"></i>@(_apiKeyModalTitle)
+                            </h5>
+                            <button type="button" class="btn-close" @onclick="CloseApiKeyModal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="alert alert-warning">
+                                <i class="bi bi-exclamation-triangle me-2"></i>
+                                <strong>Important:</strong> This API key will only be shown ONCE. Copy it now and store it securely.
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">Worker ID</label>
+                                <input type="text" class="form-control" value="@_displayWorkerId" readonly />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">API Key</label>
+                                <div class="input-group">
+                                    <input type="@(_showApiKey ? "text" : "password")" class="form-control font-monospace"
+                                           value="@_displayApiKey" readonly />
+                                    <button class="btn btn-outline-secondary" @onclick="ToggleApiKeyVisibility">
+                                        <i class="bi @(_showApiKey ? "bi-eye-slash" : "bi-eye")"></i>
+                                    </button>
+                                    <button class="btn btn-primary" @onclick="CopyApiKey">
+                                        <i class="bi bi-clipboard me-1"></i>Copy
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">Usage</label>
+                                <pre class="bg-dark text-light p-3 rounded"><code>X-Worker-Key: @_displayApiKey</code></pre>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-primary" @onclick="CloseApiKeyModal">
+                                <i class="bi bi-check-lg me-1"></i>I've Saved the Key
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+    </Authorized>
+    <NotAuthorized>
+        <div class="container mt-5">
+            <div class="alert alert-warning shadow-sm">
+                <i class="bi bi-lock me-2"></i>
+                You must be logged in to manage worker agents.
+            </div>
+        </div>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    private List<WorkerAgentListItem> _workers = new();
+    private List<WorkerAgentListItem> _filteredWorkers = new();
+    private bool _loading = true;
+    private string _statusFilter = "all";
+    private string _searchTerm = string.Empty;
+
+    // Register modal
+    private bool _showRegisterModal = false;
+    private string _newWorkerName = string.Empty;
+    private string _newWorkspaceId = string.Empty;
+
+    // API key modal
+    private bool _showApiKeyModal = false;
+    private string _apiKeyModalTitle = string.Empty;
+    private string _displayWorkerId = string.Empty;
+    private string _displayApiKey = string.Empty;
+    private bool _showApiKey = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshWorkers();
+    }
+
+    private async Task RefreshWorkers()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+            _workers = await WorkerAgentApi.GetAllAsync();
+            FilterWorkers();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to load workers: {ex.Message}");
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void FilterWorkers()
+    {
+        _filteredWorkers = _workers
+            .Where(w =>
+            {
+                // Status filter
+                if (_statusFilter == "active" && !w.IsActive) return false;
+                if (_statusFilter == "revoked" && !w.IsRevoked) return false;
+
+                // Search filter
+                if (!string.IsNullOrWhiteSpace(_searchTerm))
+                {
+                    return w.Name.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase);
+                }
+
+                return true;
+            })
+            .OrderByDescending(w => w.CreatedAt)
+            .ToList();
+    }
+
+    private void ShowRegisterModal()
+    {
+        _newWorkerName = string.Empty;
+        _newWorkspaceId = Guid.NewGuid().ToString(); // Default to new GUID
+        _showRegisterModal = true;
+    }
+
+    private void CloseRegisterModal()
+    {
+        _showRegisterModal = false;
+    }
+
+    private async Task RegisterWorker()
+    {
+        if (string.IsNullOrWhiteSpace(_newWorkerName) || !Guid.TryParse(_newWorkspaceId, out var workspaceId))
+            return;
+
+        try
+        {
+            var result = await WorkerAgentApi.RegisterAsync(workspaceId, _newWorkerName);
+
+            _showRegisterModal = false;
+            _apiKeyModalTitle = "New Worker Registered";
+            _displayWorkerId = result.WorkerId.ToString();
+            _displayApiKey = result.ApiKey;
+            _showApiKey = false;
+            _showApiKeyModal = true;
+
+            Toast.ShowSuccess($"Worker '{_newWorkerName}' registered successfully!");
+            await RefreshWorkers();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to register worker: {ex.Message}");
+        }
+    }
+
+    private void ShowRotateKeyModal(WorkerAgentListItem worker)
+    {
+        _displayWorkerId = worker.Id.ToString();
+        RotateKey(worker);
+    }
+
+    private async Task RotateKey(WorkerAgentListItem worker)
+    {
+        try
+        {
+            var result = await WorkerAgentApi.RotateKeyAsync(worker.Id);
+
+            _apiKeyModalTitle = "API Key Rotated";
+            _displayWorkerId = result.WorkerId.ToString();
+            _displayApiKey = result.ApiKey;
+            _showApiKey = false;
+            _showApiKeyModal = true;
+
+            Toast.ShowSuccess($"API key rotated for '{worker.Name}'!");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to rotate key: {ex.Message}");
+        }
+    }
+
+    private async Task RevokeWorker(WorkerAgentListItem worker)
+    {
+        try
+        {
+            await WorkerAgentApi.RevokeAsync(worker.Id);
+            Toast.ShowSuccess($"Worker '{worker.Name}' revoked!");
+            await RefreshWorkers();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to revoke worker: {ex.Message}");
+        }
+    }
+
+    private async Task DeleteWorker(WorkerAgentListItem worker)
+    {
+        try
+        {
+            await WorkerAgentApi.DeleteAsync(worker.Id);
+            Toast.ShowSuccess($"Worker '{worker.Name}' deleted!");
+            await RefreshWorkers();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to delete worker: {ex.Message}");
+        }
+    }
+
+    private void CloseApiKeyModal()
+    {
+        _showApiKeyModal = false;
+        _displayApiKey = string.Empty;
+    }
+
+    private void ToggleApiKeyVisibility()
+    {
+        _showApiKey = !_showApiKey;
+    }
+
+    private async Task CopyApiKey()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", _displayApiKey);
+            Toast.ShowSuccess("API key copied to clipboard!");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to copy: {ex.Message}");
+        }
+    }
+}

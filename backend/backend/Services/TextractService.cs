@@ -31,20 +31,26 @@ public sealed class TextractService : ITextractService
         if (file == null || file.Length == 0)
             throw new ArgumentException("File is empty");
 
-        var s3Key = $"textract-temp/{Guid.NewGuid()}";
+        await using var stream = file.OpenReadStream();
+        return await ExtractTextFromStreamAsync(stream, file.FileName);
+    }
+
+    public async Task<string> ExtractTextFromStreamAsync(Stream stream, string fileName)
+    {
+        if (stream == null || stream.Length == 0)
+            throw new ArgumentException("Stream is empty");
+
+        var s3Key = $"textract-temp/{Guid.NewGuid()}{Path.GetExtension(fileName)}";
 
         try
         {
             // 1. Upload file to S3 (temporary)
-            await using (var stream = file.OpenReadStream())
+            await _s3.PutObjectAsync(new PutObjectRequest
             {
-                await _s3.PutObjectAsync(new PutObjectRequest
-                {
-                    BucketName = _bucket,
-                    Key = s3Key,
-                    InputStream = stream
-                });
-            }
+                BucketName = _bucket,
+                Key = s3Key,
+                InputStream = stream
+            });
 
             // 2. Call Textract
             var response = await _textract.DetectDocumentTextAsync(

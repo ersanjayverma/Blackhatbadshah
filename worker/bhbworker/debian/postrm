@@ -1,0 +1,12 @@
+#!/bin/bash
+set -e
+
+# Reload systemd to forget the unit file
+systemctl daemon-reload
+
+# On purge, remove config files
+if [ "$1" = "purge" ]; then
+    rm -rf /opt/bhb-worker
+fi
+
+exit 0

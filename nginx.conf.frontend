@@ -1,0 +1,23 @@
+server {
+    listen 8080;
+    server_name _;
+
+    # REQUIRED: otherwise index.html downloads
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    gzip on;
+    gzip_types
+        application/javascript
+        application/wasm
+        text/css
+        application/json
+        text/plain;
+}

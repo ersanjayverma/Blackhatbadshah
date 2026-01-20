@@ -1,0 +1,13 @@
+﻿{
+  "chartType": "BarChart",
+  "title": "Service Restart Count",
+  "xAxis": {
+    "labels": ["bhbworker.service"]
+  },
+  "series": [
+    {
+      "name": "Restarts",
+      "values": [2499]
+    }
+  ]
+}

@@ -1,16 +1,28 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using frontend.Services.Interfaces;
 using shared.Dto;
 
 namespace frontend.Services;
 
-public class LogService
+public class LogService : ILogService
 {
     private readonly HttpClient _http;
 
     public LogService(HttpClient http)
     {
         _http = http;
+    }
+
+    private static async Task EnsureSuccessOrThrowWithBody(HttpResponseMessage response)
+    {
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync();
+            throw new HttpRequestException(string.IsNullOrWhiteSpace(errorBody)
+                ? $"Request failed with status {(int)response.StatusCode}"
+                : errorBody);
+        }
     }
 
     // -------------------------------------------------
@@ -41,7 +53,7 @@ public class LogService
         content.Add(fileContent, "file", fileName);
 
         var response = await _http.PostAsync("/api/logs/upload", content);
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessOrThrowWithBody(response);
     }
 
     // -------------------------------------------------
@@ -70,7 +82,7 @@ public class LogService
     {
         var requestBody = model != null ? JsonContent.Create(new AnalyzeLogRequest { Model = model }) : null;
         var response = await _http.PostAsync($"/api/logs/{id}/analyze", requestBody);
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessOrThrowWithBody(response);
         return await response.Content.ReadFromJsonAsync<QueueAnalysisResponse>()
                ?? new QueueAnalysisResponse { Message = "Analysis queued", LogId = id };
     }
@@ -91,7 +103,7 @@ public class LogService
     public async Task DeleteAsync(Guid id)
     {
         var response = await _http.DeleteAsync($"/api/logs/{id}");
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessOrThrowWithBody(response);
     }
 
     // -------------------------------------------------
@@ -101,7 +113,7 @@ public class LogService
     public async Task<int> DeleteAllAsync()
     {
         var response = await _http.DeleteAsync("/api/logs/all");
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessOrThrowWithBody(response);
 
         var result = await response.Content.ReadFromJsonAsync<DeleteAllResponse>();
         return result?.Deleted ?? 0;

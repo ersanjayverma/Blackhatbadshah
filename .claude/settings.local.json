@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dotnet build:*)",
+      "Bash(sudo docker logs:*)",
+      "Bash(dotnet new:*)",
+      "Bash(sudo chown:*)",
+      "Bash(dotnet add package:*)",
+      "Bash(dotnet run:*)",
+      "Bash(docker compose logs:*)",
+      "Bash(docker compose ps:*)",
+      "Bash(find:*)",
+      "Bash(tree:*)",
+      "Bash(sudo bash:*)",
+      "Bash(bash:*)",
+      "Bash(dpkg-deb:*)",
+      "Bash(tar:*)"
+    ]
+  }
+}

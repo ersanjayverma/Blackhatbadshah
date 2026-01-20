@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sudo dotnet publish:*)",
+      "Bash(dotnet publish:*)",
+      "Bash(dotnet build:*)",
+      "Bash(sudo mv:*)",
+      "Bash(sudo systemctl daemon-reload:*)",
+      "Bash(sudo systemctl:*)",
+      "Bash(chmod:*)",
+      "Bash(./build-deb.sh:*)",
+      "Bash(ls:*)",
+      "Bash(dpkg-deb -I:*)",
+      "Bash(dpkg-deb:*)"
+    ]
+  }
+}

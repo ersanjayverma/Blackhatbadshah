@@ -1,6 +1,9 @@
 using System.Text;
 using System.Text.Json;
 using shared.Dto;
+using System.Net;
+using System.Net.Http;
+using System.Net.Http.Json;
 
 namespace backend.Services;
 
@@ -13,66 +16,131 @@ public class LogAnalyzer : ILogAnalyzer
         _http = http;
     }
 
-    public async Task<ChatResponse> AnalyzeAsync(Guid logId, string logContent, string? model = null)
-{
-    if (string.IsNullOrWhiteSpace(logContent))
-        return new ChatResponse("Analyzer failed: log content is empty");
-
-    var threadId = $"log-{logId}";
-
-    // Convert log content to base64
-    var contentBytes = Encoding.UTF8.GetBytes(logContent);
-    var base64Content = Convert.ToBase64String(contentBytes);
-
-    var prompt = BuildPrompt();
-
-    // Use default model if none specified
-    var selectedModel = model ?? ModelMapping.DefaultModel;
-
-    HttpResponseMessage response;
-    try
+    public async Task<ChatResponse> AnalyzeAsync(
+        Guid logId,
+        string logContent,
+        string? model = null,
+        bool isChart = false)
     {
-        response = await _http.PostAsJsonAsync(
-            "chat",
-            new
+        if (string.IsNullOrWhiteSpace(logContent))
+            return new ChatResponse("Analyzer failed: log content is empty");
+
+        var threadId = $"log-{logId}";
+
+        // Convert log content to Base64 for transmission
+        var contentBytes = Encoding.UTF8.GetBytes(logContent);
+        var base64Content = Convert.ToBase64String(contentBytes);
+
+        var prompt = BuildPrompt(isChart);
+        var selectedModel = model ?? ModelMapping.DefaultModel;
+
+        HttpResponseMessage response;
+        try
+        {
+            var endpoint = isChart ? "chart" : "chat";
+            response = await _http.PostAsJsonAsync(
+                endpoint,
+                new
+                {
+                    thread_id = threadId,
+                    message = prompt,
+                    document_base64 = base64Content,
+                    document_name = $"{logId}.txt",
+                    model = selectedModel
+                });
+        }
+        catch (Exception ex)
+        {
+            return new ChatResponse($"Analyzer failed: connection error ({ex.Message})");
+        }
+
+        // Handle common HTTP errors
+        if (response.StatusCode == HttpStatusCode.Unauthorized ||
+            response.StatusCode == HttpStatusCode.Forbidden)
+        {
+            var body = await response.Content.ReadAsStringAsync();
+            return new ChatResponse($"Analyzer failed: {body}");
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync();
+            return new ChatResponse($"Analyzer failed: AI Server Error ({body})");
+        }
+
+        // Parse response
+        ChatResponse? result;
+        try
+        {
+            result = await response.Content.ReadFromJsonAsync<ChatResponse>();
+        }
+         catch (Exception ex)
+        {
+            return new ChatResponse($"Analyzer failed: invalid response ({ex.Message})");
+        }
+
+        if (result == null || string.IsNullOrWhiteSpace(result.reply))
+            return new ChatResponse("Analyzer returned empty response");
+
+        return result;
+        
+    }
+
+    private static string BuildPrompt(bool isChart = false)
+    {
+        if (isChart)
+    {
+        // ----- Chart Mode -----
+        return """
+        You are a data visualization expert. Analyze the provided log data and generate a chart specification.
+
+        ## Your Task
+        Create a JSON chart configuration that visualizes the most important patterns or metrics from the log Summary report.
+
+        ## Chart Types Available
+        - LineChart: For trends over time
+        - BarChart: For comparing categories
+        - ColumnChart: For vertical comparisons
+        - PieChart: For showing proportions
+        - StackedColumnChart: For showing composition over categories
+
+        ## Output Format
+        Return ONLY valid JSON in this exact structure (no markdown, no explanation):
+
+        {
+          "chartType": "LineChart",
+          "title": "Error Rate Over Time",
+          "xAxis": {
+            "labels": ["10:00", "11:00", "12:00", "13:00", "14:00"]
+          },
+          "series": [
             {
-                thread_id = threadId,
-                message = prompt,
-                document_base64 = base64Content,
-                document_name = $"{logId}.txt",
-                model = selectedModel
-            });
+              "name": "Errors",
+              "values": [5, 12, 8, 15, 3]
+            },
+            {
+              "name": "Warnings",
+              "values": [10, 15, 12, 20, 8]
+            }
+          ]
+        }
+
+        ## Guidelines
+        - Choose the chart type that best represents the data
+        - Keep labels concise (max 15 characters)
+        - Limit series to 3-4 for readability
+        - Limit data points to 10-15 for clarity
+        - If no meaningful data to chart, return:
+        {
+          "chartType": "None",
+          "title": "",
+          "xAxis": { "labels": [] },
+          "series": []
+        }
+        - Return ONLY the JSON object, no other text
+        """;
     }
-    catch (Exception ex)
-    {
-        return new ChatResponse(
-            $"Analyzer failed: connection error ({ex.Message})");
-    }
-
-    if (!response.IsSuccessStatusCode)
-        return new ChatResponse(
-            $"Analyzer failed: HTTP {(int)response.StatusCode}");
-
-    ChatResponse? result;
-    try
-    {
-        result = await response.Content.ReadFromJsonAsync<ChatResponse>();
-    }
-    catch (Exception ex)
-    {
-        return new ChatResponse(
-            $"Analyzer failed: invalid response ({ex.Message})");
-    }
-
-    if (result == null || string.IsNullOrWhiteSpace(result.reply))
-        return new ChatResponse("Analyzer returned empty response");
-
-    return result;
-}
-
-
-    private static string BuildPrompt()
-    {
+        // ----- Analysis Mode -----
         return """
         You are a senior production engineer and site reliability expert performing comprehensive log analysis.
 
@@ -104,6 +172,7 @@ public class LogAnalyzer : ILogAnalyzer
         - Chronological sequence of significant events
         - Help establish cause-and-effect relationships
         - Identify patterns or cascading failures
+        - Include matrices that can be used to visulise key events
 
         ### 5. SYSTEM HEALTH INDICATORS
         - Performance metrics (if available in logs)
@@ -148,4 +217,7 @@ public class LogAnalyzer : ILogAnalyzer
         - Be concise but thorough - focus on actionable insights
         """;
     }
+
+
+
 }

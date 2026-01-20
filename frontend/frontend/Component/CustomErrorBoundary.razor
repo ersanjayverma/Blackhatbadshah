@@ -1,7 +1,8 @@
 @inherits ErrorBoundary
 @inject IJSRuntime JS
+@inject NavigationManager Navigation
 
-@if (CurrentException is not null)
+@if (CurrentException is not null && !IsOidcException(CurrentException))
 {
     <div class="error-modal-backdrop" @onclick="DismissError">
         <div class="error-modal" @onclick:stopPropagation="true">
@@ -45,6 +46,55 @@
 @ChildContent
 
 @code {
+    protected override Task OnErrorAsync(Exception exception)
+    {
+        // Redirect to logout on OIDC token failures
+        if (IsOidcException(exception))
+        {
+            Navigation.NavigateTo("/logout", forceLoad: true);
+            return Task.CompletedTask;
+        }
+        
+        return base.OnErrorAsync(exception);
+    }
+
+    private bool IsOidcException(Exception exception)
+    {
+        // Check for AccessTokenNotAvailableException by type name
+        var exceptionType = exception.GetType();
+        var typeName = exceptionType.FullName ?? exceptionType.Name;
+        
+        if (typeName.Contains("AccessTokenNotAvailableException") ||
+            typeName.Contains("AccessTokenException"))
+            return true;
+
+        // Check exception message for OIDC error codes
+        var message = exception.Message ?? "";
+        var lowerMessage = message.ToLower();
+        
+        // OIDC/OAuth 2.0 error codes
+        if (lowerMessage.Contains("invalid_grant") ||
+            lowerMessage.Contains("invalid_token") ||
+            lowerMessage.Contains("token_expired") ||
+            lowerMessage.Contains("refresh_token_expired") ||
+            lowerMessage.Contains("unauthorized_client") ||
+            lowerMessage.Contains("access_denied") ||
+            lowerMessage.Contains("invalid_client") ||
+            lowerMessage.Contains("invalid_request") ||
+            lowerMessage.Contains("unsupported_grant_type"))
+            return true;
+
+        // Check for offline_access scope issues
+        if (lowerMessage.Contains("offline_access"))
+            return true;
+
+        // Check inner exceptions recursively
+        if (exception.InnerException != null)
+            return IsOidcException(exception.InnerException);
+
+        return false;
+    }
+
     private void DismissError()
     {
         Recover();

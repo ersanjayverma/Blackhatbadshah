@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dotnet build:*)",
+      "Bash(docker ps:*)",
+      "Bash(docker-compose ps:*)",
+      "Bash(docker compose:*)",
+      "Bash(sudo docker ps:*)",
+      "Bash(ss:*)",
+      "Bash(netstat:*)",
+      "Bash(curl:*)",
+      "Bash(journalctl:*)",
+      "Bash(mysql:*)",
+      "Bash(dotnet ef migrations add:*)",
+      "Bash(xargs:*)",
+      "Bash(tree:*)"
+    ]
+  }
+}

@@ -45,15 +45,15 @@
                     {
                         <div class="text-center py-5">
                             <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;"></div>
-                            <p class="text-muted fw-semibold">Loading reports...</p>
+                            <p class="fw-semibold">Loading reports...</p>
                         </div>
                     }
                     else if (_reports.Count == 0)
                     {
                         <div class="empty-state-box">
-                            <i class="bi bi-file-earmark-bar-graph display-1 text-muted mb-3"></i>
+                            <i class="bi bi-file-earmark-bar-graph display-1 mb-3"></i>
                             <h5 class="fw-bold">No reports available</h5>
-                            <p class="text-muted">Upload and analyze logs to generate reports</p>
+                            <p>Upload and analyze logs to generate reports</p>
                         </div>
                     }
                     else
@@ -78,7 +78,7 @@
                                             <td>
                                                 @if (report.FileName == "Log Deleted")
                                                 {
-                                                    <span class="text-muted fst-italic">@report.FileName</span>
+                                                    <span class="fst-italic">@report.FileName</span>
                                                 }
                                                 else
                                                 {
@@ -109,10 +109,10 @@
                                                 }
                                             </td>
 
-                                            <td class="text-muted">@report.CreatedAtUtc.ToLocalTime().ToString("g")</td>
+                                            <td>@report.CreatedAtUtc.ToLocalTime().ToString("g")</td>
 
                                             <td class="text-center">
-                                                <div class="btn-group shadow-sm" role="group">
+                                                <div class="btn-group shadow-sm" role="group">                                  
                                                     <button class="btn btn-sm btn-success"
                                                             @onclick="() => OpenModal(report.Id)"
                                                             disabled="@(report.Status != ReportStatus.Completed)"
@@ -166,6 +166,19 @@
 
                         <div class="custom-modal-body">
                             @_reportContent
+
+                            @if (_chartData != null)
+                            {
+                                <div class="mt-4">
+                                    <h6 class="fw-bold mb-3">
+                                        <i class="bi bi-bar-chart me-2"></i>Visualization
+                                    </h6>
+                                    <div class="chart-container">
+                                        <!-- Chart will be rendered here -->
+                                        <canvas id="reportChart"></canvas>
+                                    </div>
+                                </div>
+                            }
                         </div>
 
                         <div class="custom-modal-footer">
@@ -206,7 +219,7 @@
                                 <i class="bi bi-file-earmark-bar-graph me-2"></i>
                                 <strong>@_reportToDeleteTitle</strong>
                             </div>
-                            <p class="text-muted small mb-0">
+                            <p class="small mb-0">
                                 <i class="bi bi-info-circle me-1"></i>This action cannot be undone.
                             </p>
                         </div>
@@ -252,7 +265,7 @@
                                 <i class="bi bi-shield-exclamation me-2"></i>
                                 <strong>Warning:</strong> This will permanently delete all your reports.
                             </div>
-                            <p class="text-muted small mb-0">
+                            <p class="small mb-0">
                                 <i class="bi bi-info-circle me-1"></i>This action cannot be undone.
                             </p>
                         </div>
@@ -294,6 +307,7 @@
 
     private MarkupString _reportContent = new("");
     private string _activeReportTitle = string.Empty;
+    private ChartData? _chartData = null;
 
     private Guid _reportToDeleteId = Guid.Empty;
     private string _reportToDeleteTitle = string.Empty;
@@ -364,6 +378,7 @@
         _reportStatusChangedSubscription?.Dispose();
         _reportDeletedSubscription?.Dispose();
         _allReportsDeletedSubscription?.Dispose();
+            await HubService.StopAsync();
     }
 
     private async Task LoadReports()
@@ -379,12 +394,82 @@
         if (report == null)
             return;
 
+        Console.WriteLine($"[Frontend Debug] Report {reportId} received");
+        Console.WriteLine($"[Frontend Debug] ChartData is null: {report.ChartData == null}");
+        Console.WriteLine($"[Frontend Debug] ChartData is empty: {string.IsNullOrWhiteSpace(report.ChartData)}");
+        Console.WriteLine($"[Frontend Debug] ChartData length: {report.ChartData?.Length ?? 0}");
+        Console.WriteLine($"[Frontend Debug] ChartData content: {report.ChartData}");
+
         _activeReportTitle = report.Title;
 
         var html = ConvertToHtml(report.Content);
         _reportContent = new MarkupString(html);
 
+        // Parse chart data if available
+        if (!string.IsNullOrWhiteSpace(report.ChartData))
+        {
+            try
+            {
+                Console.WriteLine($"Parsing chart data: {report.ChartData}");
+                var options = new System.Text.Json.JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                };
+                _chartData = System.Text.Json.JsonSerializer.Deserialize<ChartData>(report.ChartData, options);
+
+                // Only skip chart if explicitly set to None or if data is invalid
+                if (_chartData?.ChartType == "None")
+                {
+                    Console.WriteLine("Chart type is None - skipping chart display");
+                    _chartData = null;
+                }
+                else if (_chartData == null)
+                {
+                    Console.WriteLine("Chart data deserialized to null");
+                }
+                else if (_chartData.Series == null || _chartData.Series.Count == 0)
+                {
+                    Console.WriteLine("Chart has no series data - skipping chart display");
+                    _chartData = null;
+                }
+                else if (_chartData.XAxis?.Labels == null || _chartData.XAxis.Labels.Count == 0)
+                {
+                    Console.WriteLine("Chart has no X-axis labels - skipping chart display");
+                    _chartData = null;
+                }
+                else
+                {
+                    Console.WriteLine($"Valid chart data found: Type={_chartData.ChartType}, Series={_chartData.Series.Count}, Labels={_chartData.XAxis.Labels.Count}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to parse chart data: {ex.Message}");
+                Console.WriteLine($"Chart data string: {report.ChartData}");
+                _chartData = null;
+            }
+        }
+        else
+        {
+            Console.WriteLine("No chart data available in report");
+            _chartData = null;
+        }
+
         _showContent = true;
+        StateHasChanged();
+
+        // Render chart after modal is fully shown
+        if (_chartData != null)
+        {
+            Console.WriteLine("Scheduling chart render...");
+            await Task.Delay(500); // Wait for modal animation to complete
+            Console.WriteLine("Attempting to render chart...");
+            await RenderChart();
+        }
+        else
+        {
+            Console.WriteLine("Skipping chart render - no valid chart data");
+        }
     }
 
     private void CloseViewer()
@@ -392,6 +477,79 @@
         _showContent = false;
         _reportContent = new("");
         _activeReportTitle = string.Empty;
+        _chartData = null;
+    }
+
+    private async Task RenderChart()
+    {
+        if (_chartData == null) return;
+
+        const int maxRetries = 3;
+        for (int attempt = 1; attempt <= maxRetries; attempt++)
+        {
+            try
+            {
+                Console.WriteLine($"Chart render attempt {attempt}/{maxRetries}");
+
+                // Check if Chart.js is loaded
+                var chartJsLoaded = await JS.InvokeAsync<bool>("eval", "typeof Chart !== 'undefined'");
+                if (!chartJsLoaded)
+                {
+                    Console.WriteLine("Chart.js library not loaded yet");
+                    if (attempt < maxRetries)
+                    {
+                        await Task.Delay(200);
+                        continue;
+                    }
+                    return;
+                }
+
+                // Check if canvas element exists
+                var canvasExists = await JS.InvokeAsync<bool>("eval", "document.getElementById('reportChart') !== null");
+                if (!canvasExists)
+                {
+                    Console.WriteLine("Canvas element not found yet");
+                    if (attempt < maxRetries)
+                    {
+                        await Task.Delay(200);
+                        continue;
+                    }
+                    return;
+                }
+
+                await JS.InvokeVoidAsync("renderChart", _chartData);
+                Console.WriteLine("Chart render completed successfully");
+                return; // Success, exit the loop
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to render chart (attempt {attempt}): {ex.Message}");
+                if (attempt < maxRetries)
+                {
+                    await Task.Delay(300);
+                }
+            }
+        }
+        Console.WriteLine("All chart render attempts failed");
+    }
+
+    public class ChartData
+    {
+        public string ChartType { get; set; } = "None";
+        public string Title { get; set; } = "";
+        public XAxisData XAxis { get; set; } = new();
+        public List<SeriesData> Series { get; set; } = new();
+    }
+
+    public class XAxisData
+    {
+        public List<string> Labels { get; set; } = new();
+    }
+
+    public class SeriesData
+    {
+        public string Name { get; set; } = "";
+        public List<double> Values { get; set; } = new();
     }
 
     private async Task DownloadReport(Guid reportId)

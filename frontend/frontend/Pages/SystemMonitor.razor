@@ -1,0 +1,1129 @@
+@page "/system-monitor"
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.WebAssembly.Authentication
+@using Microsoft.AspNetCore.SignalR.Client
+@using shared.Dto
+@using frontend.Services
+@using Blazored.LocalStorage
+@inject HubConnectionService HubService
+@inject IAccessTokenProvider TokenProvider
+@inject ILocalStorageService LocalStorage
+@inject WorkerService WorkerApi
+@inject IJSRuntime JS
+@inject ToastService Toast
+@implements IAsyncDisposable
+
+<AuthorizeView>
+    <Authorized>
+        <div class="container-fluid px-4 py-4">
+
+            <!-- HEADER -->
+            <div class="d-flex justify-content-between align-items-center flex-wrap mb-4">
+                <div>
+                    <h2 class="mb-1 fw-bold text-gradient">
+                        <i class="bi bi-activity me-2"></i>System Monitor
+                    </h2>
+                    <p class="mb-0">Real-time system metrics and process management</p>
+                </div>
+                <div class="d-flex gap-2">
+                    @if (_isConnected)
+                    {
+                        <span class="badge bg-success px-3 py-2">
+                            <i class="bi bi-circle-fill me-1" style="font-size: 0.5rem;"></i>
+                            Worker Connected
+                        </span>
+                    }
+                    else
+                    {
+                        <span class="badge bg-secondary px-3 py-2">
+                            <i class="bi bi-circle me-1" style="font-size: 0.5rem;"></i>
+                            Waiting for Worker
+                        </span>
+                    }
+                </div>
+            </div>
+
+            <!-- WORKER SELECTION -->
+            <div class="card modern-card shadow-sm mb-4">
+                <div class="card-body">
+                    <div class="row g-3 align-items-end">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">
+                                <i class="bi bi-hdd-network me-2"></i>Select Worker
+                            </label>
+                            <div class="input-group">
+                                <select class="form-select" @bind="_workerIdInput" disabled="@_isSubscribed">
+                                    <option value="">-- Select a worker --</option>
+                                    @foreach (var worker in _availableWorkers)
+                                    {
+                                        <option value="@worker.WorkerId">
+                                            @worker.Hostname (@worker.WorkerId) - @(worker.IsOnline ? "Online" : "Offline")
+                                        </option>
+                                    }
+                                </select>
+                                <button class="btn btn-outline-secondary" @onclick="RefreshWorkers" disabled="@_loadingWorkers" title="Refresh workers">
+                                    @if (_loadingWorkers)
+                                    {
+                                        <span class="spinner-border spinner-border-sm"></span>
+                                    }
+                                    else
+                                    {
+                                        <i class="bi bi-arrow-clockwise"></i>
+                                    }
+                                </button>
+                                @if (_isSubscribed)
+                                {
+                                    <button class="btn btn-outline-danger" @onclick="Unsubscribe">
+                                        <i class="bi bi-x-circle me-1"></i>Disconnect
+                                    </button>
+                                }
+                                else
+                                {
+                                    <button class="btn btn-primary" @onclick="Subscribe" disabled="@string.IsNullOrWhiteSpace(_workerIdInput)">
+                                        <i class="bi bi-link-45deg me-1"></i>Connect
+                                    </button>
+                                }
+                            </div>
+                            <div class="mt-2 d-flex gap-2 align-items-center">
+                                <span class="badge bg-success">@_availableWorkers.Count(w => w.IsOnline) Online</span>
+                                <span class="badge bg-secondary">@_availableWorkers.Count Total</span>
+                                @if (_availableWorkers.Count == 0 && !_loadingWorkers)
+                                {
+                                    <span class="small">No workers registered. Start a BHBWorker to see it here.</span>
+                                }
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            @if (_isSubscribed)
+                            {
+                                var selectedWorker = _availableWorkers.FirstOrDefault(w => w.WorkerId == _subscribedWorkerId);
+                                <div class="alert alert-success mb-0 py-2">
+                                    <div class="d-flex align-items-center">
+                                        <i class="bi bi-check-circle me-2 fs-5"></i>
+                                        <div>
+                                            <strong>Connected to: @(selectedWorker?.Hostname ?? _subscribedWorkerId)</strong>
+                                            <div class="small">Worker ID: @_subscribedWorkerId</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="alert alert-info mb-0 py-2">
+                                    <i class="bi bi-info-circle me-2"></i>
+                                    Select a worker from the dropdown and click Connect to start monitoring.
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            @if (_isSubscribed && _data != null)
+            {
+                <!-- SYSTEM INFO HEADER -->
+                <div class="card modern-card shadow-sm mb-4 border-primary border-2">
+                    <div class="card-body py-3">
+                        <div class="row align-items-center">
+                            <div class="col-auto">
+                                <i class="bi bi-pc-display fs-2 text-primary"></i>
+                            </div>
+                            <div class="col">
+                                <h5 class="mb-0 fw-bold">@_data.Hostname</h5>
+                                <small>@_data.OsVersion</small>
+                            </div>
+                            <div class="col-auto text-end">
+                                <div class="small"><strong>Kernel:</strong> @_data.KernelVersion</div>
+                                <div class="small"><strong>Uptime:</strong> @_data.UptimeFormatted</div>
+                            </div>
+                            <div class="col-auto text-end">
+                                <div class="small"><strong>Load:</strong> @_data.LoadAverage1.ToString("F2") / @_data.LoadAverage5.ToString("F2") / @_data.LoadAverage15.ToString("F2")</div>
+                                <div class="small"><strong>Updated:</strong> @_data.Timestamp.ToLocalTime().ToString("HH:mm:ss")</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- MAIN METRICS - CLICKABLE -->
+                <div class="row g-4 mb-4">
+                    <!-- CPU - CLICKABLE -->
+                    <div class="col-md-6 col-lg-3">
+                        <div class="card modern-card shadow-sm h-100 stat-card clickable" @onclick="ShowCpuModal">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-start mb-3">
+                                    <div>
+                                        <h6 class="fw-bold mb-1">CPU Usage</h6>
+                                        <h3 class="mb-0 @GetCpuColorClass(_data.CpuPercent)">@_data.CpuPercent.ToString("F1")%</h3>
+                                    </div>
+                                    <div class="bg-primary bg-opacity-10 rounded-circle p-2">
+                                        <i class="bi bi-cpu fs-4 text-primary"></i>
+                                    </div>
+                                </div>
+                                <div class="progress mb-2" style="height: 8px;">
+                                    <div class="progress-bar @GetCpuProgressClass(_data.CpuPercent)" style="width: @_data.CpuPercent.ToString("F0")%"></div>
+                                </div>
+                                <small><strong>@_data.CpuCores Cores</strong> @((_data.CpuTemperature > 0) ? $"| {_data.CpuTemperature:F0}°C" : "") <i class="bi bi-box-arrow-up-right ms-1 text-primary" title="Click for details"></i></small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Memory - CLICKABLE -->
+                    <div class="col-md-6 col-lg-3">
+                        <div class="card modern-card shadow-sm h-100 stat-card clickable" @onclick="ShowMemoryModal">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-start mb-3">
+                                    <div>
+                                        <h6 class="fw-bold mb-1">Memory Usage</h6>
+                                        <h3 class="mb-0 @GetMemoryColorClass(_data.MemoryPercent)">@_data.MemoryPercent.ToString("F1")%</h3>
+                                    </div>
+                                    <div class="bg-success bg-opacity-10 rounded-circle p-2">
+                                        <i class="bi bi-memory fs-4 text-success"></i>
+                                    </div>
+                                </div>
+                                <div class="progress mb-2" style="height: 8px;">
+                                    <div class="progress-bar @GetMemoryProgressClass(_data.MemoryPercent)" style="width: @_data.MemoryPercent.ToString("F0")%"></div>
+                                </div>
+                                <small><strong>@FormatMB(_data.MemoryUsedMB)</strong> / <strong>@FormatMB(_data.MemoryTotalMB)</strong> <i class="bi bi-box-arrow-up-right ms-1 text-primary" title="Click for details"></i></small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Swap - CLICKABLE -->
+                    <div class="col-md-6 col-lg-3">
+                        <div class="card modern-card shadow-sm h-100 stat-card clickable" @onclick="ShowSwapModal">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-start mb-3">
+                                    <div>
+                                        <h6 class="fw-bold mb-1">Swap Usage</h6>
+                                        @{
+                                            var swapPercent = _data.SwapTotalMB > 0 ? (_data.SwapUsedMB / _data.SwapTotalMB * 100) : 0;
+                                        }
+                                        <h3 class="mb-0 @GetMemoryColorClass(swapPercent)">@swapPercent.ToString("F1")%</h3>
+                                    </div>
+                                    <div class="bg-warning bg-opacity-10 rounded-circle p-2">
+                                        <i class="bi bi-hdd fs-4 text-warning"></i>
+                                    </div>
+                                </div>
+                                <div class="progress mb-2" style="height: 8px;">
+                                    <div class="progress-bar @GetMemoryProgressClass(swapPercent)" style="width: @swapPercent.ToString("F0")%"></div>
+                                </div>
+                                <small><strong>@FormatMB(_data.SwapUsedMB)</strong> / <strong>@FormatMB(_data.SwapTotalMB)</strong> <i class="bi bi-box-arrow-up-right ms-1 text-primary" title="Click for details"></i></small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Network - CLICKABLE -->
+                    <div class="col-md-6 col-lg-3">
+                        <div class="card modern-card shadow-sm h-100 stat-card clickable" @onclick="ShowNetworkModal">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-start mb-3">
+                                    <div>
+                                        <h6 class="fw-bold mb-1">Network I/O</h6>
+                                        <h3 class="mb-0 text-info">@FormatBytesPerSec(_data.NetworkRxBytesPerSec + _data.NetworkTxBytesPerSec)</h3>
+                                    </div>
+                                    <div class="bg-info bg-opacity-10 rounded-circle p-2">
+                                        <i class="bi bi-ethernet fs-4 text-info"></i>
+                                    </div>
+                                </div>
+                                <div class="d-flex justify-content-between small">
+                                    <span class="text-success fw-bold"><i class="bi bi-arrow-down"></i> @FormatBytesPerSec(_data.NetworkRxBytesPerSec)</span>
+                                    <span class="text-danger fw-bold"><i class="bi bi-arrow-up"></i> @FormatBytesPerSec(_data.NetworkTxBytesPerSec) <i class="bi bi-box-arrow-up-right ms-1 text-primary" title="Click for details"></i></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- DISK & NETWORK DETAILS - CLICKABLE -->
+                <div class="row g-4 mb-4">
+                    <!-- Disks - CLICKABLE -->
+                    <div class="col-md-6">
+                        <div class="card modern-card shadow-sm h-100 stat-card clickable" @onclick="ShowDiskModal">
+                            <div class="card-header bg-transparent border-0 pb-0">
+                                <h6 class="mb-0 fw-bold"><i class="bi bi-device-hdd me-2"></i>Disk Usage <i class="bi bi-box-arrow-up-right ms-2 text-primary" title="Click for full details"></i></h6>
+                            </div>
+                            <div class="card-body">
+                                @if (_data.Disks.Any())
+                                {
+                                    @foreach (var disk in _data.Disks.Take(3))
+                                    {
+                                        <div class="mb-3">
+                                            <div class="d-flex justify-content-between mb-1">
+                                                <span class="fw-bold">@disk.MountPoint</span>
+                                                <span>
+                                                    <span class="badge @GetDiskBadgeClass(disk.UsedPercent)">@disk.UsedPercent.ToString("F1")%</span>
+                                                    <strong>@FormatGB(disk.UsedGB)</strong> / <strong>@FormatGB(disk.TotalGB)</strong>
+                                                </span>
+                                            </div>
+                                            <div class="progress" style="height: 8px;">
+                                                <div class="progress-bar @GetDiskProgressClass(disk.UsedPercent)" style="width: @disk.UsedPercent.ToString("F0")%"></div>
+                                            </div>
+                                        </div>
+                                    }
+                                    @if (_data.Disks.Count > 3)
+                                    {
+                                        <div class="text-center">
+                                            <small class="text-primary">Click to see all @_data.Disks.Count disks</small>
+                                        </div>
+                                    }
+                                }
+                                else
+                                {
+                                    <p class="mb-0">No disk information available</p>
+                                }
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Network Interfaces - CLICKABLE -->
+                    <div class="col-md-6">
+                        <div class="card modern-card shadow-sm h-100 stat-card clickable" @onclick="ShowNetworkModal">
+                            <div class="card-header bg-transparent border-0 pb-0">
+                                <h6 class="mb-0 fw-bold"><i class="bi bi-diagram-3 me-2"></i>Network Interfaces <i class="bi bi-box-arrow-up-right ms-2 text-primary" title="Click for full details"></i></h6>
+                            </div>
+                            <div class="card-body">
+                                @if (_data.NetworkInterfaces.Any())
+                                {
+                                    <div class="table-responsive">
+                                        <table class="table table-sm mb-0">
+                                            <thead>
+                                                <tr>
+                                                    <th>Interface</th>
+                                                    <th>IP</th>
+                                                    <th>DL</th>
+                                                    <th>UP</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var nic in _data.NetworkInterfaces.Take(4))
+                                                {
+                                                    <tr>
+                                                        <td>
+                                                            <i class="bi @(nic.IsUp ? "bi-wifi text-success" : "bi-wifi-off text-danger") me-1"></i>
+                                                            <strong>@nic.Name</strong>
+                                                        </td>
+                                                        <td>@nic.IpAddress</td>
+                                                        <td class="text-success fw-bold">@FormatBytesPerSec(nic.RxBytesPerSec)</td>
+                                                        <td class="text-danger fw-bold">@FormatBytesPerSec(nic.TxBytesPerSec)</td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    @if (_data.NetworkInterfaces.Count > 4)
+                                    {
+                                        <div class="text-center mt-2">
+                                            <small class="text-primary">Click to see all @_data.NetworkInterfaces.Count interfaces</small>
+                                        </div>
+                                    }
+                                }
+                                else
+                                {
+                                    <p class="mb-0">No network interfaces found</p>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- PROCESSES - CLICKABLE HEADER -->
+                <div class="card modern-card shadow-sm">
+                    <div class="card-header bg-transparent border-0 stat-card clickable" @onclick="ShowProcessesModal">
+                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                            <h6 class="mb-0 fw-bold">
+                                <i class="bi bi-list-task me-2"></i>Processes
+                                <span class="badge bg-primary ms-2">@_data.TotalProcesses Total</span>
+                                <span class="badge bg-success ms-1">@_data.RunningProcesses Running</span>
+                                <span class="badge bg-warning text-dark ms-1">@_data.SleepingProcesses Sleeping</span>
+                                <i class="bi bi-box-arrow-up-right ms-2 text-primary" title="Click for full process list"></i>
+                            </h6>
+                            <div class="d-flex gap-2 align-items-center" @onclick:stopPropagation="true">
+                                <div class="input-group" style="width: 280px;">
+                                    <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                                    <input type="text" class="form-control"
+                                           placeholder="Search by name or PID..."
+                                           @bind="_processFilter" @bind:event="oninput" />
+                                    @if (!string.IsNullOrEmpty(_processFilter))
+                                    {
+                                        <button class="btn btn-outline-secondary" type="button" @onclick="@(() => _processFilter = string.Empty)">
+                                            <i class="bi bi-x"></i>
+                                        </button>
+                                    }
+                                </div>
+                                <select class="form-select" style="width: auto;" @bind="_processSortBy">
+                                    <option value="cpu">Sort: CPU</option>
+                                    <option value="memory">Sort: Memory</option>
+                                    <option value="pid">Sort: PID</option>
+                                    <option value="name">Sort: Name</option>
+                                </select>
+                            </div>
+                        </div>
+                        @if (!string.IsNullOrEmpty(_processFilter))
+                        {
+                            <div class="mt-2">
+                                <span class="badge bg-info">Showing @GetFilteredProcesses().Count() matching "@_processFilter"</span>
+                            </div>
+                        }
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="width: 80px;">PID</th>
+                                        <th>Process Name</th>
+                                        <th style="width: 120px;">CPU %</th>
+                                        <th style="width: 120px;">Memory</th>
+                                        <th style="width: 100px;">Status</th>
+                                        <th style="width: 120px;">Runtime</th>
+                                        <th style="width: 100px;">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var proc in GetFilteredProcesses().Take(15))
+                                    {
+                                        <tr>
+                                            <td class="font-monospace fw-bold">@proc.Pid</td>
+                                            <td>
+                                                <span class="fw-bold">@proc.Name</span>
+                                                @if (!string.IsNullOrEmpty(proc.User))
+                                                {
+                                                    <span class="ms-2 badge bg-light text-dark">@proc.User</span>
+                                                }
+                                            </td>
+                                            <td>
+                                                <div class="d-flex align-items-center gap-2">
+                                                    <div class="progress flex-grow-1" style="height: 8px; width: 60px;">
+                                                        <div class="progress-bar @GetCpuProgressClass(proc.CpuPercent)" style="width: @Math.Min(proc.CpuPercent, 100).ToString("F0")%"></div>
+                                                    </div>
+                                                    <span class="fw-bold">@proc.CpuPercent.ToString("F1")%</span>
+                                                </div>
+                                            </td>
+                                            <td class="fw-bold">@FormatMB(proc.MemoryMB)</td>
+                                            <td>
+                                                <span class="badge @(proc.Status == "Running" ? "bg-success" : "bg-warning text-dark")">@proc.Status</span>
+                                            </td>
+                                            <td>@FormatTimeSpan(proc.RunTime)</td>
+                                            <td>
+                                                <div class="btn-group btn-group-sm">
+                                                    <button class="btn btn-outline-danger" @onclick="() => KillProcess(proc.Pid, false)"
+                                                            title="Terminate process (SIGTERM)">
+                                                        <i class="bi bi-x-circle"></i>
+                                                    </button>
+                                                    <button class="btn btn-danger" @onclick="() => KillProcess(proc.Pid, true)"
+                                                            title="Force kill process (SIGKILL)">
+                                                        <i class="bi bi-x-octagon"></i>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                        @if (GetFilteredProcesses().Count() > 15)
+                        {
+                            <div class="text-center py-3 border-top">
+                                <button class="btn btn-outline-primary" @onclick="ShowProcessesModal">
+                                    <i class="bi bi-list me-1"></i>View All @GetFilteredProcesses().Count() Processes
+                                </button>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+            else if (_isSubscribed)
+            {
+                <!-- LOADING STATE -->
+                <div class="card modern-card shadow-sm">
+                    <div class="card-body text-center py-5">
+                        <div class="spinner-border text-primary mb-3" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mb-0">Waiting for system data from worker...</p>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <!-- NOT CONNECTED STATE -->
+                <div class="card modern-card shadow-sm">
+                    <div class="card-body text-center py-5">
+                        <i class="bi bi-activity fs-1 text-secondary mb-3 d-block"></i>
+                        <h5>Connect to a Worker</h5>
+                        <p class="mb-0">Enter your Worker ID above and click Connect to start monitoring system metrics.</p>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <!-- DETAIL MODALS -->
+
+        <!-- CPU DETAIL MODAL -->
+        @if (_showCpuModal && _data != null)
+        {
+            <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title"><i class="bi bi-cpu me-2"></i>CPU Details</h5>
+                            <button type="button" class="btn-close" @onclick="() => _showCpuModal = false"></button>
+                        </div>
+                        <div class="modal-body detail-modal-content">
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <div class="detail-item">
+                                        <span class="detail-label">Usage</span>
+                                        <span class="detail-value @GetCpuColorClass(_data.CpuPercent)">@_data.CpuPercent.ToString("F2")%</span>
+                                    </div>
+                                    <div class="detail-item">
+                                        <span class="detail-label">Cores</span>
+                                        <span class="detail-value">@_data.CpuCores</span>
+                                    </div>
+                                    <div class="detail-item">
+                                        <span class="detail-label">Temperature</span>
+                                        <span class="detail-value">@(_data.CpuTemperature > 0 ? $"{_data.CpuTemperature:F1}°C" : "N/A")</span>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="detail-item">
+                                        <span class="detail-label">Load 1m</span>
+                                        <span class="detail-value">@_data.LoadAverage1.ToString("F2")</span>
+                                    </div>
+                                    <div class="detail-item">
+                                        <span class="detail-label">Load 5m</span>
+                                        <span class="detail-value">@_data.LoadAverage5.ToString("F2")</span>
+                                    </div>
+                                    <div class="detail-item">
+                                        <span class="detail-label">Load 15m</span>
+                                        <span class="detail-value">@_data.LoadAverage15.ToString("F2")</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mt-3">
+                                <h6 class="fw-bold">Top CPU Processes</h6>
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>PID</th>
+                                            <th>Name</th>
+                                            <th>CPU %</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var proc in _data.TopProcesses.OrderByDescending(p => p.CpuPercent).Take(10))
+                                        {
+                                            <tr>
+                                                <td>@proc.Pid</td>
+                                                <td>@proc.Name</td>
+                                                <td class="fw-bold @GetCpuColorClass(proc.CpuPercent)">@proc.CpuPercent.ToString("F1")%</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" @onclick="() => _showCpuModal = false">Close</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <!-- MEMORY DETAIL MODAL -->
+        @if (_showMemoryModal && _data != null)
+        {
+            <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title"><i class="bi bi-memory me-2"></i>Memory Details</h5>
+                            <button type="button" class="btn-close" @onclick="() => _showMemoryModal = false"></button>
+                        </div>
+                        <div class="modal-body detail-modal-content">
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <div class="detail-item">
+                                        <span class="detail-label">Total</span>
+                                        <span class="detail-value">@FormatMB(_data.MemoryTotalMB)</span>
+                                    </div>
+                                    <div class="detail-item">
+                                        <span class="detail-label">Used</span>
+                                        <span class="detail-value">@FormatMB(_data.MemoryUsedMB)</span>
+                                    </div>
+                                    <div class="detail-item">
+                                        <span class="detail-label">Free</span>
+                                        <span class="detail-value">@FormatMB(_data.MemoryTotalMB - _data.MemoryUsedMB)</span>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="detail-item">
+                                        <span class="detail-label">Usage</span>
+                                        <span class="detail-value @GetMemoryColorClass(_data.MemoryPercent)">@_data.MemoryPercent.ToString("F2")%</span>
+                                    </div>
+                                    <div class="detail-item">
+                                        <span class="detail-label">Cached</span>
+                                        <span class="detail-value">@FormatMB(_data.MemoryCachedMB)</span>
+                                    </div>
+                                    <div class="detail-item">
+                                        <span class="detail-label">Buffers</span>
+                                        <span class="detail-value">@FormatMB(_data.MemoryBuffersMB)</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mt-3">
+                                <h6 class="fw-bold">Top Memory Processes</h6>
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>PID</th>
+                                            <th>Name</th>
+                                            <th>Memory</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var proc in _data.TopProcesses.OrderByDescending(p => p.MemoryMB).Take(10))
+                                        {
+                                            <tr>
+                                                <td>@proc.Pid</td>
+                                                <td>@proc.Name</td>
+                                                <td class="fw-bold">@FormatMB(proc.MemoryMB)</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" @onclick="() => _showMemoryModal = false">Close</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <!-- SWAP DETAIL MODAL -->
+        @if (_showSwapModal && _data != null)
+        {
+            <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title"><i class="bi bi-hdd me-2"></i>Swap Details</h5>
+                            <button type="button" class="btn-close" @onclick="() => _showSwapModal = false"></button>
+                        </div>
+                        <div class="modal-body">
+                            @{
+                                var swapPercent = _data.SwapTotalMB > 0 ? (_data.SwapUsedMB / _data.SwapTotalMB * 100) : 0;
+                            }
+                            <div class="detail-item">
+                                <span class="detail-label">Total</span>
+                                <span class="detail-value">@FormatMB(_data.SwapTotalMB)</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">Used</span>
+                                <span class="detail-value">@FormatMB(_data.SwapUsedMB)</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">Free</span>
+                                <span class="detail-value">@FormatMB(_data.SwapTotalMB - _data.SwapUsedMB)</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">Usage</span>
+                                <span class="detail-value @GetMemoryColorClass(swapPercent)">@swapPercent.ToString("F2")%</span>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" @onclick="() => _showSwapModal = false">Close</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <!-- DISK DETAIL MODAL -->
+        @if (_showDiskModal && _data != null)
+        {
+            <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+                <div class="modal-dialog modal-xl">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title"><i class="bi bi-device-hdd me-2"></i>Disk Details (@_data.Disks.Count disks)</h5>
+                            <button type="button" class="btn-close" @onclick="() => _showDiskModal = false"></button>
+                        </div>
+                        <div class="modal-body detail-modal-content">
+                            <div class="table-responsive">
+                                <table class="table">
+                                    <thead>
+                                        <tr>
+                                            <th>Mount Point</th>
+                                            <th>Device</th>
+                                            <th>File System</th>
+                                            <th>Total</th>
+                                            <th>Used</th>
+                                            <th>Free</th>
+                                            <th>Usage</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var disk in _data.Disks)
+                                        {
+                                            <tr>
+                                                <td class="fw-bold">@disk.MountPoint</td>
+                                                <td>@disk.Device</td>
+                                                <td>@disk.FileSystem</td>
+                                                <td>@FormatGB(disk.TotalGB)</td>
+                                                <td>@FormatGB(disk.UsedGB)</td>
+                                                <td>@FormatGB(disk.FreeGB)</td>
+                                                <td>
+                                                    <div class="d-flex align-items-center gap-2">
+                                                        <div class="progress flex-grow-1" style="height: 8px; width: 80px;">
+                                                            <div class="progress-bar @GetDiskProgressClass(disk.UsedPercent)" style="width: @disk.UsedPercent.ToString("F0")%"></div>
+                                                        </div>
+                                                        <span class="badge @GetDiskBadgeClass(disk.UsedPercent)">@disk.UsedPercent.ToString("F1")%</span>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" @onclick="() => _showDiskModal = false">Close</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <!-- NETWORK DETAIL MODAL -->
+        @if (_showNetworkModal && _data != null)
+        {
+            <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+                <div class="modal-dialog modal-xl">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title"><i class="bi bi-diagram-3 me-2"></i>Network Details (@_data.NetworkInterfaces.Count interfaces)</h5>
+                            <button type="button" class="btn-close" @onclick="() => _showNetworkModal = false"></button>
+                        </div>
+                        <div class="modal-body detail-modal-content">
+                            <div class="row g-3 mb-3">
+                                <div class="col-md-6">
+                                    <div class="detail-item">
+                                        <span class="detail-label">Total Download</span>
+                                        <span class="detail-value text-success">@FormatBytesPerSec(_data.NetworkRxBytesPerSec)</span>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="detail-item">
+                                        <span class="detail-label">Total Upload</span>
+                                        <span class="detail-value text-danger">@FormatBytesPerSec(_data.NetworkTxBytesPerSec)</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table">
+                                    <thead>
+                                        <tr>
+                                            <th>Interface</th>
+                                            <th>Status</th>
+                                            <th>IP Address</th>
+                                            <th>MAC</th>
+                                            <th>Download</th>
+                                            <th>Upload</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var nic in _data.NetworkInterfaces)
+                                        {
+                                            <tr>
+                                                <td class="fw-bold">@nic.Name</td>
+                                                <td>
+                                                    @if (nic.IsUp)
+                                                    {
+                                                        <span class="badge bg-success">UP</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="badge bg-danger">DOWN</span>
+                                                    }
+                                                </td>
+                                                <td>@nic.IpAddress</td>
+                                                <td class="font-monospace small">@nic.MacAddress</td>
+                                                <td class="text-success fw-bold">@FormatBytesPerSec(nic.RxBytesPerSec)</td>
+                                                <td class="text-danger fw-bold">@FormatBytesPerSec(nic.TxBytesPerSec)</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" @onclick="() => _showNetworkModal = false">Close</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <!-- PROCESSES DETAIL MODAL -->
+        @if (_showProcessesModal && _data != null)
+        {
+            <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+                <div class="modal-dialog modal-xl">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">
+                                <i class="bi bi-list-task me-2"></i>All Processes
+                                <span class="badge bg-primary ms-2">@_data.TotalProcesses Total</span>
+                            </h5>
+                            <button type="button" class="btn-close" @onclick="() => _showProcessesModal = false"></button>
+                        </div>
+                        <div class="modal-body detail-modal-content" style="max-height: 70vh;">
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover">
+                                    <thead class="sticky-top bg-dark">
+                                        <tr>
+                                            <th>PID</th>
+                                            <th>Name</th>
+                                            <th>User</th>
+                                            <th>CPU %</th>
+                                            <th>Memory</th>
+                                            <th>Status</th>
+                                            <th>Runtime</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var proc in GetFilteredProcesses())
+                                        {
+                                            <tr>
+                                                <td class="font-monospace">@proc.Pid</td>
+                                                <td class="fw-bold">@proc.Name</td>
+                                                <td>@proc.User</td>
+                                                <td class="fw-bold @GetCpuColorClass(proc.CpuPercent)">@proc.CpuPercent.ToString("F1")%</td>
+                                                <td>@FormatMB(proc.MemoryMB)</td>
+                                                <td>
+                                                    <span class="badge @(proc.Status == "Running" ? "bg-success" : "bg-warning text-dark")">@proc.Status</span>
+                                                </td>
+                                                <td>@FormatTimeSpan(proc.RunTime)</td>
+                                                <td>
+                                                    <div class="btn-group btn-group-sm">
+                                                        <button class="btn btn-outline-danger btn-sm" @onclick="() => KillProcess(proc.Pid, false)" title="SIGTERM">
+                                                            <i class="bi bi-x-circle"></i>
+                                                        </button>
+                                                        <button class="btn btn-danger btn-sm" @onclick="() => KillProcess(proc.Pid, true)" title="SIGKILL">
+                                                            <i class="bi bi-x-octagon"></i>
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" @onclick="() => _showProcessesModal = false">Close</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+    </Authorized>
+    <NotAuthorized>
+        <div class="container py-5 text-center">
+            <h3>Please log in to access the System Monitor</h3>
+        </div>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    private SystemMonitorData? _data;
+    private string _workerIdInput = "";
+    private string _subscribedWorkerId = "";
+    private bool _isSubscribed;
+    private bool _isConnected;
+    private string _processSortBy = "cpu";
+    private string _processFilter = "";
+
+    private List<WorkerRegistration> _availableWorkers = new();
+    private bool _loadingWorkers;
+
+    // Detail modals
+    private bool _showCpuModal;
+    private bool _showMemoryModal;
+    private bool _showSwapModal;
+    private bool _showDiskModal;
+    private bool _showNetworkModal;
+    private bool _showProcessesModal;
+
+    private const string WorkerIdStorageKey = "systemmonitor_workerId";
+
+    protected override async Task OnInitializedAsync()
+    {
+        HubService.OnConnectionStateChanged += OnConnectionStateChanged;
+        await HubService.StartAsync();
+
+        // Load available workers
+        await RefreshWorkers();
+
+        // Load saved worker ID
+        try
+        {
+            var savedWorkerId = await LocalStorage.GetItemAsStringAsync(WorkerIdStorageKey);
+            if (!string.IsNullOrEmpty(savedWorkerId))
+            {
+                _workerIdInput = savedWorkerId.Trim('"');
+            }
+        }
+        catch { }
+    }
+
+    private async Task RefreshWorkers()
+    {
+        _loadingWorkers = true;
+        StateHasChanged();
+
+        try
+        {
+            var response = await WorkerApi.GetWorkersAsync();
+            _availableWorkers = response.Workers;
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to load workers: {ex.Message}");
+        }
+        finally
+        {
+            _loadingWorkers = false;
+            StateHasChanged();
+        }
+    }
+
+    private void OnConnectionStateChanged(bool isConnected)
+    {
+        _isConnected = isConnected;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private async Task Subscribe()
+    {
+        if (string.IsNullOrWhiteSpace(_workerIdInput)) return;
+
+        _subscribedWorkerId = _workerIdInput.Trim();
+        _isSubscribed = true;
+
+        // Save worker ID
+        await LocalStorage.SetItemAsStringAsync(WorkerIdStorageKey, _subscribedWorkerId);
+
+        // Register handlers
+        HubService.On<SystemMonitorData>("SystemMonitorData", OnSystemMonitorData);
+        HubService.On<KillProcessResponse>("KillProcessResponse", OnKillProcessResponse);
+        HubService.On<object>("LiveLogSessionConnected", _ =>
+        {
+            _isConnected = true;
+            InvokeAsync(StateHasChanged);
+        });
+        HubService.On<object>("LiveLogSessionDisconnected", _ =>
+        {
+            _isConnected = false;
+            InvokeAsync(StateHasChanged);
+        });
+
+        await HubService.InvokeAsync("SubscribeToSystemMonitor", _subscribedWorkerId);
+
+        Toast.ShowSuccess($"Subscribed to system monitor for worker {_subscribedWorkerId}");
+    }
+
+    private async Task Unsubscribe()
+    {
+        if (!_isSubscribed) return;
+
+        await HubService.InvokeAsync("UnsubscribeFromSystemMonitor", _subscribedWorkerId);
+
+        _isSubscribed = false;
+        _isConnected = false;
+        _data = null;
+
+        StateHasChanged();
+        Toast.ShowInfo("Disconnected from system monitor");
+    }
+
+    private void OnSystemMonitorData(SystemMonitorData data)
+    {
+        if (data.WorkerId == _subscribedWorkerId)
+        {
+            _data = data;
+            _isConnected = true;
+            InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void OnKillProcessResponse(KillProcessResponse response)
+    {
+        if (response.WorkerId == _subscribedWorkerId)
+        {
+            if (response.Success)
+            {
+                Toast.ShowSuccess(response.Message);
+            }
+            else
+            {
+                Toast.ShowError(response.Message);
+            }
+        }
+    }
+
+    private async Task KillProcess(int pid, bool force)
+    {
+        if (!_isSubscribed) return;
+
+        var action = force ? "force kill" : "terminate";
+        var confirmed = await JS.InvokeAsync<bool>("confirm", $"Are you sure you want to {action} process {pid}?");
+        if (!confirmed) return;
+
+        var request = new KillProcessRequest
+        {
+            WorkerId = _subscribedWorkerId,
+            Pid = pid,
+            Force = force
+        };
+
+        await HubService.InvokeAsync("KillProcess", request);
+        Toast.ShowInfo($"Kill request sent for PID {pid}");
+    }
+
+    private IEnumerable<ProcessInfo> GetFilteredProcesses()
+    {
+        if (_data?.TopProcesses == null) return [];
+
+        var processes = _data.TopProcesses.AsEnumerable();
+
+        // Filter
+        if (!string.IsNullOrWhiteSpace(_processFilter))
+        {
+            var filter = _processFilter.ToLower();
+            processes = processes.Where(p =>
+                p.Name.ToLower().Contains(filter) ||
+                p.Pid.ToString().Contains(filter));
+        }
+
+        // Sort
+        processes = _processSortBy switch
+        {
+            "cpu" => processes.OrderByDescending(p => p.CpuPercent),
+            "memory" => processes.OrderByDescending(p => p.MemoryMB),
+            "pid" => processes.OrderBy(p => p.Pid),
+            "name" => processes.OrderBy(p => p.Name),
+            _ => processes
+        };
+
+        return processes;
+    }
+
+    // Modal show methods
+    private void ShowCpuModal() => _showCpuModal = true;
+    private void ShowMemoryModal() => _showMemoryModal = true;
+    private void ShowSwapModal() => _showSwapModal = true;
+    private void ShowDiskModal() => _showDiskModal = true;
+    private void ShowNetworkModal() => _showNetworkModal = true;
+    private void ShowProcessesModal() => _showProcessesModal = true;
+
+    private string GetCpuColorClass(double percent) => percent switch
+    {
+        >= 90 => "text-danger",
+        >= 70 => "text-warning",
+        _ => "text-success"
+    };
+
+    private string GetCpuProgressClass(double percent) => percent switch
+    {
+        >= 90 => "bg-danger",
+        >= 70 => "bg-warning",
+        _ => "bg-success"
+    };
+
+    private string GetMemoryColorClass(double percent) => percent switch
+    {
+        >= 90 => "text-danger",
+        >= 80 => "text-warning",
+        _ => "text-success"
+    };
+
+    private string GetMemoryProgressClass(double percent) => percent switch
+    {
+        >= 90 => "bg-danger",
+        >= 80 => "bg-warning",
+        _ => "bg-success"
+    };
+
+    private string GetDiskProgressClass(double percent) => percent switch
+    {
+        >= 90 => "bg-danger",
+        >= 80 => "bg-warning",
+        _ => "bg-primary"
+    };
+
+    private string GetDiskBadgeClass(double percent) => percent switch
+    {
+        >= 90 => "bg-danger",
+        >= 80 => "bg-warning text-dark",
+        _ => "bg-success"
+    };
+
+    private string FormatMB(double mb)
+    {
+        if (mb >= 1024)
+            return $"{mb / 1024:F1} GB";
+        return $"{mb:F0} MB";
+    }
+
+    private string FormatGB(double gb)
+    {
+        if (gb >= 1024)
+            return $"{gb / 1024:F2} TB";
+        if (gb >= 1)
+            return $"{gb:F1} GB";
+        return $"{gb * 1024:F0} MB";
+    }
+
+    private string FormatBytesPerSec(double bytes)
+    {
+        if (bytes >= 1024 * 1024 * 1024)
+            return $"{bytes / (1024 * 1024 * 1024):F1} GB/s";
+        if (bytes >= 1024 * 1024)
+            return $"{bytes / (1024 * 1024):F1} MB/s";
+        if (bytes >= 1024)
+            return $"{bytes / 1024:F1} KB/s";
+        return $"{bytes:F0} B/s";
+    }
+
+    private string FormatTimeSpan(TimeSpan ts)
+    {
+        if (ts.TotalDays >= 1)
+            return $"{(int)ts.TotalDays}d {ts.Hours}h";
+        if (ts.TotalHours >= 1)
+            return $"{ts.Hours}h {ts.Minutes}m";
+        if (ts.TotalMinutes >= 1)
+            return $"{ts.Minutes}m {ts.Seconds}s";
+        return $"{ts.Seconds}s";
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        HubService.OnConnectionStateChanged -= OnConnectionStateChanged;
+
+        if (_isSubscribed)
+        {
+            try
+            {
+                await HubService.InvokeAsync("UnsubscribeFromSystemMonitor", _subscribedWorkerId);
+            }
+            catch { }
+        }
+    }
+}

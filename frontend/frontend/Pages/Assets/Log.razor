@@ -8,6 +8,7 @@
 @inject HubConnectionService HubService
 @inject IAccessTokenProvider TokenProvider
 @inject IJSRuntime JS
+@inject ToastService Toast
 @implements IAsyncDisposable
 
 <AuthorizeView>
@@ -60,7 +61,7 @@
                                     <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
                                 </optgroup>
                                 <optgroup label="Open Source (TogetherAI)">
-                                    <option value="together-llama-3-70b">Llama 3 70B</option>
+                                    <option value="gpt-oss-120b">openai/gpt-oss-120b</option>
                                     <option value="together-llama-3.1-405b">Llama 3.1 405B</option>
                                     <option value="together-mixtral-8x7b">Mixtral 8x7B</option>
                                     <option value="together-qwen">Qwen</option>
@@ -127,15 +128,15 @@
                     {
                         <div class="text-center py-5">
                             <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;"></div>
-                            <p class="text-muted fw-semibold">Loading logs...</p>
+                            <p class="fw-semibold">Loading logs...</p>
                         </div>
                     }
                     else if (_logs.Count == 0)
                     {
                         <div class="empty-state-box">
-                            <i class="bi bi-inbox display-1 text-muted mb-3"></i>
+                            <i class="bi bi-inbox display-1  mb-3"></i>
                             <h5 class="fw-bold">No logs uploaded yet</h5>
-                            <p class="text-muted">Upload your first log file to get started</p>
+                            <p>Upload your first log file to get started</p>
                         </div>
                     }
                     else
@@ -160,7 +161,7 @@
                                                     @FormatFileSize(log.SizeBytes)
                                                 </span>
                                             </td>
-                                            <td class="text-muted">@log.CreatedAt.ToLocalTime().ToString("g")</td>
+                                            <td>@log.CreatedAt.ToLocalTime().ToString("g")</td>
                                             <td class="text-center">
                                                 <div class="btn-group shadow-sm" role="group">
                                                     <button class="btn btn-sm btn-success"
@@ -254,7 +255,7 @@
                                 <i class="bi bi-file-earmark-text me-2"></i>
                                 <strong>@_logToDeleteName</strong>
                             </div>
-                            <p class="text-muted small mb-0">
+                            <p class="small mb-0">
                                 <i class="bi bi-info-circle me-1"></i>This action cannot be undone.
                             </p>
                         </div>
@@ -300,7 +301,7 @@
                                 <i class="bi bi-shield-exclamation me-2"></i>
                                 <strong>Warning:</strong> This will permanently delete all your log files.
                             </div>
-                            <p class="text-muted small mb-0">
+                            <p class="small mb-0">
                                 <i class="bi bi-info-circle me-1"></i>This action cannot be undone.
                             </p>
                         </div>
@@ -435,7 +436,7 @@
 
         if (file.Size == 0 || file.Size > maxSize)
         {
-            await JS.InvokeVoidAsync("alert", "Invalid file size. Maximum allowed is 2 MB.");
+            Toast.ShowError("Invalid file size. Maximum allowed is 2 MB.");
             return;
         }
 
@@ -443,7 +444,7 @@
 
         if (string.IsNullOrWhiteSpace(extension) || !AllowedExtensions.Contains(extension))
         {
-            await JS.InvokeVoidAsync("alert", "Unsupported file type. Please upload a valid log file.");
+            Toast.ShowError("Unsupported file type. Please upload a valid log file.");
             return;
         }
 
@@ -452,11 +453,11 @@
             await using var stream = file.OpenReadStream(maxAllowedSize: maxSize);
             await LogsApi.UploadAsync(stream, file.Name, file.ContentType);
             await Reload();
-            await JS.InvokeVoidAsync("alert", "Log file uploaded successfully!");
+            Toast.ShowSuccess("Log file uploaded successfully!");
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Upload failed: {ex.Message}");
+            Toast.ShowError($"Upload failed: {ex.Message}");
         }
     }
 
@@ -473,11 +474,11 @@
 
             _pastedLogs = string.Empty;
             await Reload();
-            await JS.InvokeVoidAsync("alert", "Pasted logs uploaded successfully!");
+            Toast.ShowSuccess("Pasted logs uploaded successfully!");
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Upload failed: {ex.Message}");
+            Toast.ShowError($"Upload failed: {ex.Message}");
         }
     }
 
@@ -485,7 +486,7 @@
     {
         if (log.SizeBytes > 200 * 1024)
         {
-            await JS.InvokeVoidAsync("alert", "Log is too large to view inline. Please use the download feature.");
+            Toast.ShowWarning("Log is too large to view inline. Please use the download feature.");
             return;
         }
 
@@ -500,7 +501,7 @@
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Failed to load log: {ex.Message}");
+            Toast.ShowError($"Failed to load log: {ex.Message}");
         }
     }
 
@@ -535,7 +536,7 @@
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Delete failed: {ex.Message}");
+            Toast.ShowError($"Delete failed: {ex.Message}");
         }
     }
 
@@ -559,7 +560,7 @@
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Delete all failed: {ex.Message}");
+            Toast.ShowError($"Delete all failed: {ex.Message}");
         }
     }
 
@@ -576,15 +577,11 @@
         try
         {
             var response = await LogsApi.QueueAnalysisAsync(id, _selectedModel);
-            await JS.InvokeVoidAsync("alert",
-                $"Analysis job queued successfully!\n\n" +
-                $"Model: {GetModelDisplayName(_selectedModel)}\n" +
-                $"The report will be available in the Reports section soon. " +
-                $"You will be notified via real-time updates when it's ready.");
+            Toast.ShowSuccess($"Analysis job queued! Model: {GetModelDisplayName(_selectedModel)}. Check Reports section soon.");
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Failed to queue analysis: {ex.Message}");
+            Toast.ShowError($"Failed to queue analysis: {ex.Message}");
         }
     }
 

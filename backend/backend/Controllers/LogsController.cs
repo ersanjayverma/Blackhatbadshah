@@ -1,4 +1,3 @@
-using Azure.Storage.Blobs;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -19,12 +18,13 @@ namespace backend.Controllers;
 public class LogsController : ControllerBase
 {
     private readonly IConfiguration _config;
-    private readonly BlobServiceClient _blobService;
     private readonly AppDbContext _db;
     private readonly ILogAnalyzer _analyzer;
     private readonly ITextractService _textractService;
     private readonly IHubNotificationService _hubNotification;
     private readonly ILogAnalysisQueue _analysisQueue;
+    private readonly IPlanEnforcementService _planEnforcement;
+    private readonly string _storageRoot;
 
     // ----------------------------
     // Supported formats
@@ -43,20 +43,27 @@ public class LogsController : ControllerBase
 
     public LogsController(
         IConfiguration config,
-        BlobServiceClient blobService,
         AppDbContext db,
         ILogAnalyzer analyzer,
         ITextractService textractService,
         IHubNotificationService hubNotification,
-        ILogAnalysisQueue analysisQueue)
+        ILogAnalysisQueue analysisQueue,
+        IPlanEnforcementService planEnforcement)
     {
         _config = config;
-        _blobService = blobService;
         _db = db;
         _analyzer = analyzer;
         _textractService = textractService;
         _hubNotification = hubNotification;
         _analysisQueue = analysisQueue;
+        _planEnforcement = planEnforcement;
+
+        _storageRoot = _config["Storage:RootPath"]
+            ?? throw new InvalidOperationException("Storage:RootPath not configured");
+
+        Directory.CreateDirectory(_storageRoot);
+        Directory.CreateDirectory(Path.Combine(_storageRoot, "logs"));
+        Directory.CreateDirectory(Path.Combine(_storageRoot, "reports"));
     }
 
     // -----------------------------------------
@@ -68,10 +75,8 @@ public class LogsController : ControllerBase
         if (file == null || file.Length == 0)
             return BadRequest("File is required.");
 
-        // File size validation (10 MB max)
-        const long maxFileSize = 10 * 1024 * 1024;
-        if (file.Length > maxFileSize)
-            return BadRequest("File size exceeds the maximum allowed size of 10 MB.");
+        if (file.Length > 10 * 1024 * 1024)
+            return BadRequest("File size exceeds 10 MB.");
 
         var userId =
             User.FindFirstValue(ClaimTypes.NameIdentifier) ??
@@ -86,9 +91,6 @@ public class LogsController : ControllerBase
 
         string extractedText;
 
-        // ---------------------------------
-        // ROUTING (FINAL, SAFE)
-        // ---------------------------------
         if (TextExtensions.Contains(ext))
         {
             using var reader = new StreamReader(file.OpenReadStream());
@@ -96,75 +98,27 @@ public class LogsController : ControllerBase
         }
         else if (PdfExtensions.Contains(ext))
         {
-            // 1️⃣ Try direct PDF text extraction first
-            var directPdfText = await TryExtractPdfTextAsync(file);
-
-            if (!string.IsNullOrWhiteSpace(directPdfText))
-            {
-                extractedText = directPdfText; // text-based PDF
-            }
-            else
-            {
-                    try
-                    {
-                        extractedText = await _textractService.ExtractTextAsync(file);
-                    }
-                    catch (Amazon.Textract.Model.UnsupportedDocumentException)
-                    {
-                        return BadRequest(
-                            "This PDF cannot be processed. " +
-                            "It is not a scanned image-based PDF."
-                        );
-                    }
-
-            }
+            var pdfText = await TryExtractPdfTextAsync(file);
+            extractedText = !string.IsNullOrWhiteSpace(pdfText)
+                ? pdfText
+                : await _textractService.ExtractTextAsync(file);
         }
         else if (ImageExtensions.Contains(ext))
         {
-            try
-            {
-                extractedText = await _textractService.ExtractTextAsync(file);
-            }
-            catch (Amazon.Textract.Model.UnsupportedDocumentException)
-            {
-                return BadRequest(
-                    "This File cannot be processed. " +
-                    "It is not a scanned image-based Files."
-                );
-            }
-
+            extractedText = await _textractService.ExtractTextAsync(file);
         }
         else
         {
-            return BadRequest(
-                $"Unsupported file type '{ext}'. " +
-                "Supported: text files, images, and PDFs only."
-            );
+            return BadRequest($"Unsupported file type '{ext}'.");
         }
 
         if (string.IsNullOrWhiteSpace(extractedText))
             return BadRequest("No extractable text found.");
 
-        // ---------------------------------
-        // Save extracted text ONLY
-        // ---------------------------------
-        var containerName =
-            _config["AzureBlob:Container"]
-            ?? throw new InvalidOperationException("AzureBlob:Container missing");
-
         var logId = Guid.NewGuid();
-        var blobName = $"{logId}.txt";
+        var filePath = Path.Combine(_storageRoot, "logs", $"{logId}.txt");
 
-        var container = _blobService.GetBlobContainerClient(containerName);
-        await container.CreateIfNotExistsAsync();
-
-        await using (var textStream = new MemoryStream(
-            Encoding.UTF8.GetBytes(extractedText)))
-        {
-            await container
-                .GetBlobClient(blobName)
-                .UploadAsync(textStream, overwrite: true);
-        }
+        await System.IO.File.WriteAllTextAsync(filePath, extractedText, Encoding.UTF8);
 
         var entity = new Log
         {
@@ -173,39 +127,21 @@ public class LogsController : ControllerBase
             FileName = Path.GetFileName(file.FileName),
             ContentType = "text/plain",
             SizeBytes = extractedText.Length,
-            StoragePath = blobName,
+            StoragePath = filePath,
             CreatedAt = DateTime.UtcNow
         };
 
         _db.Logs.Add(entity);
         await _db.SaveChangesAsync();
 
-        // Notify via SignalR
         await _hubNotification.NotifyLogCreatedAsync(userId, logId, entity.FileName);
 
         return Ok(new { logId });
     }
 
     // -----------------------------------------
-    // PDF text probe (CRITICAL FIX)
+    // GET api/logs/{id}
     // -----------------------------------------
-    private static async Task<string?> TryExtractPdfTextAsync(IFormFile file)
-    {
-        await using var stream = file.OpenReadStream();
-        using var pdf = PdfDocument.Open(stream);
-
-        var sb = new StringBuilder();
-        foreach (var page in pdf.GetPages())
-            sb.AppendLine(page.Text);
-
-        var text = sb.ToString();
-        return string.IsNullOrWhiteSpace(text) ? null : text;
-    }
-
-    // -----------------------------------------
-    // Other endpoints (UNCHANGED)
-    // -----------------------------------------
-
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> Get(Guid id)
     {
@@ -225,26 +161,28 @@ public class LogsController : ControllerBase
         });
     }
 
+    // -----------------------------------------
+    // GET api/logs/{id}/content
+    // -----------------------------------------
     [HttpGet("{id:guid}/content")]
-    public async Task<IActionResult> GetContent(Guid id)
+    public IActionResult GetContent(Guid id)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
                      ?? User.FindFirstValue("sub");
 
-        var log = await _db.Logs.FindAsync(id);
+        var log = _db.Logs.Find(id);
         if (log == null) return NotFound();
         if (log.UserId != userId) return Forbid();
 
-        var container = _blobService.GetBlobContainerClient(
-            _config["AzureBlob:Container"]!);
+        if (!System.IO.File.Exists(log.StoragePath))
+            return NotFound("File missing");
 
-        var blob = container.GetBlobClient(log.StoragePath);
-        if (!await blob.ExistsAsync()) return NotFound("Blob missing");
-
-        var download = await blob.DownloadStreamingAsync();
-        return File(download.Value.Content, "text/plain");
+        return PhysicalFile(log.StoragePath, "text/plain");
     }
 
+    // -----------------------------------------
+    // GET api/logs
+    // -----------------------------------------
     [HttpGet]
     public async Task<IActionResult> List()
     {
@@ -253,7 +191,8 @@ public class LogsController : ControllerBase
 
         var logs = await _db.Logs.AsNoTracking()
             .Where(x => x.UserId == userId)
-            .OrderByDescending(x => x.CreatedAt).Take(10)
+            .OrderByDescending(x => x.CreatedAt)
+            .Take(10)
             .Select(x => new LogDto
             {
                 Id = x.Id,
@@ -265,176 +204,101 @@ public class LogsController : ControllerBase
 
         return Ok(logs);
     }
-        // -----------------------------------------
-        // DELETE api/logs/{id}
-        // (owner only, deletes blob + db record)
-        // -----------------------------------------
-        [HttpDelete("{id:guid}")]
-        public async Task<IActionResult> Delete(Guid id)
+
+    // -----------------------------------------
+    // DELETE api/logs/{id}
+    // -----------------------------------------
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> Delete(Guid id)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                     ?? User.FindFirstValue("sub");
+
+        var log = await _db.Logs.FindAsync(id);
+        if (log == null) return NotFound();
+        if (log.UserId != userId) return Forbid();
+
+        try
         {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                        ?? User.FindFirstValue("sub");
-
-            if (userId == null)
-                return Unauthorized();
-
-            var log = await _db.Logs.FindAsync(id);
-            if (log == null)
-                return NotFound();
-
-            if (log.UserId != userId)
-                return Forbid();
-
-            var containerName = _config["AzureBlob:Container"]
-                ?? throw new InvalidOperationException("AzureBlob:Container not configured");
-
-            var container = _blobService.GetBlobContainerClient(containerName);
-            var blob = container.GetBlobClient(log.StoragePath);
-
-            // Delete blob if it exists (idempotent)
-            try
-            {
-                await blob.DeleteIfExistsAsync();
-            }
-            catch (Exception)
-            {
-                // Optional: log this, but do NOT block DB cleanup
-                // _logger.LogWarning(ex, "Failed to delete blob {Path}", log.StoragePath);
-            }
-
-            _db.Logs.Remove(log);
-            await _db.SaveChangesAsync();
-
-            // Notify via SignalR
-            await _hubNotification.NotifyLogDeletedAsync(userId, id);
-
-            return NoContent();
+            if (System.IO.File.Exists(log.StoragePath))
+                System.IO.File.Delete(log.StoragePath);
         }
+        catch { }
+
+        _db.Logs.Remove(log);
+        await _db.SaveChangesAsync();
+
+        await _hubNotification.NotifyLogDeletedAsync(userId, id);
+
+        return NoContent();
+    }
+
     // -----------------------------------------
     // POST api/logs/{id}/analyze
-    // Queue log analysis job (non-blocking)
     // -----------------------------------------
     [HttpPost("{id:guid}/analyze")]
     public async Task<IActionResult> QueueAnalysis(Guid id, [FromBody] AnalyzeLogRequest? request = null)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                    ?? User.FindFirstValue("sub");
+                     ?? User.FindFirstValue("sub");
 
-        if (userId == null)
-            return Unauthorized();
+        var log = _db.Logs.Find(id);
+        if (log == null) return NotFound();
+        if (log.UserId != userId) return Forbid();
 
-        // Verify log exists and belongs to user
-        var log = await _db.Logs.FindAsync(id);
-        if (log == null)
-            return NotFound("Log not found");
+        // Check plan limits and model access
+        var (allowed, message) = await _planEnforcement.CheckAnalysisAllowedAsync(userId, request?.Model);
+        if (!allowed)
+        {
+            return StatusCode(402, new { error = message, upgradeRequired = true });
+        }
 
-        if (log.UserId != userId)
-            return Forbid();
-
-        // ✅ Extract access token from Authorization header
         var authHeader = Request.Headers.Authorization.ToString();
-        if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
-            return Unauthorized("Access token missing or invalid");
+        var token = authHeader.StartsWith("Bearer ") ? authHeader[7..] : null;
+        if (token == null) return Unauthorized();
 
-        var accessToken = authHeader["Bearer ".Length..].Trim();
+        // Usage is recorded in LogAnalysisBackgroundWorker only after successful analysis
 
-        // Get model from request or use default
-        var model = request?.Model;
-
-        // Queue the analysis job with user's token and model
-        try
-        {
-            _analysisQueue.QueueAnalysisJob(id, userId, accessToken, model);
-            return Accepted(new
-            {
-                message = "Analysis job queued successfully. The report will be available in the Reports section soon.",
-                logId = id,
-                model = model ?? ModelMapping.DefaultModel
-            });
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(500, new { message = "Failed to queue analysis job", error = ex.Message });
-        }
+        await _analysisQueue.QueueAnalysisJobAsync(id, userId, token, request?.Model);
+        return Accepted(new { message = "Analysis queued", logId = id });
     }
 
     // -----------------------------------------
-    // GET api/logs/{id}/analyze
-    // Analyze log content + save report as TEXT (LEGACY - Synchronous)
+    // GET api/logs/{id}/analyze (legacy)
     // -----------------------------------------
     [HttpGet("{id:guid}/analyze")]
     public async Task<IActionResult> AnalyseContent(Guid id, [FromQuery] string? model = null)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                    ?? User.FindFirstValue("sub");
+                     ?? User.FindFirstValue("sub");
 
-        if (userId == null)
-            return Unauthorized();
-
-        // 1. Fetch log
         var log = await _db.Logs.FindAsync(id);
-        if (log == null)
-            return NotFound("Log not found");
+        if (log == null) return NotFound();
+        if (log.UserId != userId) return Forbid();
 
-        if (log.UserId != userId)
-            return Forbid();
+        if (!System.IO.File.Exists(log.StoragePath))
+            return NotFound("Log file missing");
 
-        // 2. Blob container
-        var containerName = _config["AzureBlob:Container"]
-            ?? throw new InvalidOperationException("AzureBlob:Container missing");
+        var logContent = await System.IO.File.ReadAllTextAsync(log.StoragePath);
 
-        var container = _blobService.GetBlobContainerClient(containerName);
-        await container.CreateIfNotExistsAsync();
-
-        // 3. Fetch log content from blob
-        var logBlob = container.GetBlobClient(log.StoragePath);
-        if (!await logBlob.ExistsAsync())
-            return NotFound("Log content missing in storage");
-
-        string logContent;
-        await using (var stream = await logBlob.OpenReadAsync())
-        using (var reader = new StreamReader(stream))
-        {
-            logContent = await reader.ReadToEndAsync();
-        }
-
-        if (string.IsNullOrWhiteSpace(logContent))
-            return BadRequest("Log content is empty");
-
-        // 4. Analyze log (AI / deterministic analyzer) with optional model
         var analysis = await _analyzer.AnalyzeAsync(log.Id, logContent, model);
-        if (analysis == null)
-            return StatusCode(500, "Analyzer returned no result");
+        var analysisText = analysis.reply ?? analysis.ToString()!;
 
-        // 5. Extract PLAIN TEXT (no JSON)
-        var analysisText =
-            analysis.reply
-            ?? analysis.ToString()
-            ?? throw new InvalidOperationException("Analysis produced no text");
-
-        // 6. Upload analysis text as report
         var reportId = Guid.NewGuid();
-        var reportBlobPath = $"reports/{log.Id}/{reportId}.txt";
+        var reportDir = Path.Combine(_storageRoot, "reports", log.Id.ToString());
+        Directory.CreateDirectory(reportDir);
 
-        await using (var textStream = new MemoryStream(
-            Encoding.UTF8.GetBytes(analysisText)))
-        {
-            await container
-                .GetBlobClient(reportBlobPath)
-                .UploadAsync(textStream, overwrite: true);
-        }
+        var reportPath = Path.Combine(reportDir, $"{reportId}.txt");
+        await System.IO.File.WriteAllTextAsync(reportPath, analysisText, Encoding.UTF8);
 
-        // 7. Persist Report entity
         var report = new Report
         {
             Id = reportId,
             LogId = log.Id,
             UserId = userId,
             Title = $"Analysis Report – {log.FileName}",
-            Summary = analysisText.Length > 500
-                ? analysisText[..500]
-                : analysisText,
-            ReportPath = reportBlobPath,
+            Summary = analysisText.Length > 500 ? analysisText[..500] : analysisText,
+            ReportPath = reportPath,
             Status = ReportStatus.Completed,
             CreatedAtUtc = DateTime.UtcNow
         };
@@ -442,69 +306,31 @@ public class LogsController : ControllerBase
         _db.Reports.Add(report);
         await _db.SaveChangesAsync();
 
-        // Notify via SignalR
-        var reportListItem = new ReportListItem
+        await _hubNotification.NotifyReportCreatedAsync(userId, new ReportListItem
         {
             Id = report.Id,
             Title = report.Title,
             FileName = log.FileName,
             CreatedAtUtc = report.CreatedAtUtc,
             Status = ReportStatus.Completed
-        };
-        await _hubNotification.NotifyReportCreatedAsync(userId, reportListItem);
-        await _hubNotification.NotifyReportStatusChangedAsync(userId, reportId, ReportStatus.Completed);
+        });
 
-        // 8. Return response
-      return Ok(analysis);
+        return Ok(analysis);
     }
 
     // -----------------------------------------
-    // DELETE api/logs/all
-    // Delete all logs for the current user
+    // PDF text probe
     // -----------------------------------------
-    [HttpDelete("all")]
-    public async Task<IActionResult> DeleteAll()
+    private static async Task<string?> TryExtractPdfTextAsync(IFormFile file)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                    ?? User.FindFirstValue("sub");
+        await using var stream = file.OpenReadStream();
+        using var pdf = PdfDocument.Open(stream);
 
-        if (userId == null)
-            return Unauthorized();
+        var sb = new StringBuilder();
+        foreach (var page in pdf.GetPages())
+            sb.AppendLine(page.Text);
 
-        var logs = await _db.Logs
-            .Where(l => l.UserId == userId)
-            .ToListAsync();
-
-        if (logs.Count == 0)
-            return NoContent();
-
-        var containerName = _config["AzureBlob:Container"]
-            ?? throw new InvalidOperationException("AzureBlob:Container not configured");
-
-        var container = _blobService.GetBlobContainerClient(containerName);
-
-        // Delete all blobs
-        foreach (var log in logs)
-        {
-            try
-            {
-                var blob = container.GetBlobClient(log.StoragePath);
-                await blob.DeleteIfExistsAsync();
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Failed to delete blob for log {log.Id}: {ex.Message}");
-            }
-        }
-
-        // Delete all from database
-        _db.Logs.RemoveRange(logs);
-        await _db.SaveChangesAsync();
-
-        // Notify via SignalR
-        await _hubNotification.NotifyAllLogsDeletedAsync(userId, logs.Count);
-
-        return Ok(new DeleteAllResponse { Deleted = logs.Count });
+        var text = sb.ToString();
+        return string.IsNullOrWhiteSpace(text) ? null : text;
     }
-
 }

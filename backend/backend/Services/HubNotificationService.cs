@@ -54,4 +54,124 @@ public class HubNotificationService : IHubNotificationService
         await _hubContext.Clients.Group($"user_{userId}")
             .SendAsync("AllReportsDeleted");
     }
+
+    public async Task NotifyDashboardUpdateAsync(string userId)
+    {
+        await _hubContext.Clients.Group($"user_{userId}")
+            .SendAsync("DashboardUpdated");
+    }
+
+    // Live Log notifications - these use workerId groups, not userId groups
+    public async Task NotifyLiveLogReceivedAsync(string workerId, LiveLogEntry entry)
+    {
+        await _hubContext.Clients.Group($"livelog_{workerId}")
+            .SendAsync("LiveLogReceived", entry);
+    }
+
+    public async Task NotifyLiveLogBatchAsync(string workerId, LiveLogBatch batch)
+    {
+        await _hubContext.Clients.Group($"livelog_{workerId}")
+            .SendAsync("LiveLogBatch", batch);
+    }
+
+    public async Task NotifyLiveLogSessionConnectedAsync(string workerId, string sessionId)
+    {
+        await _hubContext.Clients.Group($"livelog_{workerId}")
+            .SendAsync("LiveLogSessionConnected", new { sessionId, workerId, connectedAt = DateTime.UtcNow });
+    }
+
+    public async Task NotifyLiveLogSessionDisconnectedAsync(string workerId, string sessionId)
+    {
+        await _hubContext.Clients.Group($"livelog_{workerId}")
+            .SendAsync("LiveLogSessionDisconnected", new { sessionId, workerId, disconnectedAt = DateTime.UtcNow });
+    }
+
+    public async Task NotifyLiveLogChunkQueuedAsync(string workerId, string sessionId, int chunkNumber)
+    {
+        await _hubContext.Clients.Group($"livelog_{workerId}")
+            .SendAsync("LiveLogChunkQueued", new { sessionId, workerId, chunkNumber, queuedAt = DateTime.UtcNow });
+    }
+
+    public async Task NotifyWorkerMetricsAsync(string workerId, WorkerMetrics metrics)
+    {
+        await _hubContext.Clients.Group($"livelog_{workerId}")
+            .SendAsync("WorkerMetrics", metrics);
+    }
+
+    public async Task RequestWorkerMetricsAsync(string workerId)
+    {
+        await _hubContext.Clients.Group($"livelog_{workerId}")
+            .SendAsync("RequestMetrics");
+    }
+
+    public async Task NotifySystemMonitorDataAsync(string workerId, SystemMonitorData data)
+    {
+        // Send to both livelog and sysmon groups
+        await _hubContext.Clients.Group($"sysmon_{workerId}")
+            .SendAsync("SystemMonitorData", data);
+        await _hubContext.Clients.Group($"livelog_{workerId}")
+            .SendAsync("SystemMonitorData", data);
+    }
+
+    public async Task NotifyKillProcessResponseAsync(string workerId, KillProcessResponse response)
+    {
+        await _hubContext.Clients.Group($"sysmon_{workerId}")
+            .SendAsync("KillProcessResponse", response);
+        await _hubContext.Clients.Group($"livelog_{workerId}")
+            .SendAsync("KillProcessResponse", response);
+    }
+
+    public async Task NotifyWorkerRegisteredAsync(string workerId)
+    {
+        // Broadcast to all connected clients that a worker has registered/updated
+        await _hubContext.Clients.All.SendAsync("WorkerRegistered", new { workerId, registeredAt = DateTime.UtcNow });
+    }
+
+    public async Task NotifyLogPullResponseAsync(string workerId, LogPullResponse response)
+    {
+        // Send log pull response to clients subscribed to this worker
+        await _hubContext.Clients.Group($"livelog_{workerId}")
+            .SendAsync("LogPullResponse", response);
+        await _hubContext.Clients.Group($"sysmon_{workerId}")
+            .SendAsync("LogPullResponse", response);
+    }
+
+    public async Task NotifyLiveLogAnalysisStartedAsync(string workerId, Guid reportId, int chunkNumber)
+    {
+        await _hubContext.Clients.Group($"livelog_{workerId}")
+            .SendAsync("AnalysisStarted", new
+            {
+                workerId,
+                reportId,
+                chunkNumber,
+                startedAt = DateTime.UtcNow
+            });
+    }
+
+    public async Task NotifyLiveLogAnalysisCompletedAsync(string workerId, Guid reportId, int chunkNumber, string status, string summary)
+    {
+        await _hubContext.Clients.Group($"livelog_{workerId}")
+            .SendAsync("AnalysisCompleted", new
+            {
+                workerId,
+                reportId,
+                chunkNumber,
+                status,
+                summary,
+                completedAt = DateTime.UtcNow
+            });
+    }
+
+    public async Task NotifyLiveLogAnalysisFailedAsync(string workerId, Guid reportId, int chunkNumber, string error)
+    {
+        await _hubContext.Clients.Group($"livelog_{workerId}")
+            .SendAsync("AnalysisFailed", new
+            {
+                workerId,
+                reportId,
+                chunkNumber,
+                error,
+                failedAt = DateTime.UtcNow
+            });
+    }
 }

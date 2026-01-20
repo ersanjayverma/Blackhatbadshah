@@ -89,32 +89,132 @@ async def verify_jwt(
 
 
 # =====================================================
+# PLAN CONSTANTS - matches shared/DTO/PlanConstants.cs
+# =====================================================
+class Plans:
+    """Plan name constants - single source of truth."""
+    FREE = "Free"
+    PRO = "Pro"
+    ENTERPRISE = "Enterprise"
+
+    ALL = [FREE, PRO, ENTERPRISE]
+
+    @staticmethod
+    def is_paid(plan_name: str) -> bool:
+        return plan_name in [Plans.PRO, Plans.ENTERPRISE]
+
+
+class Models:
+    """Model name constants - friendly names used across the system."""
+    # Claude/Anthropic models
+    CLAUDE_OPUS_45 = "claude-opus-4-5"
+    CLAUDE_SONNET_45 = "claude-sonnet-4-5"
+    CLAUDE_SONNET_35 = "claude-sonnet-3-5"
+
+    # OpenAI/GPT models
+    GPT_4O = "gpt-4o"
+    GPT_4_TURBO = "gpt-4-turbo"
+    GPT_4_TURBO_PREVIEW = "gpt-4-turbo-preview"
+    GPT_35_TURBO = "gpt-3.5-turbo"
+
+    # TogetherAI models
+    GPT_OSS_120B = "gpt-oss-120b"
+    TOGETHER_LLAMA_31_405B = "together-llama-3.1-405b"
+    TOGETHER_MIXTRAL_8X7B = "together-mixtral-8x7b"
+    TOGETHER_QWEN = "together-qwen"
+
+    # Defaults
+    DEFAULT = CLAUDE_SONNET_45
+    CHART_MODEL = TOGETHER_QWEN
+
+
+class ModelApiIds:
+    """Actual API model identifiers."""
+    # Claude/Anthropic
+    CLAUDE_OPUS_45 = "claude-opus-4-5-20251101"
+    CLAUDE_SONNET_45 = "claude-sonnet-4-5-20250929"
+    CLAUDE_SONNET_35 = "claude-3-5-sonnet-20241022"
+
+    # OpenAI
+    GPT_4O = "gpt-4o"
+    GPT_4_TURBO = "gpt-4-turbo"
+    GPT_4_TURBO_PREVIEW = "gpt-4-turbo-preview"
+    GPT_35_TURBO = "gpt-3.5-turbo"
+
+    # TogetherAI
+    GPT_OSS_120B = "openai/gpt-oss-120b"
+    TOGETHER_LLAMA_31_405B = "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo"
+    TOGETHER_MIXTRAL_8X7B = "mistralai/Mixtral-8x7B-Instruct-v0.1"
+    TOGETHER_QWEN = "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8"
+
+
+class ModelTiers:
+    """Model tier classification - matches Plans configuration."""
+    PRO_MODELS = [
+        Models.CLAUDE_OPUS_45,
+        Models.CLAUDE_SONNET_45,
+        Models.CLAUDE_SONNET_35,
+        Models.GPT_4O,
+        Models.GPT_4_TURBO,
+    ]
+
+    OPEN_MODELS = [
+        Models.GPT_OSS_120B,
+        Models.TOGETHER_LLAMA_31_405B,
+        Models.TOGETHER_MIXTRAL_8X7B,
+        Models.TOGETHER_QWEN
+    ]
+
+    @staticmethod
+    def is_pro_model(model_name: str) -> bool:
+        """Check if a model requires Pro/Enterprise subscription."""
+        return model_name in ModelTiers.PRO_MODELS
+
+    @staticmethod
+    def is_open_model(model_name: str) -> bool:
+        """Check if a model is available for Free tier users."""
+        return model_name in ModelTiers.OPEN_MODELS
+
+
+# =====================================================
 # LLM MODEL MAPPINGS
 # =====================================================
-# Centralized model configuration matching shared/DTO/ModelMapping.cs
+# Maps friendly names to actual API model identifiers
 
 CLAUDE_MODELS = {
-    "claude-sonnet-4-5": "claude-sonnet-4-5-20250929",
-    "claude-opus-4-5": "claude-opus-4-5-20251101",
-    "claude-sonnet-3-5": "claude-3-5-sonnet-20241022",
+    Models.CLAUDE_SONNET_45: ModelApiIds.CLAUDE_SONNET_45,
+    Models.CLAUDE_OPUS_45: ModelApiIds.CLAUDE_OPUS_45,
+    Models.CLAUDE_SONNET_35: ModelApiIds.CLAUDE_SONNET_35,
 }
 
 GPT_MODELS = {
-    "gpt-4o": "gpt-4o",
-    "gpt-4-turbo": "gpt-4-turbo",
-    "gpt-4-turbo-preview": "gpt-4-turbo-preview",
-    "gpt-3.5-turbo": "gpt-3.5-turbo",
+    Models.GPT_4O: ModelApiIds.GPT_4O,
+    Models.GPT_4_TURBO: ModelApiIds.GPT_4_TURBO,
+    Models.GPT_4_TURBO_PREVIEW: ModelApiIds.GPT_4_TURBO_PREVIEW,
+    Models.GPT_35_TURBO: ModelApiIds.GPT_35_TURBO,
 }
 
 TOGETHER_MODELS = {
-    "together-llama-3-70b": "meta-llama/Llama-3-70b-chat-hf",
-    "together-llama-3.1-405b": "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo",
-    "together-mixtral-8x7b": "mistralai/Mixtral-8x7B-Instruct-v0.1",
-    "together-qwen": "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8",
+    Models.GPT_OSS_120B: ModelApiIds.GPT_OSS_120B,
+    Models.TOGETHER_LLAMA_31_405B: ModelApiIds.TOGETHER_LLAMA_31_405B,
+    Models.TOGETHER_MIXTRAL_8X7B: ModelApiIds.TOGETHER_MIXTRAL_8X7B,
+    Models.TOGETHER_QWEN: ModelApiIds.TOGETHER_QWEN,
 }
 
 ALL_MODELS = {**CLAUDE_MODELS, **GPT_MODELS, **TOGETHER_MODELS}
-DEFAULT_MODEL = "claude-sonnet-4-5"
+DEFAULT_MODEL = Models.DEFAULT
+
+# Convenience aliases for backward compatibility
+PRO_MODELS = ModelTiers.PRO_MODELS
+OPEN_MODELS = ModelTiers.OPEN_MODELS
+
+def is_pro_model(model_name: str) -> bool:
+    """Check if a model requires Pro/Enterprise subscription."""
+    return ModelTiers.is_pro_model(model_name)
+
+def is_open_model(model_name: str) -> bool:
+    """Check if a model is available for Free tier users."""
+    return ModelTiers.is_open_model(model_name)
 
 # =====================================================
 # API KEYS
@@ -323,22 +423,19 @@ async def chat(
     try:
         model = req.model
 
-        # GUEST ALLOWED MODELS
-        if model  not in TOGETHER_MODELS:
-            #  EVERYTHING ELSE REQUIRES AUTH
+        # Pro models require authentication and paid plan
+        if is_pro_model(model):
             if token is None:
                 raise HTTPException(
                     status_code=401,
                     detail="Authentication required for this model",
                 )
 
-            # Optional: enforce plan / limits
-            user_plan = token.get("plan", "free")
-
-            if user_plan == "free":
+            user_plan = token.get("plan", Plans.FREE)
+            if user_plan.lower() == Plans.FREE.lower():
                 raise HTTPException(
                     status_code=403,
-                    detail="Upgrade required for this model",
+                    detail="Upgrade to Pro or Enterprise to use this model",
                 )
         # Build message content
         message_content = req.message
@@ -397,6 +494,70 @@ async def chat(
     # Fallback (should rarely happen)
     return ChatResponse(reply=str(last))
 
+@api.post("/chart", response_model=ChatResponse)
+async def chart(
+    req: ChatRequest,
+    token = Depends(verify_jwt),
+):
+    try:
+        model = req.model
+
+        # Pro models require authentication and paid plan
+        if is_pro_model(model):
+            if token is None:
+                raise HTTPException(
+                    status_code=401,
+                    detail="Authentication required for this model",
+                )
+
+            user_plan = token.get("plan", Plans.FREE)
+            if user_plan.lower() == Plans.FREE.lower():
+                raise HTTPException(
+                    status_code=403,
+                    detail="Upgrade to Pro or Enterprise to use this model",
+                )
+
+        # -----------------------------
+        # BUILD MESSAGE CONTENT
+        # -----------------------------
+        message_content = req.message
+
+        if req.document_base64:
+            decoded_text, filename = validate_and_decode_document(
+                req.document_base64,
+                req.document_name
+            )
+
+            message_content = (
+                f"Document ({filename}):\n\n{decoded_text}\n\n---\n\n{req.message}"
+            )
+
+        # -----------------------------
+        # DIRECT LLM CALL (NO GRAPH)
+        # -----------------------------
+        llm = get_llm(model)
+
+        ai_message = await llm.ainvoke(
+            [HumanMessage(content=message_content)]
+        )
+
+        reply = ai_message.content
+
+        # Claude sometimes returns list segments
+        if isinstance(reply, list):
+            reply = "".join(
+                part.get("text", "") if isinstance(part, dict) else str(part)
+                for part in reply
+            )
+
+        reply = str(reply)
+
+        return ChatResponse(reply=reply)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        return ChatResponse(reply=f"Analyzer failed: {str(e)}")
 
 
 @api.post("/chat/stream")
@@ -407,22 +568,19 @@ async def chat_stream(
 ):  
     model = req.model
 
-        # GUEST ALLOWED MODELS
-    if model  not in TOGETHER_MODELS:
-        #  EVERYTHING ELSE REQUIRES AUTH
+    # Pro models require authentication and paid plan
+    if is_pro_model(model):
         if token is None:
             raise HTTPException(
                 status_code=401,
                 detail="Authentication required for this model",
             )
 
-        # Optional: enforce plan / limits
-        user_plan = token.get("plan", "free")
-
-        if user_plan == "free":
+        user_plan = token.get("plan", Plans.FREE)
+        if user_plan.lower() == Plans.FREE.lower():
             raise HTTPException(
                 status_code=403,
-                detail="Upgrade required for this model",
+                detail="Upgrade to Pro or Enterprise to use this model",
             )
     async def event_generator():
         try:

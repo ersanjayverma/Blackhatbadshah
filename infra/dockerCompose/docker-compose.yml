@@ -23,7 +23,12 @@ services:
       - AWS_REGION=${AWS_REGION:-ap-south-1}
       - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-ap-south-1}
       - ConnectionStrings__DefaultConnection=${ConnectionStrings__DefaultConnection}
-      - AzureBlob__ConnectionString=${AzureBlob__ConnectionString}
+      - Razorpay__KeyId=${RAZORPAY_KEY_ID}
+      - Razorpay__KeySecret=${RAZORPAY_KEY_SECRET}
+      - Razorpay__WebhookSecret=${RAZORPAY_WEBHOOK_SECRET}
+      - Keycloak__AdminClientSecret=${KEYCLOAK_ADMIN_CLIENT_SECRET}
+    volumes:
+      - ./log-storage:/mnt/log-storage
     ports:
       - "5092:8080"
     restart: always

@@ -1,0 +1,163 @@
+@page "/contact"
+@using System.ComponentModel.DataAnnotations
+@inject IJSRuntime JS
+
+<PageTitle>Contact Us - Blackhatbadshah</PageTitle>
+
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="text-center mb-5">
+                <h1 class="display-5 fw-bold">Contact Us</h1>
+                <p class="lead text-secondary">Interested in our Enterprise plan? Get in touch with our team.</p>
+            </div>
+
+            <div class="card shadow-lg">
+                <div class="card-header bg-gradient" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                    <h5 class="mb-0"><i class="bi bi-building me-2"></i>Enterprise Inquiry</h5>
+                </div>
+                <div class="card-body p-4">
+                    @if (_submitted)
+                    {
+                        <div class="text-center py-5">
+                            <i class="bi bi-check-circle-fill text-success display-1 mb-3"></i>
+                            <h3 class="fw-bold">Thank You!</h3>
+                            <p class="text-secondary">Your inquiry has been submitted. Our team will contact you within 24-48 hours.</p>
+                            <a href="/pricing" class="btn btn-primary mt-3">
+                                <i class="bi bi-arrow-left me-2"></i>Back to Pricing
+                            </a>
+                        </div>
+                    }
+                    else
+                    {
+                        <EditForm Model="_form" OnValidSubmit="SubmitForm">
+                            <DataAnnotationsValidator />
+
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label">Full Name <span class="text-danger">*</span></label>
+                                    <InputText @bind-Value="_form.Name" class="form-control" placeholder="John Doe" />
+                                    <ValidationMessage For="@(() => _form.Name)" class="text-danger small" />
+                                </div>
+
+                                <div class="col-md-6">
+                                    <label class="form-label">Email <span class="text-danger">*</span></label>
+                                    <InputText @bind-Value="_form.Email" class="form-control" placeholder="john@company.com" />
+                                    <ValidationMessage For="@(() => _form.Email)" class="text-danger small" />
+                                </div>
+
+                                <div class="col-md-6">
+                                    <label class="form-label">Company Name <span class="text-danger">*</span></label>
+                                    <InputText @bind-Value="_form.Company" class="form-control" placeholder="Acme Inc." />
+                                    <ValidationMessage For="@(() => _form.Company)" class="text-danger small" />
+                                </div>
+
+                                <div class="col-md-6">
+                                    <label class="form-label">Phone Number</label>
+                                    <InputText @bind-Value="_form.Phone" class="form-control" placeholder="+91 98765 43210" />
+                                </div>
+
+                                <div class="col-12">
+                                    <label class="form-label">Team Size</label>
+                                    <InputSelect @bind-Value="_form.TeamSize" class="form-select">
+                                        <option value="">Select team size...</option>
+                                        <option value="1-10">1-10 employees</option>
+                                        <option value="11-50">11-50 employees</option>
+                                        <option value="51-200">51-200 employees</option>
+                                        <option value="201-500">201-500 employees</option>
+                                        <option value="500+">500+ employees</option>
+                                    </InputSelect>
+                                </div>
+
+                                <div class="col-12">
+                                    <label class="form-label">Message <span class="text-danger">*</span></label>
+                                    <InputTextArea @bind-Value="_form.Message" class="form-control" rows="5"
+                                        placeholder="Tell us about your requirements, expected usage, and any specific features you need..." />
+                                    <ValidationMessage For="@(() => _form.Message)" class="text-danger small" />
+                                </div>
+
+                                <div class="col-12">
+                                    <button type="submit" class="btn btn-primary btn-lg w-100" disabled="@_submitting">
+                                        @if (_submitting)
+                                        {
+                                            <span class="spinner-border spinner-border-sm me-2"></span>
+                                        }
+                                        else
+                                        {
+                                            <i class="bi bi-send me-2"></i>
+                                        }
+                                        Submit Inquiry
+                                    </button>
+                                </div>
+                            </div>
+                        </EditForm>
+                    }
+                </div>
+            </div>
+
+            <div class="row mt-5 g-4">
+                <div class="col-md-4">
+                    <div class="text-center">
+                        <i class="bi bi-envelope-fill text-primary display-5 mb-3"></i>
+                        <h6 class="fw-bold">Email</h6>
+                        <p class="text-secondary mb-0">enterprise@blackhatbadshah.com</p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="text-center">
+                        <i class="bi bi-clock-fill text-primary display-5 mb-3"></i>
+                        <h6 class="fw-bold">Response Time</h6>
+                        <p class="text-secondary mb-0">Within 24-48 hours</p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="text-center">
+                        <i class="bi bi-shield-check-fill text-primary display-5 mb-3"></i>
+                        <h6 class="fw-bold">Enterprise Features</h6>
+                        <p class="text-secondary mb-0">SLA, Custom integrations, Priority support</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private ContactFormModel _form = new();
+    private bool _submitting = false;
+    private bool _submitted = false;
+
+    private async Task SubmitForm()
+    {
+        _submitting = true;
+        StateHasChanged();
+
+        // TODO: Replace with actual API call to submit enterprise inquiry
+        await Task.Delay(1500);
+
+        _submitted = true;
+        _submitting = false;
+        StateHasChanged();
+    }
+
+    private class ContactFormModel
+    {
+        [Required(ErrorMessage = "Name is required")]
+        public string Name { get; set; } = "";
+
+        [Required(ErrorMessage = "Email is required")]
+        [EmailAddress(ErrorMessage = "Please enter a valid email address")]
+        public string Email { get; set; } = "";
+
+        [Required(ErrorMessage = "Company name is required")]
+        public string Company { get; set; } = "";
+
+        public string Phone { get; set; } = "";
+
+        public string TeamSize { get; set; } = "";
+
+        [Required(ErrorMessage = "Please tell us about your requirements")]
+        [MinLength(20, ErrorMessage = "Please provide more details (at least 20 characters)")]
+        public string Message { get; set; } = "";
+    }
+}

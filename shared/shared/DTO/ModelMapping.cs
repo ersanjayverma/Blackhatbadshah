@@ -1,7 +1,8 @@
 namespace shared.Dto;
 
 /// <summary>
-/// Centralized model configuration with friendly names mapped to actual API model identifiers
+/// Centralized model configuration with friendly names mapped to actual API model identifiers.
+/// Uses PlanConstants for model tier classification to ensure consistency.
 /// </summary>
 public static class ModelMapping
 {
@@ -10,9 +11,9 @@ public static class ModelMapping
     /// </summary>
     public static readonly Dictionary<string, string> ClaudeModels = new()
     {
-        { "claude-sonnet-4-5", "claude-sonnet-4-5-20250929" },
-        { "claude-opus-4-5", "claude-opus-4-5-20251101" },
-        { "claude-sonnet-3-5", "claude-3-5-sonnet-20241022" }
+        { PlanConstants.Models.ClaudeSonnet45, PlanConstants.ModelApiIds.ClaudeSonnet45 },
+        { PlanConstants.Models.ClaudeOpus45, PlanConstants.ModelApiIds.ClaudeOpus45 },
+        { PlanConstants.Models.ClaudeSonnet35, PlanConstants.ModelApiIds.ClaudeSonnet35 }
     };
 
     /// <summary>
@@ -20,10 +21,10 @@ public static class ModelMapping
     /// </summary>
     public static readonly Dictionary<string, string> GPTModels = new()
     {
-        { "gpt-4o", "gpt-4o" },
-        { "gpt-4-turbo", "gpt-4-turbo" },
-        { "gpt-4-turbo-preview", "gpt-4-turbo-preview" },
-        { "gpt-3.5-turbo", "gpt-3.5-turbo" }
+        { PlanConstants.Models.Gpt4o, PlanConstants.ModelApiIds.Gpt4o },
+        { PlanConstants.Models.Gpt4Turbo, PlanConstants.ModelApiIds.Gpt4Turbo },
+        { PlanConstants.Models.Gpt4TurboPreview, PlanConstants.ModelApiIds.Gpt4TurboPreview },
+        { PlanConstants.Models.Gpt35Turbo, PlanConstants.ModelApiIds.Gpt35Turbo }
     };
 
     /// <summary>
@@ -31,10 +32,10 @@ public static class ModelMapping
     /// </summary>
     public static readonly Dictionary<string, string> TogetherModels = new()
     {
-        { "together-llama-3-70b", "meta-llama/Llama-3-70b-chat-hf" },
-        { "together-llama-3.1-405b", "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo" },
-        { "together-mixtral-8x7b", "mistralai/Mixtral-8x7B-Instruct-v0.1" },
-        { "together-qwen", "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8" }
+        { PlanConstants.Models.GptOss120b, PlanConstants.ModelApiIds.GptOss120b },
+        { PlanConstants.Models.TogetherLlama31405b, PlanConstants.ModelApiIds.TogetherLlama31405b },
+        { PlanConstants.Models.TogetherMixtral8x7b, PlanConstants.ModelApiIds.TogetherMixtral8x7b },
+        { PlanConstants.Models.TogetherQwen, PlanConstants.ModelApiIds.TogetherQwen }
     };
 
     /// <summary>
@@ -51,25 +52,42 @@ public static class ModelMapping
     public static readonly List<string> AllSupportedModels = AllModels.Keys.ToList();
 
     /// <summary>
+    /// Pro models - require Pro or Enterprise subscription.
+    /// Delegates to PlanConstants for single source of truth.
+    /// </summary>
+    public static IReadOnlyList<string> ProModels => PlanConstants.ModelTiers.ProModels;
+
+    /// <summary>
+    /// Open models - available for Free tier users.
+    /// Delegates to PlanConstants for single source of truth.
+    /// </summary>
+    public static IReadOnlyList<string> OpenModels => PlanConstants.ModelTiers.OpenModels;
+
+    /// <summary>
     /// Default model to use when none is specified
     /// </summary>
-    public const string DefaultModel = "claude-sonnet-4-5";
+    public const string DefaultModel = PlanConstants.Models.Default;
+
+    /// <summary>
+    /// Checks if a model requires Pro/Enterprise subscription
+    /// </summary>
+    public static bool IsProModel(string modelName) => PlanConstants.ModelTiers.IsProModel(modelName);
+
+    /// <summary>
+    /// Checks if a model is available for Free tier users
+    /// </summary>
+    public static bool IsOpenModel(string modelName) => PlanConstants.ModelTiers.IsOpenModel(modelName);
 
     /// <summary>
     /// Checks if a model name is supported
     /// </summary>
-    public static bool IsSupported(string modelName)
-    {
-        return AllModels.ContainsKey(modelName);
-    }
+    public static bool IsSupported(string modelName) => AllModels.ContainsKey(modelName);
 
     /// <summary>
     /// Gets the actual API model identifier for a friendly name
     /// </summary>
-    public static string GetActualModelName(string friendlyName)
-    {
-        return AllModels.TryGetValue(friendlyName, out var actualName) ? actualName : friendlyName;
-    }
+    public static string GetActualModelName(string friendlyName) =>
+        AllModels.TryGetValue(friendlyName, out var actualName) ? actualName : friendlyName;
 
     /// <summary>
     /// Gets the provider (Anthropic, OpenAI, or TogetherAI) for a given model
@@ -93,21 +111,21 @@ public static class ModelMapping
         return modelName switch
         {
             // Claude models
-            "claude-sonnet-4-5" => "Claude Sonnet 4.5",
-            "claude-opus-4-5" => "Claude Opus 4.5",
-            "claude-sonnet-3-5" => "Claude Sonnet 3.5",
+            PlanConstants.Models.ClaudeSonnet45 => "Claude Sonnet 4.5",
+            PlanConstants.Models.ClaudeOpus45 => "Claude Opus 4.5",
+            PlanConstants.Models.ClaudeSonnet35 => "Claude Sonnet 3.5",
 
             // OpenAI models
-            "gpt-4o" => "GPT-4o",
-            "gpt-4-turbo" => "GPT-4 Turbo",
-            "gpt-4-turbo-preview" => "GPT-4 Turbo Preview",
-            "gpt-3.5-turbo" => "GPT-3.5 Turbo",
+            PlanConstants.Models.Gpt4o => "GPT-4o",
+            PlanConstants.Models.Gpt4Turbo => "GPT-4 Turbo",
+            PlanConstants.Models.Gpt4TurboPreview => "GPT-4 Turbo Preview",
+            PlanConstants.Models.Gpt35Turbo => "GPT-3.5 Turbo",
 
             // TogetherAI models
-            "together-llama-3-70b" => "Llama 3 70B (Together)",
-            "together-llama-3-8b" => "Llama 3 8B (Together)",
-            "together-mixtral-8x7b" => "Mixtral 8x7B (Together)",
-            "together-qwen-2-72b" => "Qwen 2 72B (Together)",
+            PlanConstants.Models.GptOss120b => "gpt-oss-120b (Together)",
+            PlanConstants.Models.TogetherLlama31405b => "Llama 3.1 405B (Together)",
+            PlanConstants.Models.TogetherMixtral8x7b => "Mixtral 8x7B (Together)",
+            PlanConstants.Models.TogetherQwen => "Qwen Coder 480B (Together)",
 
             _ => modelName
         };

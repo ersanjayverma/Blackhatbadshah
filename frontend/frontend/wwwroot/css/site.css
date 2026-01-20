@@ -1,6 +1,12 @@
 /* ===============================
-   CHAT FAB & OVERLAY - CLAUDE STYLE
+   SITE-SPECIFIC STYLES
+   Uses variables from app.css
    =============================== */
+
+/* ===============================
+   CHAT FAB & OVERLAY
+   =============================== */
+
 #main-chat-fab {
     position: fixed;
     bottom: 24px;
@@ -8,21 +14,21 @@
     width: 60px;
     height: 60px;
     border-radius: 50%;
-    background: #d97706;
+    background: var(--accent);
     color: #fff;
     border: none;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    box-shadow: var(--shadow);
     z-index: 1200;
     transition: all 0.2s ease;
 }
 
 #main-chat-fab:hover {
     transform: scale(1.05);
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+    box-shadow: var(--shadow-lg);
 }
 
 #main-chat-fab:active {
@@ -36,12 +42,12 @@
     width: 360px;
     height: 70vh;
     max-height: 520px;
-    background: #1a1a1a;
+    background: var(--bg);
     border-radius: 12px;
-    border: 1px solid #3a3a3a;
+    border: 1px solid var(--border);
     display: flex;
     flex-direction: column;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    box-shadow: var(--shadow-lg);
     z-index: 1200;
     overflow: hidden;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -61,32 +67,32 @@
 
 .chat-header {
     padding: 14px 16px;
-    background: #2a2a2a;
-    color: #e5e5e5;
+    background: var(--surface);
+    color: var(--text-primary);
     font-weight: 600;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 1px solid #3a3a3a;
+    border-bottom: 1px solid var(--border);
 }
 
 .chat-header button {
     background: none;
     border: none;
-    color: #a3a3a3;
+    color: var(--text-muted);
     cursor: pointer;
     font-size: 14px;
 }
 
 .chat-header button:hover {
-    color: #e5e5e5;
+    color: var(--text-primary);
 }
 
 .chat-body {
     flex: 1;
     padding: 16px;
     overflow-y: auto;
-    background-color: #1a1a1a;
+    background-color: var(--bg);
     display: flex;
     flex-direction: column;
     gap: 12px;
@@ -102,11 +108,11 @@
 
 .chat-msg.sent {
     align-self: flex-end;
-    background: #d97706;
+    background: var(--accent);
     color: #fff;
     border-bottom-right-radius: 4px;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-    border-right: 3px solid #ea580c;
+    box-shadow: var(--shadow-sm);
+    border-right: 3px solid var(--accent-hover);
     position: relative;
 }
 
@@ -123,12 +129,12 @@
 
 .chat-msg.received {
     align-self: flex-start;
-    background: #2a2a2a;
-    color: #e5e5e5;
+    background: var(--surface);
+    color: var(--text);
     border-bottom-left-radius: 4px;
-    border: 1px solid #3a3a3a;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-    border-left: 3px solid #3a3a3a;
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-sm);
+    border-left: 3px solid var(--border);
     position: relative;
 }
 
@@ -141,38 +147,39 @@
     margin-bottom: 0.25rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
+    color: var(--text-muted);
 }
 
 .chat-input {
     display: flex;
     padding: 12px;
-    background: #2a2a2a;
-    border-top: 1px solid #3a3a3a;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
     gap: 8px;
 }
 
 .chat-input input {
     flex: 1;
     padding: 10px 16px;
-    background: #1a1a1a;
-    color: #e5e5e5;
-    border: 1px solid #3a3a3a;
+    background: var(--input-bg);
+    color: var(--input-text);
+    border: 1px solid var(--input-border);
     border-radius: 20px;
     outline: none;
 }
 
 .chat-input input::placeholder {
-    color: #737373;
+    color: var(--input-placeholder);
 }
 
 .chat-input input:focus {
-    border-color: #d97706;
+    border-color: var(--input-border-focus);
 }
 
 .chat-input button {
     background: none;
     border: none;
-    color: #d97706;
+    color: var(--accent);
     font-weight: 600;
     cursor: pointer;
 }
@@ -189,106 +196,100 @@
 }
 
 /* ===============================
-   LOG & REPORT PAGES - MODERN DESIGN
+   LOG & REPORT PAGES
    =============================== */
 
-/* Gradient Title - Claude Style */
 .text-gradient {
-    background: linear-gradient(90deg, #d97706 0%, #f59e0b 100%);
+    background: linear-gradient(90deg, var(--accent) 0%, var(--warning) 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
 }
 
-/* Modern Cards - Claude Style */
 .modern-card {
-    border: 1px solid #3a3a3a;
+    border: 1px solid var(--border);
     border-radius: 12px;
     overflow: hidden;
-    background: #2a2a2a;
+    background: var(--surface);
     transition: all 0.2s ease;
     animation: fadeInUp 0.3s ease-out;
-    color: #f5f5f5;
+    color: var(--text);
 }
 
 .modern-card:hover {
     transform: translateY(-2px);
-    border-color: #d97706;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    border-color: var(--accent);
+    box-shadow: var(--shadow);
 }
 
-/* Card Headers - Claude Style */
 .gradient-header {
-    background: linear-gradient(135deg, #d97706 0%, #f59e0b 100%);
+    background: linear-gradient(135deg, var(--accent) 0%, var(--warning) 100%);
     color: #ffffff;
     padding: 0.875rem 1.25rem;
     font-weight: 600;
     font-size: 0.95rem;
-    border-bottom: 1px solid #d97706;
+    border-bottom: 1px solid var(--accent);
 }
 
 .gradient-header-dark {
-    background: #1a1a1a;
-    color: #ffffff;
+    background: var(--bg);
+    color: var(--text-primary);
     padding: 0.875rem 1.25rem;
     font-weight: 600;
     font-size: 0.95rem;
-    border-bottom: 1px solid #3a3a3a;
+    border-bottom: 1px solid var(--border);
 }
 
-/* Upload Box - Claude Style */
 .upload-box {
     padding: 2rem;
-    border: 2px dashed #3a3a3a;
+    border: 2px dashed var(--border);
     border-radius: 12px;
-    background: #2a2a2a;
+    background: var(--surface);
     transition: all 0.2s ease;
     text-align: center;
 }
 
 .upload-box:hover {
-    border-color: #d97706;
-    background: #343434;
+    border-color: var(--accent);
+    background: var(--surface-hover);
     transform: translateY(-2px);
 }
 
-/* Monospace Textarea - Claude Style */
 .monospace-textarea {
     font-family: 'SF Mono', Monaco, 'Courier New', monospace;
     font-size: 0.9rem;
-    background: #1a1a1a;
-    color: #e5e5e5;
-    border: 1px solid #3a3a3a;
+    background: var(--input-bg);
+    color: var(--input-text);
+    border: 1px solid var(--input-border);
     border-radius: 8px;
     transition: all 0.2s ease;
     resize: vertical;
 }
 
 .monospace-textarea:focus {
-    border-color: #d97706;
-    box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.1);
+    border-color: var(--input-border-focus);
+    box-shadow: 0 0 0 var(--focus-ring-offset) var(--focus-ring);
 }
 
-/* Empty State */
 .empty-state-box {
     padding: 5rem 2rem;
     text-align: center;
+    color: var(--text-muted);
 }
 
-/* Modern Table Styling - Claude Style */
 .modern-table {
     font-size: 0.9rem;
-    background: #2a2a2a;
+    background: var(--surface);
 }
 
 .modern-table thead {
-    background: #1a1a1a;
-    border-bottom: 1px solid #3a3a3a;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
 }
 
 .modern-table thead th {
     font-weight: 600;
-    color: #ffffff;
+    color: var(--text-primary);
     text-transform: uppercase;
     font-size: 0.85rem;
     letter-spacing: 0.5px;
@@ -297,43 +298,41 @@
 }
 
 .modern-table tbody tr {
-    background: #2a2a2a;
+    background: var(--surface);
 }
 
 .modern-table tbody td {
     padding: 0.75rem 1rem;
     vertical-align: middle;
-    border-bottom: 1px solid #3a3a3a;
-    color: #f5f5f5;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
     background: transparent;
 }
 
 .modern-table tbody td.fw-semibold {
-    color: #ffffff;
+    color: var(--text-primary);
     font-weight: 600;
 }
 
 .table-row-hover {
     transition: all 0.2s ease;
-    background: #2a2a2a;
+    background: var(--surface);
 }
 
 .table-row-hover:hover {
-    background: #343434 !important;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+    background: var(--surface-hover) !important;
+    box-shadow: var(--shadow-sm);
 }
 
-/* Badge Custom - Claude Style */
 .badge-custom {
-    background: #3a3a3a;
-    color: #e5e5e5;
+    background: var(--surface-2);
+    color: var(--text);
     font-weight: 600;
     padding: 0.5rem 0.875rem;
     border-radius: 6px;
     font-size: 0.8rem;
 }
 
-/* Button Enhancements */
 .btn-group .btn {
     font-weight: 600;
     transition: all 0.2s ease;
@@ -341,62 +340,13 @@
 
 .btn-group .btn:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-}
-
-.btn-success {
-    background: #10b981;
-    border: none;
-    color: #ffffff;
-    padding: 0.5rem 1rem;
-    font-size: 0.875rem;
-}
-
-.btn-success:hover {
-    background: #059669;
-}
-
-.btn-info {
-    background: #3b82f6;
-    border: none;
-    color: #ffffff;
-    padding: 0.5rem 1rem;
-    font-size: 0.875rem;
-}
-
-.btn-info:hover {
-    background: #2563eb;
-}
-
-.btn-danger {
-    background: #ef4444;
-    border: none;
-    color: #ffffff;
-    padding: 0.5rem 1rem;
-    font-size: 0.875rem;
-}
-
-.btn-danger:hover {
-    background: #dc2626;
-}
-
-.btn-primary {
-    background: #d97706;
-    border: none;
-    color: #ffffff;
-    padding: 0.5rem 1rem;
-    font-size: 0.875rem;
-}
-
-.btn-primary:hover {
-    background: #ea580c;
+    box-shadow: var(--shadow);
 }
 
 /* ===============================
-   CUSTOM MODAL SYSTEM (PROPER OVERLAY)
+   CUSTOM MODAL SYSTEM
    =============================== */
 
-/* Modal Backdrop - Dark overlay */
 .custom-modal-backdrop {
     position: fixed;
     top: 0;
@@ -409,7 +359,6 @@
     animation: fadeIn 0.2s ease-out;
 }
 
-/* Modal Container */
 .custom-modal {
     position: fixed;
     top: 0;
@@ -424,7 +373,6 @@
     animation: modalSlideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Modal Dialog */
 .custom-modal-dialog {
     width: 100%;
     max-width: 900px;
@@ -436,32 +384,30 @@
     max-width: 500px;
 }
 
-/* Modal Content - Claude Dark Theme */
 .custom-modal-content {
-    background: #2a2a2a;
+    background: var(--surface);
     border-radius: 12px;
-    border: 1px solid #3a3a3a;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-lg);
     overflow: hidden;
     display: flex;
     flex-direction: column;
     max-height: 90vh;
 }
 
-/* Modal Header - Claude Dark Theme */
 .custom-modal-header {
-    background: #1a1a1a;
-    color: #ffffff;
+    background: var(--bg);
+    color: var(--text-primary);
     padding: 1.25rem 1.5rem;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 1px solid #3a3a3a;
+    border-bottom: 1px solid var(--border);
     flex-shrink: 0;
 }
 
 .custom-modal-header.bg-danger {
-    background: #ef4444;
+    background: var(--danger);
     color: #ffffff;
 }
 
@@ -472,11 +418,10 @@
     color: inherit;
 }
 
-/* Modal Close Button */
 .custom-modal-close {
     background: transparent;
-    border: 1px solid #3a3a3a;
-    color: #ffffff;
+    border: 1px solid var(--border);
+    color: var(--text-primary);
     width: 30px;
     height: 30px;
     border-radius: 6px;
@@ -489,16 +434,15 @@
 }
 
 .custom-modal-close:hover {
-    background: #343434;
+    background: var(--surface-hover);
 }
 
-/* Modal Body - Claude Dark Theme with Scrolling */
 .custom-modal-body {
     padding: 1.5rem;
     overflow-y: auto;
     flex: 1;
-    background: #1a1a1a;
-    color: #f5f5f5;
+    background: var(--bg);
+    color: var(--text);
     font-family: 'SF Mono', Monaco, 'Courier New', monospace;
     font-size: 0.9rem;
     line-height: 1.6;
@@ -509,22 +453,21 @@
 }
 
 .custom-modal-body::-webkit-scrollbar-track {
-    background: #1a1a1a;
+    background: var(--bg);
 }
 
 .custom-modal-body::-webkit-scrollbar-thumb {
-    background: #3a3a3a;
+    background: var(--border);
     border-radius: 5px;
 }
 
 .custom-modal-body::-webkit-scrollbar-thumb:hover {
-    background: #4a4a4a;
+    background: var(--surface-hover);
 }
 
-/* Code Blocks in Modal */
 .custom-modal-body pre {
-    background: #2a2a2a;
-    border: 1px solid #3a3a3a;
+    background: var(--surface);
+    border: 1px solid var(--border);
     border-radius: 6px;
     padding: 1.5rem;
     overflow-x: auto;
@@ -532,8 +475,8 @@
 }
 
 .custom-modal-body code {
-    background: rgba(217, 119, 6, 0.1);
-    color: #d97706;
+    background: var(--accent-bg);
+    color: var(--accent);
     padding: 0.2rem 0.5rem;
     border-radius: 4px;
     font-size: 0.875rem;
@@ -542,28 +485,27 @@
 .custom-modal-body h1,
 .custom-modal-body h2,
 .custom-modal-body h3 {
-    color: #ffffff;
+    color: var(--text-primary);
     margin-top: 1.5rem;
     margin-bottom: 1rem;
 }
 
 .custom-modal-body p {
     margin-bottom: 1rem;
-    color: #d4d4d4;
+    color: var(--text-secondary);
 }
 
 .custom-modal-body ul,
 .custom-modal-body ol {
     margin-left: 1.5rem;
     margin-bottom: 1rem;
-    color: #d4d4d4;
+    color: var(--text-secondary);
 }
 
-/* Modal Footer - Claude Dark Theme */
 .custom-modal-footer {
-    background: #1a1a1a;
+    background: var(--bg);
     padding: 1rem 1.5rem;
-    border-top: 1px solid #3a3a3a;
+    border-top: 1px solid var(--border);
     display: flex;
     justify-content: flex-end;
     gap: 0.75rem;
@@ -575,7 +517,6 @@
     font-size: 0.875rem;
 }
 
-/* Modal Animations */
 @keyframes fadeIn {
     from {
         opacity: 0;
@@ -610,6 +551,7 @@
 /* ===============================
    RESPONSIVE DESIGN
    =============================== */
+
 @media (max-width: 768px) {
     .custom-modal-dialog {
         max-width: 95%;
@@ -647,12 +589,13 @@
 /* ===============================
    UTILITY CLASSES
    =============================== */
+
 .shadow-lg {
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15) !important;
+    box-shadow: var(--shadow-lg) !important;
 }
 
 .shadow-sm {
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
+    box-shadow: var(--shadow-sm) !important;
 }
 
 .rounded-pill {
@@ -664,8 +607,8 @@ a, button, .btn, .card, .badge {
     transition: all 0.3s ease;
 }
 
-/* Focus states - Claude Style */
+/* Focus states */
 :focus-visible {
-    outline: 2px solid #d97706;
+    outline: 2px solid var(--accent);
     outline-offset: 2px;
 }

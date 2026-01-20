@@ -34,7 +34,7 @@ public class SubscriptionService : ISubscriptionService
     {
         var planName = await _keycloak.GetUserPlanAsync(userId);
         var planConfig = _plans.GetPlan(planName);
-        var tier = Enum.TryParse<PlanTier>(planName, out var parsedTier) ? parsedTier : PlanTier.Free;
+        var tier = Enum.TryParse<PlanTier>(planName, true, out var parsedTier) ? parsedTier : PlanTier.Free;
         var (proUsed, openUsed) = await GetCurrentMonthUsage(userId);
 
         return new UserSubscriptionDto
@@ -61,30 +61,54 @@ public class SubscriptionService : ISubscriptionService
             currentPlanName = await _keycloak.GetUserPlanAsync(userId);
         }
 
-        return _plans.GetActivePlans()
+        // Fetch plans from database to get real IDs for checkout
+        var dbPlans = await _db.SubscriptionPlans
+            .Where(p => p.IsActive)
             .OrderBy(p => p.SortOrder)
-            .Select(p => new PlanDto
+            .ToListAsync();
+
+        return dbPlans.Select(p =>
+        {
+            var config = _plans.GetPlan(p.Name);
+            return new PlanDto
             {
-                Id = Guid.Empty, // No DB ID needed
+                Id = p.Id,
                 Name = p.Name,
                 Description = p.Description,
                 PriceMonthly = p.PriceMonthly,
                 PriceYearly = p.PriceYearly,
-                MonthlyAnalysisLimit = p.ProModelLimit + p.OpenModelLimit,
-                AllowedModels = p.AllowedModels,
+                MonthlyAnalysisLimit = config.ProModelLimit + config.OpenModelLimit,
+                AllowedModels = config.AllowedModels,
                 IsCurrentPlan = p.Name == currentPlanName,
-                Features = p.Features
-            }).ToList();
+                Features = config.Features
+            };
+        }).ToList();
     }
 
     public async Task<RazorpayCheckoutDto> InitiateSubscriptionAsync(string userId, CreateSubscriptionRequest request)
     {
-        var userInfo = await _keycloak.GetUserInfoAsync(userId)
-            ?? throw new InvalidOperationException("User not found in Keycloak");
+        _logger.LogInformation("InitiateSubscription: Starting for user {UserId}, plan {PlanId}", userId, request.PlanId);
+
+        var userInfo = await _keycloak.GetUserInfoAsync(userId);
+        if (userInfo == null)
+        {
+            _logger.LogWarning("InitiateSubscription: User {UserId} not found in Keycloak", userId);
+            throw new InvalidOperationException("User not found in Keycloak");
+        }
+
+        if (string.IsNullOrWhiteSpace(userInfo.Email))
+        {
+            _logger.LogWarning("InitiateSubscription: User {UserId} has no email in Keycloak", userId);
+            throw new InvalidOperationException("User email not found. Please update your profile.");
+        }
 
         // Find the plan by ID from database (for Razorpay plan IDs)
-        var dbPlan = await _db.SubscriptionPlans.FindAsync(request.PlanId)
-            ?? throw new InvalidOperationException("Plan not found");
+        var dbPlan = await _db.SubscriptionPlans.FindAsync(request.PlanId);
+        if (dbPlan == null)
+        {
+            _logger.LogWarning("InitiateSubscription: Plan {PlanId} not found", request.PlanId);
+            throw new InvalidOperationException("Plan not found");
+        }
 
         var existingSub = await _db.UserSubscriptions
             .FirstOrDefaultAsync(s => s.UserId == userId && s.RazorpayCustomerId != null);
@@ -93,15 +117,34 @@ public class SubscriptionService : ISubscriptionService
 
         if (customerId == null)
         {
-            customerId = await _razorpay.CreateCustomerAsync(
-                userId,
-                userInfo.Email,
-                $"{userInfo.FirstName} {userInfo.LastName}".Trim(),
-                userInfo.Phone);
+            try
+            {
+                _logger.LogInformation("InitiateSubscription: Creating Razorpay customer for user {UserId}", userId);
+                customerId = await _razorpay.CreateCustomerAsync(
+                    userId,
+                    userInfo.Email,
+                    $"{userInfo.FirstName} {userInfo.LastName}".Trim(),
+                    userInfo.Phone);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "InitiateSubscription: Failed to create Razorpay customer for user {UserId}", userId);
+                throw new InvalidOperationException($"Failed to create payment customer: {ex.Message}");
+            }
         }
 
-        var checkout = await _razorpay.CreateSubscriptionAsync(
-            userId, customerId, request.PlanId, request.BillingPeriod);
+        RazorpayCheckoutDto checkout;
+        try
+        {
+            _logger.LogInformation("InitiateSubscription: Creating Razorpay subscription for user {UserId}", userId);
+            checkout = await _razorpay.CreateSubscriptionAsync(
+                userId, customerId, request.PlanId, request.BillingPeriod);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "InitiateSubscription: Failed to create Razorpay subscription for user {UserId}", userId);
+            throw new InvalidOperationException($"Failed to create subscription: {ex.Message}");
+        }
 
         var subscription = new UserSubscription
         {
@@ -121,6 +164,8 @@ public class SubscriptionService : ISubscriptionService
 
         checkout.Email = userInfo.Email;
         checkout.Phone = userInfo.Phone;
+
+        _logger.LogInformation("InitiateSubscription: Success for user {UserId}, subscription {SubId}", userId, checkout.SubscriptionId);
         return checkout;
     }
 

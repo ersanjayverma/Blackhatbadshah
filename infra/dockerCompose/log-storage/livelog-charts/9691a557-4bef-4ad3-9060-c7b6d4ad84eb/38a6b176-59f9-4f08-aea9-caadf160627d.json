@@ -1,0 +1,17 @@
+﻿{
+  "chartType": "LineChart",
+  "title": "Rsyslog Suspension Events",
+  "xAxis": {
+    "labels": ["21:25", "21:26", "21:27", "21:28", "21:29", "21:30", "21:31"]
+  },
+  "series": [
+    {
+      "name": "Action-0 Suspensions",
+      "values": [0, 1, 2, 2, 2, 2, 2]
+    },
+    {
+      "name": "Action-5 Suspensions",
+      "values": [1, 1, 1, 1, 1, 1, 1]
+    }
+  ]
+}

@@ -33,38 +33,43 @@ public class PlanEnforcementService : IPlanEnforcementService
         var planName = await _keycloak.GetUserPlanAsync(userId);
         var planConfig = _plans.GetPlan(planName);
 
-        // Check if model is allowed for this plan
-        if (requestedModel != null && !planConfig.AllowedModels.Contains(requestedModel))
+        // Check if model is allowed for this plan (or if user has purchased credits)
+        var (proUsage, openUsage, purchasedPro, purchasedOpen) = await GetCurrentMonthUsageWithCredits(userId);
+        var hasPurchasedCredits = purchasedPro > 0 || purchasedOpen > 0;
+
+        if (requestedModel != null && !planConfig.AllowedModels.Contains(requestedModel) && !hasPurchasedCredits)
         {
             return (false, $"Model '{requestedModel}' is not available on your {planName} plan. Please upgrade to access this model.");
         }
 
-        var (proUsage, openUsage) = await GetCurrentMonthUsage(userId);
+        // Calculate effective limits (plan limit + purchased credits)
+        var effectiveProLimit = planConfig.ProModelLimit == -1 ? -1 : planConfig.ProModelLimit + purchasedPro;
+        var effectiveOpenLimit = planConfig.OpenModelLimit == -1 ? -1 : planConfig.OpenModelLimit + purchasedOpen;
 
         // Check model-specific limits
         if (requestedModel != null)
         {
             if (IsProModel(requestedModel))
             {
-                if (planConfig.ProModelLimit != -1 && proUsage >= planConfig.ProModelLimit)
+                if (effectiveProLimit != -1 && proUsage >= effectiveProLimit)
                 {
-                    return (false, $"You've reached your monthly limit of {planConfig.ProModelLimit} pro model analyses. Upgrade to get more!");
+                    return (false, $"You've reached your monthly limit of {effectiveProLimit} pro model analyses. Upgrade or buy more credits!");
                 }
             }
             else if (IsOpenModel(requestedModel))
             {
-                if (planConfig.OpenModelLimit != -1 && openUsage >= planConfig.OpenModelLimit)
+                if (effectiveOpenLimit != -1 && openUsage >= effectiveOpenLimit)
                 {
-                    return (false, $"You've reached your monthly limit of {planConfig.OpenModelLimit} open model analyses. Upgrade to get more!");
+                    return (false, $"You've reached your monthly limit of {effectiveOpenLimit} open model analyses. Upgrade or buy more credits!");
                 }
             }
         }
         else
         {
             // No model specified - check pro limit (default)
-            if (planConfig.ProModelLimit != -1 && proUsage >= planConfig.ProModelLimit)
+            if (effectiveProLimit != -1 && proUsage >= effectiveProLimit)
             {
-                return (false, $"You've reached your monthly limit of {planConfig.ProModelLimit} analyses. Please upgrade your plan.");
+                return (false, $"You've reached your monthly limit of {effectiveProLimit} analyses. Please upgrade your plan or buy more credits.");
             }
         }
 
@@ -121,14 +126,49 @@ public class PlanEnforcementService : IPlanEnforcementService
     private bool IsProModel(string model) => _models.ProModels.Contains(model);
     private bool IsOpenModel(string model) => _models.OpenModels.Contains(model);
 
-    private async Task<(int proUsage, int openUsage)> GetCurrentMonthUsage(string userId)
+    private async Task<(int proUsage, int openUsage, int purchasedPro, int purchasedOpen)> GetCurrentMonthUsageWithCredits(string userId)
     {
         var now = DateTime.UtcNow;
         var usage = await _db.UsageTrackings
             .FirstOrDefaultAsync(u => u.UserId == userId && u.Year == now.Year && u.Month == now.Month);
 
         return usage != null
-            ? (usage.ProModelCount, usage.OpenModelCount)
-            : (0, 0);
+            ? (usage.ProModelCount, usage.OpenModelCount, usage.PurchasedProCredits, usage.PurchasedOpenCredits)
+            : (0, 0, 0, 0);
+    }
+
+    public async Task AddPurchasedCreditsAsync(string userId, int proCredits, int openCredits)
+    {
+        var now = DateTime.UtcNow;
+        var usage = await _db.UsageTrackings
+            .FirstOrDefaultAsync(u => u.UserId == userId && u.Year == now.Year && u.Month == now.Month);
+
+        if (usage == null)
+        {
+            usage = new backend.Data.Entities.UsageTracking
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                Year = now.Year,
+                Month = now.Month,
+                AnalysisCount = 0,
+                ProModelCount = 0,
+                OpenModelCount = 0,
+                PurchasedProCredits = proCredits,
+                PurchasedOpenCredits = openCredits,
+                LastAnalysisAt = now,
+                CreatedAt = now
+            };
+            _db.UsageTrackings.Add(usage);
+        }
+        else
+        {
+            usage.PurchasedProCredits += proCredits;
+            usage.PurchasedOpenCredits += openCredits;
+            usage.UpdatedAt = now;
+        }
+
+        await _db.SaveChangesAsync();
+        _logger.LogInformation("Added {ProCredits} pro and {OpenCredits} open credits for user {UserId}", proCredits, openCredits, userId);
     }
 }

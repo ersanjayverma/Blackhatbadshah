@@ -1,12 +1,20 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using System.Security.Claims;
+using shared.Dto;
 
 namespace backend.Hubs;
 
 [Authorize]
 public class DataHub : Hub
 {
+    private readonly IHubContext<LiveLogHub> _liveLogHub;
+
+    public DataHub(IHubContext<LiveLogHub> liveLogHub)
+    {
+        _liveLogHub = liveLogHub;
+    }
+
     public async Task Ping()
     {
         await Clients.Caller.SendAsync("Pong", DateTime.UtcNow);
@@ -35,6 +43,55 @@ public class DataHub : Hub
         {
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"user_{userId}");
         }
+    }
+
+    // Subscribe to a specific worker's live logs
+    public async Task SubscribeToWorker(string workerId)
+    {
+        if (string.IsNullOrEmpty(workerId)) return;
+
+        await Groups.AddToGroupAsync(Context.ConnectionId, $"livelog_{workerId}");
+        await Clients.Caller.SendAsync("SubscribedToWorker", workerId);
+    }
+
+    // Unsubscribe from a specific worker's live logs
+    public async Task UnsubscribeFromWorker(string workerId)
+    {
+        if (string.IsNullOrEmpty(workerId)) return;
+
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"livelog_{workerId}");
+        await Clients.Caller.SendAsync("UnsubscribedFromWorker", workerId);
+    }
+
+    // Subscribe to a specific worker's system monitor updates
+    public async Task SubscribeToSystemMonitor(string workerId)
+    {
+        if (string.IsNullOrEmpty(workerId)) return;
+
+        await Groups.AddToGroupAsync(Context.ConnectionId, $"sysmon_{workerId}");
+        await Clients.Caller.SendAsync("SubscribedToSystemMonitor", workerId);
+
+        // Request immediate data from worker
+        await _liveLogHub.Clients.Group($"livelog_{workerId}").SendAsync("RequestSystemMonitorData");
+    }
+
+    // Unsubscribe from system monitor updates
+    public async Task UnsubscribeFromSystemMonitor(string workerId)
+    {
+        if (string.IsNullOrEmpty(workerId)) return;
+
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"sysmon_{workerId}");
+        await Clients.Caller.SendAsync("UnsubscribedFromSystemMonitor", workerId);
+    }
+
+    // Request to kill a process on a worker
+    public async Task KillProcess(KillProcessRequest request)
+    {
+        if (string.IsNullOrEmpty(request.WorkerId)) return;
+
+        // Forward the kill request to the worker
+        await _liveLogHub.Clients.Group($"livelog_{request.WorkerId}")
+            .SendAsync("KillProcess", request.Pid, request.Force);
     }
 
     public override async Task OnConnectedAsync()

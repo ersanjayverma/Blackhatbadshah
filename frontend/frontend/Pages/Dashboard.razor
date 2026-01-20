@@ -1,0 +1,427 @@
+@page "/dashboard"
+@using Microsoft.AspNetCore.Components.WebAssembly.Authentication
+@using frontend.Services
+@using shared.Dto
+@inject DashboardService DashboardService
+@inject HubConnectionService HubService
+@inject IAccessTokenProvider TokenProvider
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<AuthorizeView>
+    <Authorized>
+        <div class="container-fluid px-4 py-4">
+
+            <!-- HEADER -->
+            <div class="d-flex justify-content-between align-items-center flex-wrap mb-4">
+                <div>
+                    <h2 class="mb-1 fw-bold text-gradient">
+                        <i class="bi bi-speedometer2 me-2"></i>Dashboard
+                    </h2>
+                    <p class="mb-0">Your log analysis overview and statistics</p>
+                </div>
+                <button class="btn btn-outline-primary" @onclick="RefreshDashboard" disabled="@_loading">
+                    <i class="bi bi-arrow-clockwise me-2"></i>Refresh
+                </button>
+            </div>
+
+            @if (_loading)
+            {
+                <div class="text-center py-5">
+                    <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;"></div>
+                    <p class="fw-semibold">Loading dashboard...</p>
+                </div>
+            }
+            else
+            {
+                <!-- STATISTICS CARDS - ROW 1 -->
+                <div class="row g-4 mb-4">
+                    <div class="col-md-3 col-sm-6">
+                        <div class="card modern-card shadow-sm stat-card">
+                            <div class="card-body text-center">
+                                <i class="bi bi-file-earmark-text stat-icon text-primary"></i>
+                                <h3 class="stat-value">@(_stats?.TotalLogsAnalyzed ?? 0)</h3>
+                                <p class="stat-label">Logs Analyzed</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 col-sm-6">
+                        <div class="card modern-card shadow-sm stat-card">
+                            <div class="card-body text-center">
+                                <i class="bi bi-file-earmark-bar-graph stat-icon text-info"></i>
+                                <h3 class="stat-value text-info">@(_stats?.TotalReports ?? 0)</h3>
+                                <p class="stat-label">Total Reports</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 col-sm-6">
+                        <div class="card modern-card shadow-sm stat-card">
+                            <div class="card-body text-center">
+                                <i class="bi bi-check-circle stat-icon text-success"></i>
+                                <h3 class="stat-value text-success">@(_stats?.SuccessfulAnalyses ?? 0)</h3>
+                                <p class="stat-label">Successful</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 col-sm-6">
+                        <div class="card modern-card shadow-sm stat-card">
+                            <div class="card-body text-center">
+                                <i class="bi bi-x-circle stat-icon text-danger"></i>
+                                <h3 class="stat-value text-danger">@(_stats?.FailedAnalyses ?? 0)</h3>
+                                <p class="stat-label">Failed</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- STATISTICS CARDS - ROW 2 -->
+                <div class="row g-4 mb-4">
+                    <div class="col-md-3 col-sm-6">
+                        <div class="card modern-card shadow-sm stat-card">
+                            <div class="card-body text-center">
+                                <i class="bi bi-hourglass-split stat-icon text-warning"></i>
+                                <h3 class="stat-value text-warning">@(_stats?.InProgressAnalyses ?? 0)</h3>
+                                <p class="stat-label">In Progress</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 col-sm-6">
+                        <div class="card modern-card shadow-sm stat-card">
+                            <div class="card-body text-center">
+                                <i class="bi bi-percent stat-icon" style="color: var(--claude-accent);"></i>
+                                <h3 class="stat-value" style="color: var(--claude-accent);">
+                                    @(_stats?.SuccessRate ?? 0)%
+                                </h3>
+                                <p class="stat-label">Success Rate</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 col-sm-6">
+                        <div class="card modern-card shadow-sm stat-card">
+                            <div class="card-body text-center">
+                                <i class="bi bi-hdd stat-icon text-secondary"></i>
+                                <h3 class="stat-value text-secondary">@FormatBytes(_stats?.TotalBytesProcessed ?? 0)</h3>
+                                <p class="stat-label">Data Processed</p>
+                            </div>
+                        </div>
+                    </div>
+                    @if (_stats?.ModelUsageBreakdown?.Count > 0)
+                    {
+                        <div class="col-md-3 col-sm-6">
+                            <div class="card modern-card shadow-sm stat-card">
+                                <div class="card-body text-center">
+                                    <i class="bi bi-cpu stat-icon text-primary"></i>
+                                    <h3 class="stat-value text-primary">@(_stats.ModelUsageBreakdown.Sum(m => m.UsageCount))</h3>
+                                    <p class="stat-label">Model Calls (Month)</p>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <!-- MODEL USAGE BREAKDOWN -->
+                @if (_stats?.ModelUsageBreakdown?.Count > 0)
+                {
+                    <div class="row g-4 mb-4">
+                        <div class="col-12">
+                            <div class="card modern-card shadow-sm">
+                                <div class="card-header gradient-header-dark">
+                                    <h5 class="mb-0">
+                                        <i class="bi bi-bar-chart me-2"></i>Model Usage (This Month)
+                                    </h5>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row">
+                                        @foreach (var model in _stats.ModelUsageBreakdown)
+                                        {
+                                            <div class="col-md-6 mb-3">
+                                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                                    <span class="fw-semibold">@model.ModelName</span>
+                                                    <span class="badge bg-primary">@model.UsageCount calls</span>
+                                                </div>
+                                                @{
+                                                    var total = _stats.ModelUsageBreakdown.Sum(m => m.UsageCount);
+                                                    var percent = total > 0 ? (double)model.UsageCount / total * 100 : 0;
+                                                }
+                                                <div class="progress" style="height: 8px;">
+                                                    <div class="progress-bar" role="progressbar"
+                                                         style="width: @percent%; background: linear-gradient(90deg, var(--claude-accent), #f59e0b);"
+                                                         aria-valuenow="@percent" aria-valuemin="0" aria-valuemax="100">
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                <!-- CHARTS ROW -->
+                <div class="row g-4 mb-4">
+                    <!-- Trend Chart -->
+                    <div class="col-lg-8">
+                        <div class="card modern-card shadow-lg">
+                            <div class="card-header gradient-header-dark">
+                                <h5 class="mb-0">
+                                    <i class="bi bi-graph-up me-2"></i>Activity Trend (Last 7 Days)
+                                </h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="chart-container" style="height: 300px;">
+                                    <canvas id="trendChart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Status Distribution -->
+                    <div class="col-lg-4">
+                        <div class="card modern-card shadow-lg">
+                            <div class="card-header gradient-header-dark">
+                                <h5 class="mb-0">
+                                    <i class="bi bi-pie-chart me-2"></i>Status Distribution
+                                </h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="chart-container" style="height: 300px;">
+                                    <canvas id="statusChart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- RECENT ANALYSES -->
+                <div class="card modern-card shadow-lg">
+                    <div class="card-header gradient-header-dark d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            <i class="bi bi-clock-history me-2"></i>Recent Analyses
+                        </h5>
+                        <a href="/reports" class="btn btn-sm btn-outline-light">
+                            View All <i class="bi bi-arrow-right ms-1"></i>
+                        </a>
+                    </div>
+                    <div class="card-body p-0">
+                        @if (_recentAnalyses.Count == 0)
+                        {
+                            <div class="empty-state-box">
+                                <i class="bi bi-inbox display-1 mb-3"></i>
+                                <h5 class="fw-bold">No analyses yet</h5>
+                                <p>Upload and analyze logs to see results here</p>
+                                <a href="/logs" class="btn btn-primary">
+                                    <i class="bi bi-upload me-2"></i>Upload Logs
+                                </a>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="table-responsive">
+                                <table class="table table-hover mb-0 modern-table">
+                                    <thead>
+                                        <tr>
+                                            <th><i class="bi bi-file-text me-2"></i>Report</th>
+                                            <th><i class="bi bi-activity me-2"></i>Status</th>
+                                            <th><i class="bi bi-calendar me-2"></i>Completed</th>
+                                            <th><i class="bi bi-lightbulb me-2"></i>Key Findings</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var analysis in _recentAnalyses)
+                                        {
+                                            <tr class="table-row-hover"
+                                                @onclick="() => NavigateToReports()"
+                                                style="cursor: pointer;">
+                                                <td class="fw-semibold">@analysis.Title</td>
+                                                <td>
+                                                    @switch (analysis.Status)
+                                                    {
+                                                        case ReportStatus.InProgress:
+                                                            <span class="badge bg-warning text-dark px-3 py-2">
+                                                                <i class="bi bi-hourglass-split me-1"></i>In Progress
+                                                            </span>
+                                                            break;
+                                                        case ReportStatus.Completed:
+                                                            <span class="badge bg-success px-3 py-2">
+                                                                <i class="bi bi-check-circle me-1"></i>Completed
+                                                            </span>
+                                                            break;
+                                                        case ReportStatus.Failed:
+                                                            <span class="badge bg-danger px-3 py-2">
+                                                                <i class="bi bi-x-circle me-1"></i>Failed
+                                                            </span>
+                                                            break;
+                                                    }
+                                                </td>
+                                                <td>@analysis.CompletedAt.ToLocalTime().ToString("g")</td>
+                                                <td class="text-muted small" style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                                    @analysis.KeyFindings
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </Authorized>
+
+    <NotAuthorized>
+        <div class="container mt-5">
+            <div class="alert alert-warning shadow-sm">
+                <i class="bi bi-lock me-2"></i>
+                You must be logged in to view the dashboard.
+            </div>
+        </div>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    private bool _loading = true;
+    private DashboardStatistics? _stats;
+    private List<RecentAnalysisResult> _recentAnalyses = new();
+    private DashboardChartData? _trendChartData;
+    private DashboardChartData? _statusChartData;
+
+    private IDisposable? _dashboardUpdateSubscription;
+    private IDisposable? _reportCreatedSubscription;
+    private IDisposable? _reportStatusChangedSubscription;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDashboardData();
+        await InitializeSignalR();
+    }
+
+    private async Task InitializeSignalR()
+    {
+        try
+        {
+            await HubService.InitializeAsync(async () =>
+            {
+                var tokenResult = await TokenProvider.RequestAccessToken();
+                if (tokenResult.TryGetToken(out var token))
+                {
+                    return token.Value;
+                }
+                return null;
+            });
+            await HubService.StartAsync();
+
+            // Listen for dashboard-specific updates
+            _dashboardUpdateSubscription = HubService.On("DashboardUpdated", async () =>
+            {
+                await LoadDashboardData();
+                await InvokeAsync(StateHasChanged);
+            });
+
+            // Also refresh on report events
+            _reportCreatedSubscription = HubService.On<ReportListItem>("ReportCreated", async (report) =>
+            {
+                await LoadDashboardData();
+                await InvokeAsync(StateHasChanged);
+            });
+
+            _reportStatusChangedSubscription = HubService.On<Guid, ReportStatus>("ReportStatusChanged",
+                async (reportId, status) =>
+            {
+                await LoadDashboardData();
+                await InvokeAsync(StateHasChanged);
+            });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"SignalR connection failed: {ex.Message}");
+        }
+    }
+
+    private async Task LoadDashboardData()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+            // Load all data in parallel
+            var statsTask = DashboardService.GetStatisticsAsync();
+            var recentTask = DashboardService.GetRecentAnalysesAsync(5);
+            var trendTask = DashboardService.GetTrendChartAsync();
+            var statusTask = DashboardService.GetStatusChartAsync();
+
+            await Task.WhenAll(statsTask, recentTask, trendTask, statusTask);
+
+            _stats = await statsTask;
+            _recentAnalyses = await recentTask;
+            _trendChartData = await trendTask;
+            _statusChartData = await statusTask;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to load dashboard data: {ex.Message}");
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+
+        // Render charts after data loads
+        await Task.Delay(100);
+        await RenderCharts();
+    }
+
+    private async Task RenderCharts()
+    {
+        try
+        {
+            if (_trendChartData != null)
+            {
+                await JS.InvokeVoidAsync("renderDashboardChart", "trendChart", _trendChartData);
+            }
+            if (_statusChartData != null)
+            {
+                await JS.InvokeVoidAsync("renderDashboardChart", "statusChart", _statusChartData);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Chart render failed: {ex.Message}");
+        }
+    }
+
+    private async Task RefreshDashboard()
+    {
+        await LoadDashboardData();
+    }
+
+    private void NavigateToReports()
+    {
+        Navigation.NavigateTo("/reports");
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        string[] sizes = { "B", "KB", "MB", "GB", "TB" };
+        int order = 0;
+        double size = bytes;
+        while (size >= 1024 && order < sizes.Length - 1)
+        {
+            order++;
+            size /= 1024;
+        }
+        return $"{size:0.##} {sizes[order]}";
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _dashboardUpdateSubscription?.Dispose();
+        _reportCreatedSubscription?.Dispose();
+        _reportStatusChangedSubscription?.Dispose();
+        await HubService.StopAsync();
+    }
+}

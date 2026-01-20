@@ -1,0 +1,73 @@
+﻿# Log Analysis Report
+
+## 1. EXECUTIVE SUMMARY
+
+The logs cover a 2-hour period from **2026-01-19 21:07:10** to **2026-01-19 21:17:12** and reveal a server under active **brute-force SSH attack** from multiple IP addresses. The system shows good defensive measures with **UFW firewall blocks** and **fail2ban** implementation, but there are **critical Rsyslog service interruptions** that could impact security monitoring. **14 failed SSH login attempts** were recorded from various IPs targeting multiple invalid users, while legitimate services like Dovecot and Postfix function normally.
+
+## 2. CRITICAL ISSUES
+
+### Issue 1: Rsyslog Service Suspension
+- **Root Cause**: Rsyslog's built-in file output module (`omfile`) is experiencing suspension/retry cycles, likely due to disk I/O issues or file system problems.
+- **Evidence**:
+  ```
+  2026-01-19T21:07:33.062518+01:00 vmi2975006 rsyslogd: action 'action-0-builtin:omfile' suspended (module 'builtin:omfile'), retry 0. There should be messages before this one giving the reason for suspension. [v8.2312.0 try https://www.rsyslog.com/e/2007 ]
+  2026-01-19T21:07:33.063786+01:00 vmi2975006 rsyslogd: action 'action-0-builtin:omfile' suspended (module 'builtin:omfile'), next retry is Mon Jan 19 21:08:03 2026, retry nbr 0.
+  ```
+  (This pattern repeats multiple times throughout the logs for both `action-0` and `action-5`)
+- **Impact**: **Critical** - Security logs may be lost during suspension periods, creating blind spots in attack monitoring and forensic analysis.
+- **Severity**: **Critical**
+- **First Occurrence**: **2026-01-19 21:07:33**
+
+## 3. WARNINGS & ANOMALIES
+
+### 3.1 SSH Brute Force Attack
+- **Pattern**: 14 failed SSH login attempts from 9 unique IP addresses in 2 hours.
+- **Targets**: `root`, `guest`, `hadoop`, `sonar`, `jumpserver`, `rf`, `whois`, `user`, `devops`, `steam`, `michel`, `yan`, `etherpad`, `uftp`, `master`, `test`, `ftpsecure`, `mc3`, `administrador`, `acct`, `yu` (many invalid users)
+- **Frequency**: Continuous attempts every 1-5 minutes
+- **Evidence**:
+  ```
+  2026-01-19T21:07:25.916363+01:00 vmi2975006 sshd[1755492]: Failed password for root from 38.147.184.187 port 55084 ssh2
+  2026-01-19T21:07:27.501494+01:00 vmi2975006 sshd[1755507]: Failed password for invalid user guest from 38.147.184.187 port 45726 ssh2
+  ```
+  (Repeats with IPs: 38.147.184.187, 209.38.39.232, 78.89.154.59, 165.232.178.116, 107.150.106.178, 213.209.159.158, 177.53.215.134, 165.227.230.95, 203.194.106.66)
+
+### 3.2 Firewall Blocks
+- **Pattern**: 18 UFW BLOCK events from diverse IPs and ports.
+- **Evidence**:
+  ```
+  2026-01-19T21:07:17.326840+01:00 vmi2975006 kernel: [UFW BLOCK] IN=eth0 OUT= MAC=... SRC=88.210.63.192 DST=38.242.148.32 LEN=40 ... PROTO=TCP SPT=58260 DPT=25994 WINDOW=1024 RES=0x00 SYN URGP=0
+  ```
+
+### 3.3 Dovecot SSL/TLS Issues
+- **Pattern**: 6 `Disconnected` events due to SSL/TLS handshake failures.
+- **Evidence**:
+  ```
+  2026-01-19T21:08:28.370438+01:00 vmi2975006 dovecot: imap-login: Disconnected: Connection closed: SSL_accept() failed: error:0A000102:SSL routines::unsupported protocol (no auth attempts in 0 secs)...
+  2026-01-19T21:08:32.040566+01:00 vmi2975006 dovecot: imap-login: Disconnected: Connection closed: SSL_accept() failed: error:0A00018C:SSL routines::version too low (no auth attempts in 0 secs)...
+  ```
+
+## 4. TIMELINE OF KEY EVENTS
+
+| Time | Event | Details |
+| :--- | :--- | :--- |
+| **21:07:10** | **Dovecot Login** | Successful IMAP login for user `director` |
+| **21:07:17** | **UFW Block** | First firewall block (SRC=88.210.63.192) |
+| **21:07:23-27** | **SSH Brute Force** | First failed SSH attempts for `root` and `guest` |
+| **21:07:30-32** | **SSH Brute Force** | Failed attempts for `hadoop` |
+| **21:07:33** | **Rsyslog Suspended** | First occurrence of rsyslog file output suspension |
+| **21:07:38** | **SSH Brute Force** | Failed attempt for `sonar` |
+| **21:07:51-54** | **SSH Brute Force** | Failed attempts for `root` and `jumpserver` |
+| **21:07:55** | **Legit SSH Login** | Successful login for user `admin` (SRC=49.43.107.241) |
+| **21:08:10-12** | **SSH Brute Force** | Failed attempts for `hadoop` |
+| **21:08:12** | **Fail2ban Installed** | `admin` installs fail2ban via `apt` |
+| **21:08:23** | **Fail2ban Started** | Service started successfully |
+| **21:08:28-31** | **SSH Brute Force** | Failed attempts for `rf` |
+| **21:09:12-16** | **SSH Brute Force** | Failed attempts for `administrador` and `user0` |
+| **21:09:31-39** | **SSH Brute Force** | Failed attempts for `devops` and `steam` |
+| **21:10:44** | **Dovecot Login** | Successful IMAP login for user `admin` |
+| **21:10:50-21:11:13** | **SSH Brute Force** | Failed attempts for `yan`, `whois`, `user` (4 times) |
+| **21:12:13** | **Fail2ban Config Update** | `admin` copies new config and restarts service |
+| **21:12:42** | **Fail2ban Restart** | Service restarted successfully |
+| **21:12:43-46** | **SSH Brute Force** | Failed attempts for `master` and `uftp` |
+| **21:13:20-37** | **SSH Brute Force** | Failed attempts for `acct`, `data`, `master`, `test`, `ftpsecure` |
+| **21

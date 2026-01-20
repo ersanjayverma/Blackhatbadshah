@@ -1,0 +1,108 @@
+﻿# Log Analysis Report
+
+## 1. EXECUTIVE SUMMARY
+- The logs from **2026-01-20 01:00:00 to 02:08:37** indicate a **moderately unhealthy system** under active **brute-force SSH attacks**.
+- The most critical issue is the **high volume of unauthorized login attempts**, targeting various invalid users and root accounts, indicating a **security threat**.
+- Despite the attacks, **no successful unauthorized logins** are observed; however, **MaxStartups throttling** temporarily dropped connections, indicating a **resource strain risk**.
+
+---
+
+## 2. CRITICAL ISSUES
+
+### Issue 1: Brute-force SSH Login Attempts
+- **Root Cause**: Automated bots scanning for weak SSH credentials.
+- **Evidence**:
+  - `2026-01-20T01:02:08.508464+01:00 vmi2975006 sshd[1859185]: Failed password for invalid user root from 92.118.39.100 port 42458 ssh2`
+  - `2026-01-20T01:08:00.466124+01:00 vmi2975006 sshd[1860975]: Failed password for invalid user avahi from 81.177.101.45 port 60702 ssh2`
+- **Impact**: Potential compromise of system if weak credentials exist; resource exhaustion from handling connections.
+- **Severity**: **High**
+- **First Occurrence**: `2026-01-20T01:02:08`
+
+---
+
+## 3. WARNINGS & ANOMALIES
+
+- **SSH Brute-force Attempts**: Over 50 failed login attempts from various IPs targeting invalid or root users.
+- **MaxStartups Throttling**: Connection drops due to exceeding `MaxStartups` limit.
+  - `2026-01-20T02:06:32.579944+01:00 vmi2975006 sshd[1848041]: drop connection #10 from [121.224.75.114]:48154 on [38.242.148.32]:22 past MaxStartups`
+- **Repeated Targeting of Specific Users**: Users like `admin`, `root`, `elasticsearch`, `webserver`, `vagrant`, and `erpnext` were repeatedly targeted.
+- **SSH Access Denied for Root**: Multiple IPs attempted to log in as `root` but were blocked due to `AllowUsers` configuration.
+
+---
+
+## 4. TIMELINE OF KEY EVENTS
+
+| Time | Event | Details |
+|------|-------|---------|
+| 01:00:00 | Docker command | `admin` ran `docker ps -a` as root |
+| 01:02:08 | SSH brute-force | Failed login for `root` from `92.118.39.100` |
+| 01:08:00 | SSH brute-force | Failed login for `avahi` from `81.177.101.45` |
+| 01:17:14 | SSH login | Successful login for `admin` from `152.59.82.230` |
+| 02:06:32 | MaxStartups throttling | Dropped 3 connections due to overload |
+| 02:08:37 | SSH brute-force | Failed login for `vboxuser` from `45.78.218.105` |
+
+---
+
+## 5. SYSTEM HEALTH INDICATORS
+
+- **SSH Success Rate**: Low unauthorized success; only legitimate `admin` logins observed.
+- **SSH Failure Rate**: High; over 50 failed login attempts in 2 hours.
+- **Resource Strain**: Indicated by `MaxStartups` throttling; system briefly overwhelmed by connection requests.
+- **Security Posture**: Strong due to `AllowUsers` config and failed attempts, but under active attack.
+
+---
+
+## 6. REMEDIATION PLAN
+
+### Issue: Brute-force SSH Attacks
+
+- **Immediate Actions**:
+  - Block offending IPs via `fail2ban` or firewall rules.
+  - Temporarily reduce `MaxStartups` limit to prevent resource exhaustion.
+
+- **Short-term Fix**:
+  - Deploy `fail2ban` to automatically ban IPs after failed attempts.
+  - Enforce key-based SSH authentication and disable password auth.
+
+- **Long-term Solution**:
+  - Implement a VPN or bastion host for SSH access.
+  - Rotate SSH ports and use non-standard ports.
+
+- **Code/Config Changes**:
+  ```bash
+  # /etc/ssh/sshd_config
+  PasswordAuthentication no
+  PermitRootLogin no
+  AllowUsers admin
+  ```
+
+- **Monitoring Recommendations**:
+  - Alert on >5 failed SSH attempts in 1 minute.
+  - Dashboard for SSH login success/failure rates.
+
+---
+
+## 7. PREVENTIVE MEASURES
+
+- **Architectural Improvements**:
+  - Use **SSH key-only authentication**.
+  - Restrict SSH access via **security groups** or **firewall rules**.
+- **Additional Logging**:
+  - Log geo-IP data for login attempts.
+  - Enable audit logs for all `sudo` commands.
+- **Testing Gaps**:
+  - Conduct penetration tests to simulate brute-force attacks.
+  - Regularly audit SSH configurations.
+
+---
+
+## 8. MISSING INFORMATION
+
+- **Geo-IP Data**: Logs do not include country or region data for IPs.
+- **Rate-limiting Config**: No visibility into current `MaxStartups` or `LoginGraceTime` settings.
+- **System Metrics**: Absence of CPU/memory/disk usage metrics during attack spikes.
+- **User Behavior Logs**: No logs indicating post-login activity for successful sessions.
+
+---
+
+This log analysis highlights a **system under active attack** but **well-configured to resist compromise**. Immediate hardening and monitoring improvements are recommended to prevent future risks.

@@ -3,15 +3,19 @@
 @using shared.Dto
 @using frontend.Services
 @using Microsoft.AspNetCore.Authorization
+@using System.Security.Claims
 @inject SubscriptionService SubscriptionApi
 @inject IJSRuntime JS
 @inject NavigationManager Nav
+@inject ToastService Toast
+@inject AuthenticationStateProvider AuthStateProvider
+@implements IAsyncDisposable
 
-<PageTitle>My Subscription - Blackhatbadshah</PageTitle>
+<PageTitle>Profile - Blackhatbadshah</PageTitle>
 
 <div class="container-fluid px-4 py-4">
     <h2 class="mb-4 fw-bold">
-        <i class="bi bi-credit-card me-2"></i>Subscription Management
+        <i class="bi bi-person-circle me-2"></i>Profile
     </h2>
 
     @if (_loading)
@@ -23,48 +27,59 @@
     else
     {
         <div class="row g-4">
-            <!-- Current Plan Card -->
-            <div class="col-lg-6">
-                <div class="card shadow-lg h-100">
+            <!-- Profile Card -->
+            <div class="col-12">
+                <div class="card shadow-lg">
                     <div class="card-header bg-gradient" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
-                        <h5 class="mb-0"><i class="bi bi-star me-2"></i>Current Plan</h5>
+                        <h5 class="mb-0"><i class="bi bi-person me-2"></i>Profile</h5>
                     </div>
                     <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-center mb-3">
-                            <h3 class="fw-bold mb-0">@_subscription.PlanName</h3>
-                            <span class="badge @GetStatusBadgeClass(_subscription.Status) fs-6">
-                                @_subscription.Status
-                            </span>
-                        </div>
-
-                        <p class="text-muted mb-2">Billing: @_subscription.BillingPeriod</p>
-
-                        @if (_subscription.CurrentPeriodEnd.HasValue)
-                        {
-                            <p class="mb-3">
-                                <i class="bi bi-calendar me-2"></i>
-                                Renews: @_subscription.CurrentPeriodEnd.Value.ToLocalTime().ToString("MMMM dd, yyyy")
-                            </p>
-                        }
-
-                        <div class="d-flex gap-2 mt-4">
-                            <a href="/pricing" class="btn btn-primary">
-                                <i class="bi bi-arrow-up-circle me-2"></i>Upgrade Plan
-                            </a>
-                            @if (_subscription.PlanTier != PlanTier.Free)
-                            {
-                                <button class="btn btn-outline-danger" @onclick="ConfirmCancel" disabled="@_cancelling">
-                                    @if (_cancelling)
+                        <div class="row align-items-center">
+                            <div class="col-auto">
+                                <i class="bi bi-person-circle display-1 text-primary"></i>
+                            </div>
+                            <div class="col">
+                                <h4 class="fw-bold mb-1">@_userName</h4>
+                                <p class="text-secondary mb-2">@_userEmail</p>
+                                <div class="d-flex flex-wrap gap-3">
+                                    <span>
+                                        <i class="bi bi-award me-1 text-primary"></i>
+                                        <strong>Plan:</strong> @_subscription.PlanName
+                                    </span>
+                                    <span>
+                                        <i class="bi bi-circle-fill me-1 @(_subscription.Status == "Active" ? "text-success" : "text-warning")" style="font-size: 0.6rem;"></i>
+                                        <strong>Status:</strong> @_subscription.Status
+                                    </span>
+                                    @if (_subscription.CurrentPeriodEnd.HasValue)
                                     {
-                                        <span class="spinner-border spinner-border-sm me-2"></span>
+                                        <span>
+                                            <i class="bi bi-calendar me-1 text-primary"></i>
+                                            <strong>Renews:</strong> @_subscription.CurrentPeriodEnd.Value.ToLocalTime().ToString("MMM dd, yyyy")
+                                        </span>
                                     }
-                                    else
+                                </div>
+                            </div>
+                            <div class="col-auto">
+                                <div class="d-flex gap-2">
+                                    <a href="/pricing" class="btn btn-primary">
+                                        <i class="bi bi-arrow-up-circle me-2"></i>Upgrade Plan
+                                    </a>
+                                    @if (_subscription.PlanTier != PlanTier.Free)
                                     {
-                                        <i class="bi bi-x-circle me-2"></i>
+                                        <button class="btn btn-outline-danger" @onclick="ConfirmCancel" disabled="@_cancelling">
+                                            @if (_cancelling)
+                                            {
+                                                <span class="spinner-border spinner-border-sm me-2"></span>
+                                            }
+                                            else
+                                            {
+                                                <i class="bi bi-x-circle me-2"></i>
+                                            }
+                                            Cancel
+                                        </button>
                                     }
-                                    Cancel
-                                </button>
-                            }
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -73,44 +88,101 @@
             <!-- Usage Card -->
             <div class="col-lg-6">
                 <div class="card shadow-lg h-100">
-                    <div class="card-header bg-gradient" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white;">
+                    <div class="card-header bg-gradient" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white;">
                         <h5 class="mb-0"><i class="bi bi-graph-up me-2"></i>Usage This Month</h5>
                     </div>
                     <div class="card-body">
-                        <div class="d-flex justify-content-between mb-2">
-                            <span>Analyses Used</span>
-                            <span class="fw-bold">
-                                @_subscription.UsedThisMonth / @(_subscription.MonthlyLimit == -1 ? "Unlimited" : _subscription.MonthlyLimit.ToString())
-                            </span>
-                        </div>
-
-                        @if (_subscription.MonthlyLimit != -1)
-                        {
-                            var percentage = _subscription.MonthlyLimit > 0
-                                ? Math.Min(100, (_subscription.UsedThisMonth * 100) / _subscription.MonthlyLimit)
-                                : 0;
-                            <div class="progress mb-3" style="height: 20px;">
-                                <div class="progress-bar @(percentage > 80 ? "bg-warning" : "bg-success")"
-                                     style="width: @percentage%">
-                                    @percentage%
-                                </div>
+                        <!-- Pro Model Usage -->
+                        <div class="mb-4">
+                            <div class="d-flex justify-content-between mb-2">
+                                <span><i class="bi bi-star-fill text-warning me-2"></i>Pro Models</span>
+                                <span class="fw-bold">
+                                    @_subscription.ProModelUsed / @(_subscription.ProModelLimit == -1 ? "Unlimited" : _subscription.ProModelLimit.ToString())
+                                </span>
                             </div>
-
-                            @if (percentage >= 80)
+                            @if (_subscription.ProModelLimit != -1)
                             {
-                                <div class="alert alert-warning mb-3">
-                                    <i class="bi bi-exclamation-triangle me-2"></i>
-                                    You're approaching your monthly limit. Consider upgrading!
+                                var proPercentage = _subscription.ProModelLimit > 0
+                                    ? Math.Min(100, (_subscription.ProModelUsed * 100) / _subscription.ProModelLimit)
+                                    : 0;
+                                <div class="progress" style="height: 15px;">
+                                    <div class="progress-bar bg-warning"
+                                         style="width: @proPercentage%">
+                                        @proPercentage%
+                                    </div>
                                 </div>
                             }
+                        </div>
+
+                        <!-- Normal/Open Model Usage -->
+                        <div class="mb-4">
+                            <div class="d-flex justify-content-between mb-2">
+                                <span><i class="bi bi-cpu me-2"></i>Normal Models</span>
+                                <span class="fw-bold">
+                                    @_subscription.OpenModelUsed / @(_subscription.OpenModelLimit == -1 ? "Unlimited" : _subscription.OpenModelLimit.ToString())
+                                </span>
+                            </div>
+                            @if (_subscription.OpenModelLimit != -1)
+                            {
+                                var openPercentage = _subscription.OpenModelLimit > 0
+                                    ? Math.Min(100, (_subscription.OpenModelUsed * 100) / _subscription.OpenModelLimit)
+                                    : 0;
+                                <div class="progress" style="height: 15px;">
+                                    <div class="progress-bar bg-success"
+                                         style="width: @openPercentage%">
+                                        @openPercentage%
+                                    </div>
+                                </div>
+                            }
+                        </div>
+
+                        @{
+                            var proAtLimit = _subscription.ProModelLimit != -1 && _subscription.ProModelLimit > 0
+                                && (_subscription.ProModelUsed * 100 / _subscription.ProModelLimit) >= 80;
+                            var openAtLimit = _subscription.OpenModelLimit != -1 && _subscription.OpenModelLimit > 0
+                                && (_subscription.OpenModelUsed * 100 / _subscription.OpenModelLimit) >= 80;
                         }
-                        else
+                        @if (proAtLimit || openAtLimit)
+                        {
+                            <div class="alert alert-warning mb-3">
+                                <i class="bi bi-exclamation-triangle me-2"></i>
+                                You're approaching your monthly limit. Consider upgrading!
+                            </div>
+                        }
+
+                        @if (_subscription.ProModelLimit == -1 && _subscription.OpenModelLimit == -1)
                         {
                             <div class="alert alert-success mb-3">
                                 <i class="bi bi-infinity me-2"></i>
                                 Unlimited analyses available with your Enterprise plan
                             </div>
                         }
+
+                        <!-- Pay As You Go Section -->
+                        <div class="border-top pt-4 mt-4">
+                            <h6 class="mb-3"><i class="bi bi-lightning-charge me-2 text-warning"></i>Need More Credits?</h6>
+                            <p class="text-secondary small mb-2">Purchase additional credits instantly with Pay As You Go pricing.</p>
+                            <div class="alert alert-light border mb-3">
+                                <div class="fw-bold text-primary mb-1">Just ₹500</div>
+                                <small><i class="bi bi-star-fill text-warning me-1"></i>15 Pro Model Credits <span class="text-secondary">or</span> <i class="bi bi-cpu text-success me-1"></i>30 Open Model Credits</small>
+                            </div>
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-warning flex-fill" @onclick='() => BuyCredits("Pro")' disabled="@_buyingCredits">
+                                    @if (_buyingCredits && _selectedCreditType == "Pro")
+                                    {
+                                        <span class="spinner-border spinner-border-sm me-2"></span>
+                                    }
+                                    <i class="bi bi-star-fill me-1"></i>Buy 15 Pro Credits
+                                </button>
+                                <button class="btn btn-success flex-fill" @onclick='() => BuyCredits("Open")' disabled="@_buyingCredits">
+                                    @if (_buyingCredits && _selectedCreditType == "Open")
+                                    {
+                                        <span class="spinner-border spinner-border-sm me-2"></span>
+                                    }
+                                    <i class="bi bi-cpu me-1"></i>Buy 30 Open Credits
+                                </button>
+                            </div>
+                        </div>
 
                         <h6 class="mt-4 mb-3">Available Models:</h6>
                         <div class="d-flex flex-wrap gap-2">
@@ -127,16 +199,71 @@
                 </div>
             </div>
 
+            <!-- Enterprise Contact Form -->
+            @if (_subscription.PlanTier == PlanTier.Enterprise || _subscription.PlanName.Contains("Enterprise", StringComparison.OrdinalIgnoreCase))
+            {
+                <div class="col-lg-6">
+                    <div class="card shadow-lg h-100">
+                        <div class="card-header bg-gradient" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white;">
+                            <h5 class="mb-0"><i class="bi bi-headset me-2"></i>Contact Us</h5>
+                        </div>
+                        <div class="card-body">
+                            <p class="text-secondary mb-4">Have questions about your Enterprise plan? Our dedicated support team is here to help.</p>
+
+                            @if (_contactSubmitted)
+                            {
+                                <div class="alert alert-success">
+                                    <i class="bi bi-check-circle me-2"></i>
+                                    Thank you! Your message has been sent. Our team will get back to you shortly.
+                                </div>
+                            }
+                            else
+                            {
+                                <EditForm Model="_contactForm" OnValidSubmit="SubmitContactForm">
+                                    <DataAnnotationsValidator />
+
+                                    <div class="mb-3">
+                                        <label class="form-label">Subject</label>
+                                        <InputSelect @bind-Value="_contactForm.Subject" class="form-select">
+                                            <option value="">Select a topic...</option>
+                                            <option value="Billing">Billing Inquiry</option>
+                                            <option value="Technical">Technical Support</option>
+                                            <option value="Feature">Feature Request</option>
+                                            <option value="Other">Other</option>
+                                        </InputSelect>
+                                        <ValidationMessage For="@(() => _contactForm.Subject)" />
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label class="form-label">Message</label>
+                                        <InputTextArea @bind-Value="_contactForm.Message" class="form-control" rows="4" placeholder="How can we help you?" />
+                                        <ValidationMessage For="@(() => _contactForm.Message)" />
+                                    </div>
+
+                                    <button type="submit" class="btn btn-primary w-100" disabled="@_submittingContact">
+                                        @if (_submittingContact)
+                                        {
+                                            <span class="spinner-border spinner-border-sm me-2"></span>
+                                        }
+                                        <i class="bi bi-send me-2"></i>Send Message
+                                    </button>
+                                </EditForm>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+
             <!-- Payment History -->
             <div class="col-12">
                 <div class="card shadow-lg">
-                    <div class="card-header bg-gradient d-flex justify-content-between align-items-center" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white;">
+                    <div class="card-header bg-gradient d-flex justify-content-between align-items-center" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
                         <h5 class="mb-0"><i class="bi bi-receipt me-2"></i>Payment History</h5>
                     </div>
                     <div class="card-body p-0">
                         @if (_payments.Count == 0)
                         {
-                            <div class="text-center py-5 text-muted">
+                            <div class="text-center py-5 text-secondary">
                                 <i class="bi bi-inbox display-4"></i>
                                 <p class="mt-2">No payment history yet</p>
                             </div>
@@ -173,7 +300,7 @@
                                                     }
                                                     else
                                                     {
-                                                        <span class="text-muted">-</span>
+                                                        <span class="text-secondary">-</span>
                                                     }
                                                 </td>
                                             </tr>
@@ -194,12 +321,110 @@
     private List<PaymentHistoryDto> _payments = new();
     private bool _loading = true;
     private bool _cancelling = false;
+    private string _userName = "";
+    private string _userEmail = "";
+
+    // Pay As You Go
+    private bool _buyingCredits = false;
+    private string _selectedCreditType = "";
+    private DotNetObjectReference<Subscription>? _objRef;
+
+    // Contact form for Enterprise
+    private ContactFormModel _contactForm = new();
+    private bool _submittingContact = false;
+    private bool _contactSubmitted = false;
 
     protected override async Task OnInitializedAsync()
     {
+        _objRef = DotNetObjectReference.Create(this);
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        _userName = user.FindFirst("name")?.Value ?? user.FindFirst(ClaimTypes.Name)?.Value ?? "User";
+        _userEmail = user.FindFirst("email")?.Value ?? user.FindFirst(ClaimTypes.Email)?.Value ?? "";
+
         _subscription = await SubscriptionApi.GetCurrentSubscriptionAsync();
         _payments = await SubscriptionApi.GetPaymentHistoryAsync();
         _loading = false;
+    }
+
+    private async Task BuyCredits(string creditType)
+    {
+        try
+        {
+            _buyingCredits = true;
+            _selectedCreditType = creditType;
+            StateHasChanged();
+
+            var order = await SubscriptionApi.CreatePayAsYouGoOrderAsync(creditType);
+            await JS.InvokeVoidAsync("openPayAsYouGoCheckout", new
+            {
+                key = order.Key,
+                order_id = order.OrderId,
+                amount = order.Amount,
+                currency = order.Currency,
+                name = order.Name,
+                description = order.Description,
+                prefill = new
+                {
+                    email = order.Email,
+                    contact = order.Phone
+                }
+            }, _objRef);
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to initiate purchase: {ex.Message}");
+        }
+        finally
+        {
+            _buyingCredits = false;
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnPayAsYouGoSuccess(string paymentId, string orderId, string signature)
+    {
+        try
+        {
+            var result = await SubscriptionApi.VerifyPayAsYouGoAsync(paymentId, orderId, signature, _selectedCreditType);
+            Toast.ShowSuccess(result.Message);
+            Nav.NavigateTo("/subscription", forceLoad: true);
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Payment verification failed: {ex.Message}");
+        }
+    }
+
+    [JSInvokable]
+    public Task OnPayAsYouGoFailed(string error)
+    {
+        Toast.ShowError($"Payment failed: {error}");
+        return Task.CompletedTask;
+    }
+
+    private async Task SubmitContactForm()
+    {
+        _submittingContact = true;
+        StateHasChanged();
+
+        // Simulate API call - replace with actual endpoint
+        await Task.Delay(1000);
+
+        _contactSubmitted = true;
+        _submittingContact = false;
+        StateHasChanged();
+    }
+
+    private class ContactFormModel
+    {
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Please select a subject")]
+        public string Subject { get; set; } = "";
+
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Please enter your message")]
+        [System.ComponentModel.DataAnnotations.MinLength(10, ErrorMessage = "Message must be at least 10 characters")]
+        public string Message { get; set; } = "";
     }
 
     private async Task ConfirmCancel()
@@ -219,7 +444,7 @@
             }
             catch (Exception ex)
             {
-                await JS.InvokeVoidAsync("alert", $"Failed to cancel: {ex.Message}");
+                Toast.ShowError($"Failed to cancel: {ex.Message}");
             }
             finally
             {
@@ -244,4 +469,9 @@
         "Refunded" => "bg-info",
         _ => "bg-secondary"
     };
+
+    public async ValueTask DisposeAsync()
+    {
+        _objRef?.Dispose();
+    }
 }

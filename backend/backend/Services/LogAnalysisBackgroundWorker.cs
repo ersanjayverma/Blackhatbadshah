@@ -77,6 +77,7 @@ public class LogAnalysisBackgroundWorker : BackgroundService
         var config = scope.ServiceProvider.GetRequiredService<IConfiguration>();
         var analyzer = scope.ServiceProvider.GetRequiredService<ILogAnalyzer>();
         var hubNotification = scope.ServiceProvider.GetRequiredService<IHubNotificationService>();
+        var planEnforcement = scope.ServiceProvider.GetRequiredService<IPlanEnforcementService>();
 
         var storageRoot = config["Storage:RootPath"]
             ?? throw new InvalidOperationException("Storage:RootPath not configured");
@@ -203,6 +204,12 @@ public class LogAnalysisBackgroundWorker : BackgroundService
                 : analysisText;
 
             await db.SaveChangesAsync(cancellationToken);
+
+            // 9. Record usage only on successful analysis
+            if (report.Status == ReportStatus.Completed)
+            {
+                await planEnforcement.RecordAnalysisAsync(userId, model);
+            }
 
             await hubNotification.NotifyReportStatusChangedAsync(
                 userId, report.Id, report.Status);

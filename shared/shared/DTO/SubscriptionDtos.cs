@@ -80,3 +80,36 @@ public sealed class PaymentHistoryDto
     public DateTime PaymentDate { get; set; }
     public string? InvoiceId { get; set; }
 }
+
+public sealed class CreatePayAsYouGoRequest
+{
+    public string CreditType { get; set; } = "Pro"; // "Pro" for 15 pro credits, "Open" for 30 open model credits
+}
+
+public sealed class PayAsYouGoVerifyRequest
+{
+    public string RazorpayPaymentId { get; set; } = string.Empty;
+    public string RazorpayOrderId { get; set; } = string.Empty;
+    public string RazorpaySignature { get; set; } = string.Empty;
+    public string CreditType { get; set; } = "Pro"; // "Pro" for 15 pro credits, "Open" for 30 open model credits
+}
+
+public sealed class PayAsYouGoOrderDto
+{
+    public string OrderId { get; set; } = string.Empty;
+    public string Key { get; set; } = string.Empty;
+    public int Amount { get; set; }
+    public string Currency { get; set; } = "INR";
+    public string Name { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string? Phone { get; set; }
+    public string CreditType { get; set; } = string.Empty;
+}
+
+public sealed class PayAsYouGoResultDto
+{
+    public string Message { get; set; } = string.Empty;
+    public int ProCredits { get; set; }
+    public int OpenCredits { get; set; }
+}

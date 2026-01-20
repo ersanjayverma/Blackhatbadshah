@@ -1,0 +1,42 @@
+[Unit]
+Description=BHB Worker - Log Pusher and Metrics Service
+Documentation=https://github.com/blackhatbadshah/bhbworker
+After=network.target
+
+[Service]
+Type=notify
+WorkingDirectory=/opt/bhbworker
+ExecStart=/opt/bhbworker/BHBWorker
+Restart=always
+RestartSec=10
+KillSignal=SIGINT
+SyslogIdentifier=bhbworker
+User=bhbworker
+Group=bhbworker
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+
+# Allow read access to log files and system info
+ReadOnlyPaths=/var/log
+ReadOnlyPaths=/proc
+ReadOnlyPaths=/sys/class/net
+
+# Allow write access to working directory for worker ID file
+ReadWritePaths=/opt/bhbworker
+
+# Environment
+Environment=DOTNET_ENVIRONMENT=Production
+Environment=ASPNETCORE_ENVIRONMENT=Production
+
+[Install]
+WantedBy=multi-user.target

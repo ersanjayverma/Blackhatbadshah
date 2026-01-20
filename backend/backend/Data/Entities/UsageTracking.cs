@@ -9,6 +9,8 @@ public class UsageTracking
     public int AnalysisCount { get; set; }
     public int ProModelCount { get; set; }
     public int OpenModelCount { get; set; }
+    public int PurchasedProCredits { get; set; }
+    public int PurchasedOpenCredits { get; set; }
     public DateTime LastAnalysisAt { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }

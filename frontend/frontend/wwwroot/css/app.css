@@ -2353,8 +2353,82 @@ input[type="file"].form-control::file-selector-button:hover {
     .chart-container {
         padding: 1rem;
     }
-    
+
     .chart-container canvas {
         max-height: 300px;
+    }
+}
+
+/* ======================================================
+   DASHBOARD STYLES
+====================================================== */
+
+.stat-card {
+    background: var(--claude-surface);
+    border: 1px solid var(--border-subtle);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.stat-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+}
+
+.stat-icon {
+    font-size: 2.5rem;
+    margin-bottom: 0.5rem;
+    opacity: 0.9;
+}
+
+.stat-value {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+    color: #ffffff;
+}
+
+.stat-label {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-bottom: 0;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Dashboard chart container overrides */
+.dashboard-chart-container {
+    position: relative;
+    width: 100%;
+    background: var(--dark-bg);
+    border-radius: 8px;
+    padding: 1rem;
+}
+
+/* Responsive dashboard */
+@media (max-width: 992px) {
+    .stat-value {
+        font-size: 1.75rem;
+    }
+
+    .stat-icon {
+        font-size: 2rem;
+    }
+}
+
+@media (max-width: 576px) {
+    .stat-card .card-body {
+        padding: 1rem;
+    }
+
+    .stat-value {
+        font-size: 1.5rem;
+    }
+
+    .stat-icon {
+        font-size: 1.75rem;
+    }
+
+    .stat-label {
+        font-size: 0.75rem;
     }
 }

@@ -4,4 +4,5 @@ public interface IPlanEnforcementService
 {
     Task<(bool Allowed, string? Message)> CheckAnalysisAllowedAsync(string userId, string? requestedModel);
     Task RecordAnalysisAsync(string userId, string? model = null);
+    Task AddPurchasedCreditsAsync(string userId, int proCredits, int openCredits);
 }

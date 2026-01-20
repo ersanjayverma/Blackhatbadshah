@@ -1,107 +1,133 @@
 using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using shared.Dto;
 
 namespace backend.Services;
 
-public class KeycloakAdminService : IKeycloakAdminService
+public sealed class KeycloakAdminService : IKeycloakAdminService
 {
-    private readonly HttpClient _httpClient;
-    private readonly IConfiguration _config;
+    private readonly HttpClient _http;
     private readonly ILogger<KeycloakAdminService> _logger;
+
     private readonly string _realm;
-    private readonly string _adminUrl;
-    private string? _accessToken;
-    private DateTime _tokenExpiry = DateTime.MinValue;
+    private readonly string _clientId;
+    private readonly string _clientSecret;
 
-    public KeycloakAdminService(HttpClient httpClient, IConfiguration config, ILogger<KeycloakAdminService> logger)
+    private static string? _accessToken;
+    private static DateTime _expiresAtUtc;
+    private static readonly SemaphoreSlim _tokenLock = new(1, 1);
+
+    public KeycloakAdminService(
+        HttpClient http,
+        IConfiguration config,
+        ILogger<KeycloakAdminService> logger)
     {
-        _httpClient = httpClient;
-        _config = config;
+        _http = http;
         _logger = logger;
-        _realm = _config["Keycloak:Realm"] ?? "blackhatbadshah";
-        _adminUrl = _config["Keycloak:AdminUrl"] ?? "https://auth.blackhatbadshah.com";
+
+        _realm = config["Keycloak:Realm"]
+                 ?? throw new InvalidOperationException("Keycloak:Realm missing");
+
+        _clientId = config["Keycloak:AdminClientId"]
+                    ?? throw new InvalidOperationException("Keycloak:AdminClientId missing");
+
+        _clientSecret = config["Keycloak:AdminClientSecret"]
+                        ?? throw new InvalidOperationException("Keycloak:AdminClientSecret missing");
     }
 
-    private async Task EnsureAuthenticatedAsync()
+    // ---------------- TOKEN ----------------
+
+    private async Task<string> GetAccessTokenAsync()
     {
-        if (_accessToken != null && DateTime.UtcNow < _tokenExpiry)
-            return;
+        if (_accessToken != null && DateTime.UtcNow < _expiresAtUtc)
+            return _accessToken;
 
-        var tokenEndpoint = $"{_adminUrl}/realms/master/protocol/openid-connect/token";
-        var content = new FormUrlEncodedContent(new[]
-        {
-            new KeyValuePair<string, string>("grant_type", "client_credentials"),
-            new KeyValuePair<string, string>("client_id", _config["Keycloak:AdminClientId"]!),
-            new KeyValuePair<string, string>("client_secret", _config["Keycloak:AdminClientSecret"]!)
-        });
-
-        var response = await _httpClient.PostAsync(tokenEndpoint, content);
-        response.EnsureSuccessStatusCode();
-
-        var result = await response.Content.ReadFromJsonAsync<JsonElement>();
-        _accessToken = result.GetProperty("access_token").GetString();
-        var expiresIn = result.GetProperty("expires_in").GetInt32();
-        _tokenExpiry = DateTime.UtcNow.AddSeconds(expiresIn - 60);
-
-        _httpClient.DefaultRequestHeaders.Authorization =
-            new AuthenticationHeaderValue("Bearer", _accessToken);
-    }
-
-    public async Task UpdateUserSubscriptionAttributeAsync(string userId, string planName)
-    {
+        await _tokenLock.WaitAsync();
         try
         {
-            await EnsureAuthenticatedAsync();
+            if (_accessToken != null && DateTime.UtcNow < _expiresAtUtc)
+                return _accessToken;
 
-            var userUrl = $"{_adminUrl}/admin/realms/{_realm}/users/{userId}";
+            using var request = new HttpRequestMessage(
+                HttpMethod.Post,
+                $"realms/{_realm}/protocol/openid-connect/token");
 
-            var getResponse = await _httpClient.GetAsync(userUrl);
-            getResponse.EnsureSuccessStatusCode();
-            var user = await getResponse.Content.ReadFromJsonAsync<JsonElement>();
+            request.Content = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string,string>("grant_type", "client_credentials"),
+                new KeyValuePair<string,string>("client_id", _clientId),
+                new KeyValuePair<string,string>("client_secret", _clientSecret)
+            });
 
-            var attributes = user.TryGetProperty("attributes", out var existingAttrs)
-                ? JsonSerializer.Deserialize<Dictionary<string, List<string>>>(existingAttrs.GetRawText()) ?? new()
-                : new Dictionary<string, List<string>>();
+            request.Headers.Accept.Clear();
+            request.Headers.Accept.Add(
+                new MediaTypeWithQualityHeaderValue("application/json"));
 
-            attributes["plan"] = new List<string> { planName };
+            using var response = await _http.SendAsync(request);
 
-            var updatePayload = new { attributes };
-            var updateResponse = await _httpClient.PutAsJsonAsync(userUrl, updatePayload);
-            updateResponse.EnsureSuccessStatusCode();
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorBody = await response.Content.ReadAsStringAsync();
+                _logger.LogError(
+                    "Keycloak token request failed: {Status} - {Body}",
+                    response.StatusCode,
+                    errorBody);
+                throw new HttpRequestException(
+                    $"Keycloak token request failed: {response.StatusCode}");
+            }
 
-            _logger.LogInformation("Updated Keycloak user {UserId} subscription_plan to {PlanName}", userId, planName);
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+            _accessToken = doc.RootElement.GetProperty("access_token").GetString();
+            var expiresIn = doc.RootElement.GetProperty("expires_in").GetInt32();
+
+            _expiresAtUtc = DateTime.UtcNow.AddSeconds(expiresIn - 60);
+
+            return _accessToken!;
         }
-        catch (Exception ex)
+        finally
         {
-            _logger.LogError(ex, "Failed to update Keycloak user {UserId} subscription attribute", userId);
-            throw;
+            _tokenLock.Release();
         }
     }
+
+    private async Task<HttpRequestMessage> CreateAdminRequestAsync(
+        HttpMethod method,
+        string relativeUrl)
+    {
+        var token = await GetAccessTokenAsync();
+
+        var req = new HttpRequestMessage(method, relativeUrl);
+        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        return req;
+    }
+
+    // ---------------- PLAN READ ----------------
 
     public async Task<string> GetUserPlanAsync(string userId)
     {
         try
         {
-            await EnsureAuthenticatedAsync();
+            using var req = await CreateAdminRequestAsync(
+                HttpMethod.Get,
+                $"admin/realms/{_realm}/users/{userId}");
 
-            var userUrl = $"{_adminUrl}/admin/realms/{_realm}/users/{userId}";
-            var response = await _httpClient.GetAsync(userUrl);
+            using var res = await _http.SendAsync(req);
+            res.EnsureSuccessStatusCode();
 
-            if (!response.IsSuccessStatusCode)
+            using var doc = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
+
+            if (doc.RootElement.TryGetProperty("attributes", out var attrs) &&
+                attrs.TryGetProperty("plan", out var planArr) &&
+                planArr.ValueKind == JsonValueKind.Array &&
+                planArr.GetArrayLength() > 0)
             {
-                _logger.LogWarning("Failed to get user {UserId} from Keycloak, defaulting to Free plan", userId);
-                return PlanConstants.Plans.Free;
-            }
-
-            var user = await response.Content.ReadFromJsonAsync<JsonElement>();
-
-            if (user.TryGetProperty("attributes", out var attrs) &&
-                attrs.TryGetProperty("plan", out var planAttr) &&
-                planAttr.GetArrayLength() > 0)
-            {
-                var plan = planAttr[0].GetString();
-                if (!string.IsNullOrEmpty(plan))
+                var plan = planArr[0].GetString();
+                if (!string.IsNullOrWhiteSpace(plan))
                     return plan;
             }
 
@@ -109,47 +135,105 @@ public class KeycloakAdminService : IKeycloakAdminService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to get plan for user {UserId}, defaulting to Free", userId);
+            _logger.LogError(
+                ex,
+                "Failed to read Keycloak plan for user {UserId}",
+                userId);
+
             return PlanConstants.Plans.Free;
         }
     }
 
-    public async Task<string?> GetUserEmailAsync(string userId)
+    // ---------------- PLAN UPDATE ----------------
+
+    public async Task UpdateUserSubscriptionAttributeAsync(
+        string userId,
+        string planName)
     {
-        var userInfo = await GetUserInfoAsync(userId);
-        return userInfo?.Email;
+        using var getReq = await CreateAdminRequestAsync(
+            HttpMethod.Get,
+            $"admin/realms/{_realm}/users/{userId}");
+
+        using var getRes = await _http.SendAsync(getReq);
+        getRes.EnsureSuccessStatusCode();
+
+        using var userDoc =
+            JsonDocument.Parse(await getRes.Content.ReadAsStringAsync());
+
+        var attributes =
+            userDoc.RootElement.TryGetProperty("attributes", out var attrs)
+                ? JsonSerializer.Deserialize<Dictionary<string, List<string>>>(
+                      attrs.GetRawText()) ?? new()
+                : new();
+
+        attributes["plan"] = new List<string> { planName };
+
+        var payload = JsonSerializer.Serialize(new { attributes });
+
+        using var putReq = await CreateAdminRequestAsync(
+            HttpMethod.Put,
+            $"admin/realms/{_realm}/users/{userId}");
+
+        putReq.Content = new StringContent(
+            payload,
+            Encoding.UTF8,
+            "application/json");
+
+        using var putRes = await _http.SendAsync(putReq);
+        putRes.EnsureSuccessStatusCode();
     }
+
+    // ---------------- USER INFO ----------------
 
     public async Task<KeycloakUserInfo?> GetUserInfoAsync(string userId)
     {
         try
         {
-            await EnsureAuthenticatedAsync();
+            using var req = await CreateAdminRequestAsync(
+                HttpMethod.Get,
+                $"admin/realms/{_realm}/users/{userId}");
 
-            var userUrl = $"{_adminUrl}/admin/realms/{_realm}/users/{userId}";
-            var response = await _httpClient.GetAsync(userUrl);
-
-            if (!response.IsSuccessStatusCode)
+            using var res = await _http.SendAsync(req);
+            if (!res.IsSuccessStatusCode)
                 return null;
 
-            var user = await response.Content.ReadFromJsonAsync<JsonElement>();
+            using var doc =
+                JsonDocument.Parse(await res.Content.ReadAsStringAsync());
+
+            var root = doc.RootElement;
 
             return new KeycloakUserInfo
             {
-                Email = user.GetProperty("email").GetString() ?? string.Empty,
-                FirstName = user.TryGetProperty("firstName", out var fn) ? fn.GetString() : null,
-                LastName = user.TryGetProperty("lastName", out var ln) ? ln.GetString() : null,
-                Phone = user.TryGetProperty("attributes", out var attrs) &&
-                        attrs.TryGetProperty("phone", out var phone) &&
-                        phone.GetArrayLength() > 0
-                            ? phone[0].GetString()
-                            : null
+                Email = root.GetProperty("email").GetString() ?? string.Empty,
+                FirstName = root.TryGetProperty("firstName", out var fn)
+                    ? fn.GetString()
+                    : null,
+                LastName = root.TryGetProperty("lastName", out var ln)
+                    ? ln.GetString()
+                    : null,
+                Phone =
+                    root.TryGetProperty("attributes", out var attrs) &&
+                    attrs.TryGetProperty("phone", out var phoneArr) &&
+                    phoneArr.ValueKind == JsonValueKind.Array &&
+                    phoneArr.GetArrayLength() > 0
+                        ? phoneArr[0].GetString()
+                        : null
             };
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to get Keycloak user info for {UserId}", userId);
+            _logger.LogError(
+                ex,
+                "Failed to get Keycloak user info for {UserId}",
+                userId);
+
             return null;
         }
+    }
+
+    public async Task<string?> GetUserEmailAsync(string userId)
+    {
+        var info = await GetUserInfoAsync(userId);
+        return info?.Email;
     }
 }

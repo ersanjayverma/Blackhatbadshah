@@ -257,11 +257,10 @@ public class LogsController : ControllerBase
         var token = authHeader.StartsWith("Bearer ") ? authHeader[7..] : null;
         if (token == null) return Unauthorized();
 
-        // Record usage before queuing
-        await _planEnforcement.RecordAnalysisAsync(userId, request?.Model);
+        // Usage is recorded in LogAnalysisBackgroundWorker only after successful analysis
 
         await _analysisQueue.QueueAnalysisJobAsync(id, userId, token, request?.Model);
-        return Accepted();
+        return Accepted(new { message = "Analysis queued", logId = id });
     }
 
     // -----------------------------------------

@@ -1,0 +1,13 @@
+﻿{
+  "chartType": "ColumnChart",
+  "title": "SSH Login Attempts",
+  "xAxis": {
+    "labels": ["Failed", "Successful", "Throttled"]
+  },
+  "series": [
+    {
+      "name": "Count",
+      "values": [50, 1, 3]
+    }
+  ]
+}

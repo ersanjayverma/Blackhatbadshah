@@ -216,6 +216,18 @@ namespace backend.Migrations
                     b.Property<int>("Month")
                         .HasColumnType("int");
 
+                    b.Property<int>("OpenModelCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ProModelCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("PurchasedOpenCredits")
+                        .HasColumnType("int");
+
+                    b.Property<int>("PurchasedProCredits")
+                        .HasColumnType("int");
+
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime(6)");
 

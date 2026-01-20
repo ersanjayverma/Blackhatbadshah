@@ -18,6 +18,7 @@ public class HubConnectionService : IAsyncDisposable
     public event Action? OnReconnected;
     public event Action? OnReconnecting;
     public event Action<Exception?>? OnClosed;
+    public event Action<bool>? OnConnectionStateChanged;
 
     public async Task InitializeAsync(Func<Task<string?>> tokenProviderFunc)
     {
@@ -47,6 +48,7 @@ public class HubConnectionService : IAsyncDisposable
             _connection.Reconnecting += error =>
             {
                 OnReconnecting?.Invoke();
+                OnConnectionStateChanged?.Invoke(false);
                 return Task.CompletedTask;
             };
 
@@ -57,6 +59,7 @@ public class HubConnectionService : IAsyncDisposable
                 {
                     await _connection.InvokeAsync("JoinUserGroup");
                     OnReconnected?.Invoke();
+                    OnConnectionStateChanged?.Invoke(true);
                 }
                 catch (Exception ex)
                 {
@@ -67,6 +70,7 @@ public class HubConnectionService : IAsyncDisposable
             _connection.Closed += error =>
             {
                 OnClosed?.Invoke(error);
+                OnConnectionStateChanged?.Invoke(false);
                 _isStarted = false;
                 return Task.CompletedTask;
             };
@@ -89,6 +93,7 @@ public class HubConnectionService : IAsyncDisposable
             {
                 await _connection.StartAsync();
                 _isStarted = true;
+                OnConnectionStateChanged?.Invoke(true);
 
                 // Join user-specific group
                 await _connection.InvokeAsync("JoinUserGroup");
@@ -125,7 +130,23 @@ public class HubConnectionService : IAsyncDisposable
         return _connection.On(methodName, handler);
     }
 
+    public IDisposable On<T>(string methodName, Func<T, Task> handler)
+    {
+        if (_connection == null)
+            throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
+
+        return _connection.On(methodName, handler);
+    }
+
     public IDisposable On<T1, T2>(string methodName, Action<T1, T2> handler)
+    {
+        if (_connection == null)
+            throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
+
+        return _connection.On(methodName, handler);
+    }
+
+    public IDisposable On<T1, T2>(string methodName, Func<T1, T2, Task> handler)
     {
         if (_connection == null)
             throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
@@ -147,6 +168,54 @@ public class HubConnectionService : IAsyncDisposable
             throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
 
         return _connection.On(methodName, handler);
+    }
+
+    public IDisposable On(string methodName, Func<Task> handler)
+    {
+        if (_connection == null)
+            throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
+
+        return _connection.On(methodName, handler);
+    }
+
+    public async Task InvokeAsync(string methodName)
+    {
+        if (_connection == null)
+            throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
+
+        await _connection.InvokeAsync(methodName);
+    }
+
+    public async Task InvokeAsync<T>(string methodName, T arg)
+    {
+        if (_connection == null)
+            throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
+
+        await _connection.InvokeAsync(methodName, arg);
+    }
+
+    public async Task InvokeAsync<T1, T2>(string methodName, T1 arg1, T2 arg2)
+    {
+        if (_connection == null)
+            throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
+
+        await _connection.InvokeAsync(methodName, arg1, arg2);
+    }
+
+    public async Task<TResult> InvokeAsync<TResult>(string methodName)
+    {
+        if (_connection == null)
+            throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
+
+        return await _connection.InvokeAsync<TResult>(methodName);
+    }
+
+    public async Task<TResult> InvokeAsync<TResult, T>(string methodName, T arg)
+    {
+        if (_connection == null)
+            throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
+
+        return await _connection.InvokeAsync<TResult>(methodName, arg);
     }
 
     public async ValueTask DisposeAsync()

@@ -40,14 +40,20 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
         options.Authority = "https://auth.blackhatbadshah.com/realms/blackhatbadshah";
-        options.Audience = "blackhatbadshah-api";
+ 
         options.RequireHttpsMetadata = true;
 
         options.TokenValidationParameters = new TokenValidationParameters
         {
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateLifetime = true
+            ValidAudiences = new[]
+                {
+                    "blackhatbadshah-api",
+                    "account"
+                },
+            ValidateIssuer = true,       
+            ValidateAudience = true,    
+            ValidateLifetime = true,
+            NameClaimType = "sub"
         };
 
         // ✅ Enable SignalR authentication from query string
@@ -71,16 +77,39 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 
 builder.Services.AddSingleton<ITextractService, TextractService>();
-builder.Services.AddScoped<IHubNotificationService, HubNotificationService>();
+builder.Services.AddSingleton<IHubNotificationService, HubNotificationService>();
 builder.Services.AddSingleton<ILogAnalysisQueue, LogAnalysisQueue>();
 builder.Services.AddHostedService<LogAnalysisBackgroundWorker>();
+
+// Live Log Services
+builder.Services.AddSingleton<ILiveLogBuffer, LiveLogBuffer>();
+builder.Services.AddSingleton<ILiveLogAnalysisQueue, LiveLogAnalysisQueue>();
+builder.Services.AddHostedService<LiveLogAnalysisBackgroundWorker>();
 builder.Services.AddHttpContextAccessor();
 
 // Subscription & Payment Services
 builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
 builder.Services.AddScoped<IPlanEnforcementService, PlanEnforcementService>();
 builder.Services.AddHttpClient<IRazorpayService, RazorpayService>();
-builder.Services.AddHttpClient<IKeycloakAdminService, KeycloakAdminService>();
+builder.Services.AddHttpClient<IKeycloakAdminService, KeycloakAdminService>(c =>
+{
+    c.BaseAddress = new Uri(
+        builder.Configuration["Keycloak:AdminUrl"]?.TrimEnd('/') + "/"
+        ?? "https://auth.blackhatbadshah.com/");
+    c.DefaultRequestHeaders.Accept.Add(
+        new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("Backend/1.0");
+    c.DefaultRequestVersion = System.Net.HttpVersion.Version20;
+    c.DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower;
+})
+.ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+{
+    SslOptions = new System.Net.Security.SslClientAuthenticationOptions
+    {
+        RemoteCertificateValidationCallback = (sender, cert, chain, errors) => true
+    },
+    EnableMultipleHttp2Connections = true
+});
 
 builder.Services.AddTransient<ForwardAuthHeaderHandler>();
 builder.Services.AddHttpClient<ILogAnalyzer, LogAnalyzer>((sp, client) =>
@@ -103,12 +132,22 @@ using (var scope = app.Services.CreateScope())
     var plansConfig = scope.ServiceProvider.GetRequiredService<IOptions<PlansConfiguration>>().Value;
     await DbInitializer.InitializeAsync(dbContext, plansConfig);
 }
-
+app.UseRouting();
 app.UseCors("AllowFrontend");
+app.Use(async (context, next) =>
+{
+    if (context.Request.Method == HttpMethods.Options)
+    {
+        context.Response.StatusCode = StatusCodes.Status204NoContent;
+        return;
+    }
+
+    await next();
+});
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapControllers();
+app.MapControllers().RequireCors("AllowFrontend");;
 
 // -------------------- OpenAPI + Scalar --------------------
 if (app.Environment.IsDevelopment())
@@ -123,5 +162,6 @@ if (app.Environment.IsDevelopment())
             .EnablePersistentAuthentication(); // ✅ new API
     });
 }
-app.MapHub<DataHub>("/hubs/data");
+app.MapHub<DataHub>("/hubs/data").RequireCors("AllowFrontend");
+app.MapHub<LiveLogHub>("/hubs/livelog").RequireCors("AllowFrontend").AllowAnonymous();
 app.Run();

@@ -1,0 +1,13 @@
+﻿{
+  "chartType": "ColumnChart",
+  "title": "Log Events by Type",
+  "xAxis": {
+    "labels": ["Rsyslog Susp", "Firewall Block", "SSH Closed", "Log Resume"]
+  },
+  "series": [
+    {
+      "name": "Count",
+      "values": [6, 2, 1, 6]
+    }
+  ]
+}

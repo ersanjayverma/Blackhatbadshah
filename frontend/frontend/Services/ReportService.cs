@@ -12,6 +12,17 @@ public class ReportService
         _http = http;
     }
 
+    private static async Task EnsureSuccessOrThrowWithBody(HttpResponseMessage response)
+    {
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync();
+            throw new HttpRequestException(string.IsNullOrWhiteSpace(errorBody)
+                ? $"Request failed with status {(int)response.StatusCode}"
+                : errorBody);
+        }
+    }
+
     // -------------------------------------------------
     // GET /api/reports
     // List current user's reports
@@ -38,7 +49,7 @@ public class ReportService
     public async Task<Stream> DownloadAsync(Guid id)
     {
         var response = await _http.GetAsync($"/api/reports/{id}/download");
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessOrThrowWithBody(response);
         return await response.Content.ReadAsStreamAsync();
     }
 
@@ -49,7 +60,7 @@ public class ReportService
     public async Task DeleteAsync(Guid id)
     {
         var response = await _http.DeleteAsync($"/api/reports/{id}");
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessOrThrowWithBody(response);
     }
 
     // -------------------------------------------------
@@ -59,7 +70,7 @@ public class ReportService
     public async Task<int> DeleteAllAsync()
     {
         var response = await _http.DeleteAsync("/api/reports/all");
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessOrThrowWithBody(response);
 
         var result = await response.Content.ReadFromJsonAsync<DeleteAllResponse>();
         return result?.Deleted ?? 0;

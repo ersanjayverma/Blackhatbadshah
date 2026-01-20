@@ -2,9 +2,11 @@
 @using shared.Dto
 @using frontend.Services
 @using Microsoft.AspNetCore.Components.Authorization
+@using System.Net.Http
 @inject SubscriptionService SubscriptionApi
 @inject IJSRuntime JS
 @inject NavigationManager Nav
+@inject ToastService Toast
 @implements IAsyncDisposable
 
 <PageTitle>Pricing - Blackhatbadshah</PageTitle>
@@ -12,15 +14,15 @@
 <div class="container-fluid px-4 py-5">
     <div class="text-center mb-5">
         <h1 class="display-4 fw-bold">Choose Your Plan</h1>
-        <p class="lead text-muted">Scale your log analysis capabilities with our flexible pricing</p>
+        <p class="lead text-secondary">Scale your log analysis capabilities with our flexible pricing</p>
 
         <div class="d-flex justify-content-center align-items-center gap-3 mt-4">
-            <span class="@(_billingPeriod == "Monthly" ? "fw-bold" : "text-muted")">Monthly</span>
+            <span class="@(_billingPeriod == "Monthly" ? "fw-bold" : "text-secondary")">Monthly</span>
             <div class="form-check form-switch form-switch-lg">
                 <input class="form-check-input" type="checkbox" style="width: 3rem; height: 1.5rem;"
                        @bind="_isYearly" @bind:after="OnBillingToggle" />
             </div>
-            <span class="@(_billingPeriod == "Yearly" ? "fw-bold" : "text-muted")">
+            <span class="@(_billingPeriod == "Yearly" ? "fw-bold" : "text-secondary")">
                 Yearly <span class="badge bg-success">Save 20%</span>
             </span>
         </div>
@@ -37,20 +39,35 @@
         <div class="row g-4 justify-content-center">
             @foreach (var plan in _plans)
             {
-                <div class="col-lg-4 col-md-6">
-                    <div class="card h-100 @(plan.Name == "Pro" ? "border-primary shadow-lg" : "shadow")" style="@(plan.Name == "Pro" ? "border-width: 2px;" : "")">
-                        @if (plan.Name == "Pro")
-                        {
-                            <div class="card-header bg-primary text-white text-center py-2">
-                                <small class="fw-bold text-uppercase">Most Popular</small>
-                            </div>
-                        }
-                        <div class="card-body p-4">
+                <div class="col-lg-4 col-md-6 d-flex">
+                    <div class="card h-100 w-100 @(plan.Name == "Pro" ? "border-primary shadow-lg" : "shadow")" style="@(plan.Name == "Pro" ? "border-width: 2px;" : "")">
+                        <div class="card-header text-center py-2 @(plan.Name == "Pro" ? "bg-primary text-white" : plan.Name == "Enterprise" ? "bg-dark text-white" : "bg-light")">
+                            <small class="fw-bold text-uppercase">
+                                @if (plan.Name == "Pro")
+                                {
+                                    <text>Most Popular</text>
+                                }
+                                else if (plan.Name == "Enterprise")
+                                {
+                                    <text>For Teams</text>
+                                }
+                                else
+                                {
+                                    <text>Get Started</text>
+                                }
+                            </small>
+                        </div>
+                        <div class="card-body p-4 d-flex flex-column">
                             <h3 class="card-title fw-bold">@plan.Name</h3>
-                            <p class="text-muted">@plan.Description</p>
+                            <p class="text-secondary">@plan.Description</p>
 
                             <div class="my-4">
-                                @if (plan.PriceMonthly == 0)
+                                @if (plan.Name == "Enterprise")
+                                {
+                                    <span class="display-4 fw-bold">Custom</span>
+                                    <div class="text-secondary small">Contact us for pricing</div>
+                                }
+                                else if (plan.PriceMonthly == 0)
                                 {
                                     <span class="display-4 fw-bold">Free</span>
                                 }
@@ -59,7 +76,7 @@
                                     <span class="display-4 fw-bold">
                                         ₹@((_isYearly ? plan.PriceYearly / 12 : plan.PriceMonthly).ToString("N0"))
                                     </span>
-                                    <span class="text-muted">/month</span>
+                                    <span class="text-secondary">/month</span>
                                     @if (_isYearly)
                                     {
                                         <div class="text-success small">Billed ₹@plan.PriceYearly.ToString("N0") yearly</div>
@@ -67,7 +84,7 @@
                                 }
                             </div>
 
-                            <ul class="list-unstyled mb-4">
+                            <ul class="list-unstyled mb-4 flex-grow-1">
                                 @foreach (var feature in plan.Features)
                                 {
                                     <li class="mb-2">
@@ -76,47 +93,113 @@
                                 }
                             </ul>
 
-                            @if (plan.IsCurrentPlan)
-                            {
-                                <button class="btn btn-outline-success btn-lg w-100" disabled>
-                                    <i class="bi bi-check-lg me-2"></i>Current Plan
-                                </button>
-                            }
-                            else if (plan.PriceMonthly == 0)
-                            {
-                                <button class="btn btn-outline-secondary btn-lg w-100" disabled>
-                                    Free Tier
-                                </button>
-                            }
-                            else
-                            {
-                                <AuthorizeView>
-                                    <Authorized>
-                                        <button class="btn @(plan.Name == "Pro" ? "btn-primary" : "btn-outline-primary") btn-lg w-100"
-                                                @onclick="() => StartCheckout(plan)"
-                                                disabled="@_checkoutLoading">
-                                            @if (_checkoutLoading && _selectedPlanId == plan.Id)
-                                            {
-                                                <span class="spinner-border spinner-border-sm me-2"></span>
-                                            }
-                                            else
-                                            {
-                                                <i class="bi bi-credit-card me-2"></i>
-                                            }
-                                            Subscribe
-                                        </button>
-                                    </Authorized>
-                                    <NotAuthorized>
-                                        <a href="login" class="btn @(plan.Name == "Pro" ? "btn-primary" : "btn-outline-primary") btn-lg w-100">
-                                            <i class="bi bi-box-arrow-in-right me-2"></i>Login to Subscribe
-                                        </a>
-                                    </NotAuthorized>
-                                </AuthorizeView>
-                            }
+                            <div class="mt-auto">
+                                @if (plan.IsCurrentPlan)
+                                {
+                                    <button class="btn btn-success btn-lg w-100" disabled>
+                                        <i class="bi bi-check-circle-fill me-2"></i>Already Active
+                                    </button>
+                                }
+                                else if (plan.Name == "Enterprise")
+                                {
+                                    <a href="/contact" class="btn btn-dark btn-lg w-100">
+                                        <i class="bi bi-envelope me-2"></i>Contact Us
+                                    </a>
+                                }
+                                else if (plan.PriceMonthly == 0)
+                                {
+                                    <button class="btn btn-outline-secondary btn-lg w-100" disabled>
+                                        Free Tier
+                                    </button>
+                                }
+                                else
+                                {
+                                    <AuthorizeView>
+                                        <Authorized>
+                                            <button class="btn @(plan.Name == "Pro" ? "btn-primary" : "btn-outline-primary") btn-lg w-100"
+                                                    @onclick="() => StartCheckout(plan)"
+                                                    disabled="@_checkoutLoading">
+                                                @if (_checkoutLoading && _selectedPlanId == plan.Id)
+                                                {
+                                                    <span class="spinner-border spinner-border-sm me-2"></span>
+                                                }
+                                                else
+                                                {
+                                                    <i class="bi bi-credit-card me-2"></i>
+                                                }
+                                                Subscribe
+                                            </button>
+                                        </Authorized>
+                                        <NotAuthorized>
+                                            <a href="/login" class="btn @(plan.Name == "Pro" ? "btn-primary" : "btn-outline-primary") btn-lg w-100">
+                                                <i class="bi bi-box-arrow-in-right me-2"></i>Login to Subscribe
+                                            </a>
+                                        </NotAuthorized>
+                                    </AuthorizeView>
+                                }
+                            </div>
                         </div>
                     </div>
                 </div>
             }
+        </div>
+
+        <!-- Pay As You Go Section -->
+        <div class="row mt-5">
+            <div class="col-12">
+                <div class="card shadow border-0" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                    <div class="card-body p-4 text-white">
+                        <div class="row align-items-center">
+                            <div class="col-lg-5">
+                                <h4 class="fw-bold mb-2">
+                                    <i class="bi bi-lightning-charge-fill me-2"></i>Pay As You Go
+                                </h4>
+                                <p class="mb-0 opacity-75">
+                                    Need extra credits without a subscription? Purchase credits instantly and use them whenever you need.
+                                    No commitment, pay only for what you use.
+                                </p>
+                            </div>
+                            <div class="col-lg-3 mt-3 mt-lg-0">
+                                <div class="bg-white bg-opacity-25 rounded p-3 text-center">
+                                    <div class="display-6 fw-bold">₹500</div>
+                                    <div class="small">
+                                        <i class="bi bi-star-fill text-warning me-1"></i>15 Pro Credits<br/>
+                                        <span class="opacity-75">or</span><br/>
+                                        <i class="bi bi-cpu me-1"></i>30 Open Credits
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-lg-4 mt-3 mt-lg-0">
+                                <AuthorizeView>
+                                    <Authorized>
+                                        <div class="d-flex flex-column gap-2">
+                                            <button class="btn btn-warning btn-lg" @onclick='() => BuyCredits("Pro")' disabled="@_paygLoading">
+                                                @if (_paygLoading && _selectedCreditType == "Pro")
+                                                {
+                                                    <span class="spinner-border spinner-border-sm me-2"></span>
+                                                }
+                                                <i class="bi bi-star-fill me-2"></i>Buy 15 Pro Credits
+                                            </button>
+                                            <button class="btn btn-light btn-lg" @onclick='() => BuyCredits("Open")' disabled="@_paygLoading">
+                                                @if (_paygLoading && _selectedCreditType == "Open")
+                                                {
+                                                    <span class="spinner-border spinner-border-sm me-2"></span>
+                                                }
+                                                <i class="bi bi-cpu me-2"></i>Buy 30 Open Credits
+                                            </button>
+                                        </div>
+                                    </Authorized>
+                                    <NotAuthorized>
+                                        <a href="/login" class="btn btn-light btn-lg w-100">
+                                            <i class="bi bi-box-arrow-in-right me-2"></i>Login to Purchase
+                                        </a>
+                                    </NotAuthorized>
+                                </AuthorizeView>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     }
 </div>
@@ -129,6 +212,10 @@
     private Guid? _selectedPlanId;
     private string _billingPeriod => _isYearly ? "Yearly" : "Monthly";
     private DotNetObjectReference<Pricing>? _objRef;
+
+    // Pay As You Go
+    private bool _paygLoading = false;
+    private string _selectedCreditType = "";
 
     protected override async Task OnInitializedAsync()
     {
@@ -150,9 +237,14 @@
             var checkout = await SubscriptionApi.InitiateCheckoutAsync(plan.Id, _billingPeriod);
             await OpenRazorpayCheckout(checkout);
         }
+        catch (HttpRequestException ex)
+        {
+            Toast.ShowError($"Checkout failed: {ex.Message}. Please try again.");
+        }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Checkout failed: {ex.Message}");
+            Console.WriteLine($"Checkout error: {ex}");
+            Toast.ShowError("Checkout failed. Please try again or contact support.");
         }
         finally
         {
@@ -193,14 +285,73 @@
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Payment verification failed: {ex.Message}");
+            Toast.ShowError($"Payment verification failed: {ex.Message}");
         }
     }
 
     [JSInvokable]
-    public async Task OnPaymentFailed(string error)
+    public Task OnPaymentFailed(string error)
     {
-        await JS.InvokeVoidAsync("alert", $"Payment failed: {error}");
+        Toast.ShowError($"Payment failed: {error}");
+        return Task.CompletedTask;
+    }
+
+    // Pay As You Go methods
+    private async Task BuyCredits(string creditType)
+    {
+        try
+        {
+            _paygLoading = true;
+            _selectedCreditType = creditType;
+            StateHasChanged();
+
+            var order = await SubscriptionApi.CreatePayAsYouGoOrderAsync(creditType);
+            await JS.InvokeVoidAsync("openPayAsYouGoCheckout", new
+            {
+                key = order.Key,
+                order_id = order.OrderId,
+                amount = order.Amount,
+                currency = order.Currency,
+                name = order.Name,
+                description = order.Description,
+                prefill = new
+                {
+                    email = order.Email,
+                    contact = order.Phone
+                }
+            }, _objRef);
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to initiate purchase: {ex.Message}");
+        }
+        finally
+        {
+            _paygLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnPayAsYouGoSuccess(string paymentId, string orderId, string signature)
+    {
+        try
+        {
+            var result = await SubscriptionApi.VerifyPayAsYouGoAsync(paymentId, orderId, signature, _selectedCreditType);
+            Toast.ShowSuccess(result.Message);
+            Nav.NavigateTo("/subscription", forceLoad: true);
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Payment verification failed: {ex.Message}");
+        }
+    }
+
+    [JSInvokable]
+    public Task OnPayAsYouGoFailed(string error)
+    {
+        Toast.ShowError($"Payment failed: {error}");
+        return Task.CompletedTask;
     }
 
     public async ValueTask DisposeAsync()

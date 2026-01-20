@@ -72,6 +72,7 @@ builder.Services.AddSingleton(sp =>
 builder.Services.AddSingleton<ITextractService, TextractService>();
 builder.Services.AddScoped<IHubNotificationService, HubNotificationService>();
 builder.Services.AddSingleton<ILogAnalysisQueue, LogAnalysisQueue>();
+builder.Services.AddSingleton<ITokenValidationService, TokenValidationService>();
 builder.Services.AddHostedService<LogAnalysisBackgroundWorker>();
 builder.Services.AddHttpContextAccessor();
 

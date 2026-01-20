@@ -12,15 +12,18 @@ public class LogAnalysisBackgroundWorker : BackgroundService
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogAnalysisQueue _queue;
     private readonly ILogger<LogAnalysisBackgroundWorker> _logger;
+    private readonly ITokenValidationService _tokenValidationService;
 
     public LogAnalysisBackgroundWorker(
         IServiceProvider serviceProvider,
         ILogAnalysisQueue queue,
-        ILogger<LogAnalysisBackgroundWorker> logger)
+        ILogger<LogAnalysisBackgroundWorker> logger,
+        ITokenValidationService tokenValidationService)
     {
         _serviceProvider = serviceProvider;
         _queue = queue;
         _logger = logger;
+        _tokenValidationService = tokenValidationService;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -40,6 +43,24 @@ public class LogAnalysisBackgroundWorker : BackgroundService
 
                 _logger.LogInformation("Processing analysis job for LogId: {LogId}, UserId: {UserId}, Model: {Model}",
                     logId, userId, model ?? ModelMapping.DefaultModel);
+
+                // ✅ SECURITY: Validate that the userId in the token matches the queued userId
+                var tokenUserId = _tokenValidationService.ExtractUserId(accessToken);
+                if (string.IsNullOrEmpty(tokenUserId))
+                {
+                    _logger.LogError("Failed to extract userId from access token for LogId: {LogId}", logId);
+                    continue; // Skip this job - invalid token
+                }
+
+                if (tokenUserId != userId)
+                {
+                    _logger.LogError(
+                        "SECURITY VIOLATION: Token userId ({TokenUserId}) does not match queued userId ({QueuedUserId}) for LogId: {LogId}",
+                        tokenUserId, userId, logId);
+                    continue; // Skip this job - potential security breach
+                }
+
+                _logger.LogInformation("Token validation successful: userId matches for LogId: {LogId}", logId);
 
                 // ✅ Set user's token in async context for handler to use
                 TokenContextService.CurrentToken = accessToken;

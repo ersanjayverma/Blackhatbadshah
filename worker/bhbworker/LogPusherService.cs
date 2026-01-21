@@ -444,6 +444,8 @@ public class LogPusherService : BackgroundService
                 await RegisterWorkerAsync();
                 // Push a single metric to mark worker as online in backend registry
                 await PushMetrics();
+                // Start metrics and monitor loops after successful connection
+                StartMetricsAndMonitor(CancellationToken.None);
             }
             catch (Exception ex)
             {

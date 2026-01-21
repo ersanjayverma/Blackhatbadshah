@@ -683,7 +683,7 @@
     private async Task StartSignalR()
     {
         _hubConnection = new HubConnectionBuilder()
-            .WithUrl(Navigation.ToAbsoluteUri("/liveloghub"))
+            .WithUrl(Navigation.ToAbsoluteUri("/hubs/livelog"))
             .Build();
 
         _liveLogSub = _hubConnection.On<object>("LiveLogUpdate", (update) =>

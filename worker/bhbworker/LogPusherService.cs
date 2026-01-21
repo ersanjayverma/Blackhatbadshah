@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.AspNetCore.SignalR.Client;
+using System.Net.Sockets;
 namespace BHBWorker;
 
 public class LogPusherService : BackgroundService
@@ -26,11 +27,69 @@ public class LogPusherService : BackgroundService
     private readonly TimeSpan _systemMonitorInterval = TimeSpan.FromSeconds(2);
     private CancellationTokenSource? _metricsCts;
     private SystemMonitorService? _systemMonitorService;
+    private Task? _metricsTask;
+    private Task? _systemMonitorTask;
 
     public LogPusherService(IConfiguration config, ILogger<LogPusherService> logger)
     {
         _config = config;
         _logger = logger;
+    }
+
+    private void StartMetricsAndMonitor(CancellationToken ct)
+    {
+        // Cancel any previous
+        if (_metricsCts != null)
+        {
+            try { _metricsCts.Cancel(); } catch { }
+            _metricsCts.Dispose();
+            _metricsCts = null;
+        }
+
+        _metricsCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var linked = _metricsCts.Token;
+
+        // Start background loops if not already running
+        if (_metricsTask == null || _metricsTask.IsCompleted)
+        {
+            _metricsTask = Task.Run(() => RunMetricsLoop(linked), linked);
+        }
+
+        if (_systemMonitorTask == null || _systemMonitorTask.IsCompleted)
+        {
+            _systemMonitorTask = Task.Run(() => RunSystemMonitorLoop(linked), linked);
+        }
+    }
+
+    private async Task StopMetricsAndMonitorAsync()
+    {
+        if (_metricsCts != null)
+        {
+            try
+            {
+                _metricsCts.Cancel();
+            }
+            catch { }
+
+            try
+            {
+                if (_metricsTask != null)
+                    await _metricsTask.ConfigureAwait(false);
+            }
+            catch { }
+
+            try
+            {
+                if (_systemMonitorTask != null)
+                    await _systemMonitorTask.ConfigureAwait(false);
+            }
+            catch { }
+
+            _metricsCts.Dispose();
+            _metricsCts = null;
+            _metricsTask = null;
+            _systemMonitorTask = null;
+        }
     }
 
     private string GetOrCreateWorkerId()
@@ -93,20 +152,23 @@ public class LogPusherService : BackgroundService
         {
             try
             {
+                // Check if hub host is reachable before attempting to connect. This prevents tight reconnect loops
+                // when network or DNS is down.
+                if (!await IsHubHostReachableAsync(hubUrl, 3000, stoppingToken))
+                {
+                    _logger.LogWarning("LiveLogHub host not reachable, will retry in {Delay}ms", reconnectDelay);
+                    await Task.Delay(reconnectDelay, stoppingToken);
+                    continue;
+                }
+
                 await ConnectToHub(hubUrl, psk, apiKey, _workerId, reconnectDelay, stoppingToken);
 
-                if (_connection?.State == HubConnectionState.Connected)
+                // Do not start log streaming or metrics automatically.
+                // Worker will push data only in response to explicit hub requests.
+                // Wait here until connection is lost or stoppingToken is cancelled.
+                while (!stoppingToken.IsCancellationRequested && _connection != null && _connection.State == HubConnectionState.Connected)
                 {
-                    // Start metrics reporting and system monitor in parallel
-                    _metricsCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-                    var metricsTask = RunMetricsLoop(_metricsCts.Token);
-                    var systemMonitorTask = RunSystemMonitorLoop(_metricsCts.Token);
-
-                    await TailAndPushLogs(logPaths, batchSize, batchDelayMs, model, stoppingToken);
-
-                    _metricsCts.Cancel();
-                    try { await metricsTask; } catch (OperationCanceledException) { }
-                    try { await systemMonitorTask; } catch (OperationCanceledException) { }
+                    await Task.Delay(1000, stoppingToken);
                 }
             }
             catch (Exception ex)
@@ -115,6 +177,29 @@ public class LogPusherService : BackgroundService
                 await Task.Delay(reconnectDelay, stoppingToken);
             }
         }
+    }
+
+    private static async Task<bool> IsHubHostReachableAsync(string hubUrl, int timeoutMs, CancellationToken ct)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(hubUrl)) return false;
+            var uri = new Uri(hubUrl);
+            var host = uri.Host;
+            var port = uri.Port > 0 ? uri.Port : (uri.Scheme == "https" ? 443 : 80);
+
+            using var tcp = new TcpClient();
+            var connectTask = tcp.ConnectAsync(host, port);
+            var delayTask = Task.Delay(timeoutMs, ct);
+            var finished = await Task.WhenAny(connectTask, delayTask);
+            if (finished == connectTask && tcp.Connected)
+            {
+                try { tcp.Close(); } catch { }
+                return true;
+            }
+        }
+        catch { }
+        return false;
     }
 
     private async Task RunMetricsLoop(CancellationToken ct)
@@ -126,6 +211,11 @@ public class LogPusherService : BackgroundService
             try
             {
                 await Task.Delay(_metricsInterval, ct);
+                if (_connection == null || _connection.State != HubConnectionState.Connected)
+                {
+                    _logger.LogDebug("[Metrics] Connection not active, skipping metrics push.");
+                    break;
+                }
                 await PushMetrics();
             }
             catch (OperationCanceledException)
@@ -148,6 +238,11 @@ public class LogPusherService : BackgroundService
             try
             {
                 await Task.Delay(_systemMonitorInterval, ct);
+                if (_connection == null || _connection.State != HubConnectionState.Connected)
+                {
+                    _logger.LogDebug("[SystemMonitor] Connection not active, skipping system monitor push.");
+                    break;
+                }
                 await PushSystemMonitorData();
             }
             catch (OperationCanceledException)
@@ -254,7 +349,8 @@ public class LogPusherService : BackgroundService
                 _logger.LogInformation("Reconnecting existing connection...");
                 await _connection.StartAsync(ct);
                 _logger.LogInformation("Reconnected successfully!");
-                await PushMetrics();
+                // Re-register after a successful restart to ensure backend has latest metadata
+                try { await RegisterWorkerAsync(); } catch (Exception ex) { _logger.LogDebug(ex, "Failed to re-register after reconnect"); }
                 return;
             }
             catch (Exception ex)
@@ -271,8 +367,8 @@ public class LogPusherService : BackgroundService
         
         if (useApiKey)
         {
-            // API Key authentication - pass workerId in query, key in header
-            fullUrl = $"{hubUrl}?workerId={Uri.EscapeDataString(workerId)}";
+            // API Key authentication - include workerId and apiKey in query for WebSocket transport
+            fullUrl = $"{hubUrl}?workerId={Uri.EscapeDataString(workerId)}&workerKey={Uri.EscapeDataString(apiKey)}";
             _logger.LogInformation("Using API Key authentication for worker {WorkerId}", workerId);
         }
         else
@@ -287,7 +383,8 @@ public class LogPusherService : BackgroundService
             {
                 if (useApiKey)
                 {
-                    options.Headers.Add("X-Worker-Key", apiKey);
+                    // Add header for transports that support it; also include in query for WebSockets
+                    try { options.Headers.Add("X-Worker-Key", apiKey); } catch { }
                 }
             })
             .WithAutomaticReconnect([TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(30)])
@@ -297,8 +394,43 @@ public class LogPusherService : BackgroundService
         {
             _logger.LogInformation("Connected to hub: {Data}", data);
 
-            // Register worker with detailed information
-            await RegisterWorkerAsync();
+            try
+            {
+                // If server returned a canonical WorkerId, adopt and persist it
+                try
+                {
+                    if (data is System.Text.Json.JsonElement je && je.ValueKind == System.Text.Json.JsonValueKind.Object)
+                    {
+                        if (je.TryGetProperty("WorkerId", out var prop) && prop.ValueKind == System.Text.Json.JsonValueKind.String)
+                        {
+                            var supplied = prop.GetString();
+                            if (!string.IsNullOrEmpty(supplied) && supplied != _workerId)
+                            {
+                                _workerId = supplied;
+                                try
+                                {
+                                    File.WriteAllText(Path.Combine(Directory.GetCurrentDirectory(), WorkerIdFileName), _workerId);
+                                    _logger.LogInformation("Adopted WorkerId from server and persisted: {WorkerId}", _workerId);
+                                }
+                                catch (Exception ex)
+                                {
+                                    _logger.LogWarning(ex, "Failed to persist WorkerId to disk");
+                                }
+                            }
+                        }
+                    }
+                }
+                catch { }
+
+                // Send registration metadata so the backend/frontend know about this worker
+                await RegisterWorkerAsync();
+                // Push a single metric to mark worker as online in backend registry
+                await PushMetrics();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[Registration] Failed to send worker registration on Connected event");
+            }
         });
 
         _connection.On<long, long>("BufferProgress", (current, threshold) =>
@@ -358,27 +490,28 @@ public class LogPusherService : BackgroundService
         _connection.Reconnecting += (ex) =>
         {
             _logger.LogWarning(ex, "Connection lost, reconnecting...");
+            // stop metrics while reconnecting
+            _ = StopMetricsAndMonitorAsync();
             return Task.CompletedTask;
         };
 
         _connection.Reconnected += async (connectionId) =>
         {
             _logger.LogInformation("Reconnected with connection ID: {ConnectionId}", connectionId);
-            await PushMetrics();
+            // Do not push metrics automatically; wait for explicit request from server
         };
 
         _connection.Closed += async (ex) =>
         {
             _logger.LogWarning(ex, "Connection closed permanently after retries");
+            // ensure metrics stopped
+            await StopMetricsAndMonitorAsync();
             await Task.Delay(reconnectDelay, ct);
         };
 
         _logger.LogInformation("Connecting to LiveLogHub...");
         await _connection.StartAsync(ct);
         _logger.LogInformation("Connected successfully!");
-
-        // Push initial metrics on connect
-        await PushMetrics();
     }
 
     private async Task TailAndPushLogs(string[] logPaths, int batchSize, int batchDelayMs, string? model, CancellationToken ct)

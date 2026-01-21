@@ -72,7 +72,8 @@ dotnet publish -c Release -r linux-x64 --self-contained -o ./publish/linux
 dotnet publish -c Release -r win-x64 --self-contained -o ./publish/windows
 ```
 
-### Step 3: Configure the Worker
+
+### Step 3: Configure the Worker (PSK Mode)
 
 Create or edit `appsettings.json` in the installation directory:
 
@@ -83,8 +84,7 @@ Create or edit `appsettings.json` in the installation directory:
 {
   "LiveLogHub": {
     "Url": "https://api.blackhatbadshah.com/hubs/livelog",
-    "ApiKey": "YOUR_API_KEY_HERE",
-    "WorkerId": "YOUR_WORKER_ID_HERE",
+    "Psk": "YOUR_PSK_HERE",
     "Model": "together-qwen",
     "ReconnectDelayMs": 5000
   },
@@ -99,13 +99,12 @@ Create or edit `appsettings.json` in the installation directory:
 }
 ```
 
-**Configuration Options:**
+**Configuration Options (PSK Mode):**
 
 | Setting | Description | Default |
 |---------|-------------|---------|
 | `LiveLogHub:Url` | SignalR hub URL | `https://api.blackhatbadshah.com/hubs/livelog` |
-| `LiveLogHub:ApiKey` | Your worker API key from dashboard | Required |
-| `LiveLogHub:WorkerId` | Your worker ID from dashboard | Required |
+| `LiveLogHub:Psk` | Your Pre-Shared Key (PSK) from dashboard | Required |
 | `LiveLogHub:Model` | AI model for log analysis | `together-qwen` |
 | `LiveLogHub:ReconnectDelayMs` | Reconnection delay on disconnect | `5000` |
 | `LogReader:LogPaths` | Array of log file paths to monitor | Platform specific |
@@ -274,6 +273,13 @@ Stop-Service -Name "BHBWorker"
 sc.exe delete "BHBWorker"
 Remove-Item -Recurse -Force "C:\Program Files\BHBWorker"
 ```
+
+## Security & Privacy
+
+- All API keys and credentials are managed via environment variables or config files
+- Never share your API key or worker ID
+- See [../SECURITY.md](../SECURITY.md) for credential management
+- See [../PRIVACY.md](../PRIVACY.md) for privacy policy
 
 ## Support
 

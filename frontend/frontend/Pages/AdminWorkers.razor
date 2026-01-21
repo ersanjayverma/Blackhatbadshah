@@ -22,10 +22,10 @@
                 <div class="d-flex gap-2 align-items-center">
                     @if (_config != null && _config.HasConfig)
                     {
-                        <span class="badge bg-info px-3 py-2">
-                            <i class="bi bi-stack me-1"></i>
-                            @_summary.ActiveWorkers / @_config.MaxWorkers Workers
-                        </span>
+                    <span class="badge bg-info px-3 py-2">
+                        <i class="bi bi-stack me-1"></i>
+                        Unlimited Workers (PSK Mode)
+                    </span>
                     }
                     <span class="badge bg-success px-3 py-2">
                         <i class="bi bi-circle-fill me-1" style="font-size: 0.5rem;"></i>
@@ -83,9 +83,12 @@
                             <i class="bi bi-gear me-2"></i>Worker Configuration
                         </h5>
                         <div class="d-flex gap-2">
-                            <button class="btn btn-sm btn-outline-warning" @onclick="ShowRotatePskModal">
-                                <i class="bi bi-arrow-repeat me-1"></i>Rotate PSK
-                            </button>
+                    <button class="btn btn-sm btn-outline-warning" @onclick="ShowRotatePskModal">
+                        <i class="bi bi-arrow-repeat me-1"></i>Rotate PSK
+                    </button>
+                    <button class="btn btn-sm btn-outline-primary" @onclick="ShowCurrentPskModal">
+                        <i class="bi bi-key me-1"></i>Show PSK
+                    </button>
                             <button class="btn btn-sm btn-outline-info" @onclick="ShowInstallInstructions">
                                 <i class="bi bi-book me-1"></i>Install Guide
                             </button>
@@ -201,8 +204,7 @@
                     <table class="table table-hover modern-table">
                         <thead>
                             <tr>
-                                <th><i class="bi bi-tag me-1"></i>Name</th>
-                                <th><i class="bi bi-fingerprint me-1"></i>Worker ID</th>
+                                <th><i class="bi bi-tag me-1"></i>Hostname</th>
                                 <th><i class="bi bi-activity me-1"></i>Status</th>
                                 <th><i class="bi bi-calendar me-1"></i>Created</th>
                                 <th><i class="bi bi-clock me-1"></i>Last Seen</th>
@@ -213,13 +215,7 @@
                             @foreach (var worker in _filteredWorkers)
                             {
                                 <tr>
-                                    <td class="fw-semibold">@worker.Name</td>
-                                    <td>
-                                        <code class="small">@worker.Id.ToString()[..8]...</code>
-                                        <button class="btn btn-sm btn-link p-0 ms-1" @onclick="() => CopyWorkerId(worker.Id)">
-                                            <i class="bi bi-clipboard"></i>
-                                        </button>
-                                    </td>
+                                    <td class="fw-semibold">@worker.Hostname</td>
                                     <td>
                                         @if (worker.IsActive)
                                         {
@@ -649,9 +645,28 @@ BHB_API_URL=https://api.blackhatbadshah.com</code></pre>
         }
     }
 
+
     private async void ShowRotatePskModal()
     {
         await RotatePsk();
+    }
+
+    private async void ShowCurrentPskModal()
+    {
+        try
+        {
+            var result = await WorkerAgentApi.GetCurrentPskAsync();
+            _keyModalTitle = "Current Pre-Shared Key (PSK)";
+            _keyLabel = "Pre-Shared Key (PSK)";
+            _displayWorkerId = string.Empty;
+            _displayKey = result.Psk;
+            _showKey = false;
+            _showKeyModal = true;
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to retrieve PSK: {ex.Message}");
+        }
     }
 
     private async Task RotatePsk()

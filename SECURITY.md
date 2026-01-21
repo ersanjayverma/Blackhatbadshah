@@ -1,103 +1,59 @@
-# Security Configuration Guide
+# Security Policy & Credential Management
 
 ## Overview
-This document outlines the security configuration for the Blackhatbadshah application and provides instructions for setting up credentials properly.
+This document describes how Blackhatbadshah manages credentials, secrets, and sensitive data for all services and workers.
 
-## Critical Security Changes
+## Credentials & Secrets
 
-All hardcoded credentials and secrets have been removed from the codebase and replaced with environment variables. This includes:
+All credentials and secrets are managed via environment variables and configuration files. The following are required:
 
-1. **Anthropic API Key** - Previously exposed in `docker-compose.yml`
-2. **AWS Credentials** - Previously hardcoded in `Dockerfile`
-3. **Azure SQL Database Password** - Previously exposed in `appsettings.json`
-4. **Azure Blob Storage Key** - Previously exposed in `appsettings.json`
+- **Anthropic API Key** (`ANTHROPIC_API_KEY`)
+- **AWS Credentials** (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`)
+- **Azure SQL Connection String** (`ConnectionStrings__DefaultConnection`)
+- **Azure Blob Storage Connection String** (`AzureBlob__ConnectionString`)
+- **Razorpay API Keys** (in `appsettings.json`)
+- **Keycloak Client Secrets** (in `appsettings.json`)
 
 ## Setup Instructions
 
-### 1. Create Environment File
+1. Copy `.env.example` to `.env` and fill in your actual credentials:
+   ```bash
+   cp .env.example .env
+   ```
+2. Edit `.env` and replace all placeholder values with your actual credentials.
+3. Never commit `.env` to version control. `.gitignore` excludes `.env`, `.env.*`, `.env.local`.
+4. For worker agents, API keys and worker IDs are generated in the dashboard and stored in `appsettings.json` on the worker host.
 
-Copy the example environment file and fill in your actual credentials:
+### .gitignore
 
-```bash
-# From project root
-cp .env.example .env
+`.env` and all sensitive config files are excluded from version control. Only `.env.example` is tracked.
 
-# OR from docker compose directory
-cd infra/dockerCompose
-cp .env.example .env
-```
+### Running Services
 
-### 2. Configure Credentials
+All services (backend, frontend, AI, worker) read credentials from environment variables or config files. Docker Compose loads from `.env` automatically.
 
-Edit the `.env` file and replace all placeholder values with your actual credentials:
+## Security Best Practices
 
-```bash
-# Anthropic API Configuration
-ANTHROPIC_API_KEY=your_actual_anthropic_api_key
-
-# AWS Configuration
-AWS_ACCESS_KEY_ID=your_actual_aws_access_key
-AWS_SECRET_ACCESS_KEY=your_actual_aws_secret_key
-AWS_REGION=ap-south-1
-AWS_DEFAULT_REGION=ap-south-1
-
-# Database Configuration
-ConnectionStrings__DefaultConnection=Server=tcp:blackhatbadshah.database.windows.net,...
-
-# Azure Blob Storage Configuration
-AzureBlob__ConnectionString=DefaultEndpointsProtocol=https;AccountName=...
-```
-
-### 3. Verify .gitignore
-
-Ensure your `.env` file is never committed to version control. The `.gitignore` file has been updated to exclude:
-- `.env`
-- `.env.*`
-- `.env.local`
-- `.env.*.local`
-
-But allows:
-- `.env.example`
-
-### 4. Running with Docker Compose
-
-Docker Compose will automatically load environment variables from the `.env` file in the same directory:
-
-```bash
-cd infra/dockerCompose
-docker-compose up -d
-```
-
-## Important Security Notes
-
-1. **NEVER commit the `.env` file** - It contains sensitive credentials
-2. **Rotate exposed credentials immediately** - The following credentials were previously exposed in version control and should be rotated:
-   - Anthropic API key (starts with `sk-ant-api03-`)
-   - AWS Access Key ID (starts with `AKIA`)
-   - Azure SQL Database password
-   - Azure Blob Storage account key
-
-3. **Use different credentials for different environments** - Development, staging, and production should each have their own credentials
-
-4. **Limit credential permissions** - Follow the principle of least privilege:
-   - AWS: Only grant necessary S3 and Textract permissions
-   - Azure: Limit database user permissions to required operations
-   - API Keys: Use different keys for different services if possible
+1. **Never commit secrets**: `.env` and `appsettings.json` with secrets must not be tracked.
+2. **Rotate exposed credentials immediately**: If any credential is exposed, rotate it and update all services.
+3. **Use separate credentials for dev, staging, prod**: Never reuse secrets across environments.
+4. **Limit permissions**: Grant only the minimum required permissions for AWS, Azure, and API keys.
+5. **Worker API keys**: Each worker agent uses a unique API key and Worker ID. Keys are only shown once in the dashboard.
 
 ## Credential Rotation
 
-If credentials are compromised:
+If any credential is compromised:
+1. Revoke/rotate the credential immediately
+2. Update `.env` or `appsettings.json` with the new value
+3. Restart all services
+4. Audit logs for unauthorized access
 
-1. **Immediately revoke/rotate** the exposed credentials
-2. **Update** your `.env` file with new credentials
-3. **Restart** all services to pick up new credentials
-4. **Audit** access logs to check for unauthorized usage
+## Additional Recommendations
 
-## Additional Security Recommendations
-
-1. Consider using a secrets management service:
-   - Azure Key Vault
-   - AWS Secrets Manager
+- Use a secrets manager (Azure Key Vault, AWS Secrets Manager) for production
+- Enable HTTPS for all services
+- Monitor access logs and audit regularly
+- Use strong, randomly generated passwords and API keys
    - HashiCorp Vault
 
 2. Enable audit logging for all services

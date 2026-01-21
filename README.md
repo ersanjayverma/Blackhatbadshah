@@ -1,50 +1,34 @@
 # Blackhatbadshah
 
-Multi-service AI-powered application with .NET backend/frontend and Python AI service using Anthropic Claude.
+Multi-service AI-powered log analysis platform with .NET backend/frontend, Python AI service, and cross-platform worker agent.
 
 ## Architecture
 
-This application consists of three main services:
+This application consists of:
 
 - **Frontend** (.NET 10.0 Blazor) - Web interface
 - **Backend** (.NET 10.0 API) - REST API with Azure SQL and Blob Storage
 - **AI Service** (Python FastAPI) - LangGraph-based AI agent with Claude integration
+- **Worker Agent** (.NET 8.0) - Cross-platform log streaming agent (see `worker/bhbworker`)
 
 ## Prerequisites
 
-- Docker and Docker Compose
+- .NET 10.0 SDK (backend/frontend)
+- .NET 8.0 SDK (worker agent)
+- Python 3.11 (AI service)
 - Valid credentials for:
   - Anthropic API (Claude)
-  - AWS (for Textract)
+  - AWS (Textract)
   - Azure SQL Database
   - Azure Blob Storage
+  - Razorpay (payments)
+  - Keycloak (auth)
 
 ## Quick Start
 
-### Option 1: Automated Setup (Recommended)
-
-Run the interactive setup script:
-
-```bash
-./setup.sh
-```
-
-This will guide you through configuring all required credentials.
-
-### Option 2: Manual Setup
-
-1. Copy the environment template:
-   ```bash
-   cp infra/dockerCompose/.env.example infra/dockerCompose/.env
-   ```
-
-2. Edit `infra/dockerCompose/.env` and fill in your credentials
-
-3. Start the services:
-   ```bash
-   cd infra/dockerCompose
-   docker-compose up -d
-   ```
+1. Copy `.env.example` to `.env` and fill in your credentials
+2. Start backend, frontend, and AI service (see below)
+3. Register and install worker agent (see `worker/bhbworker/README.md`)
 
 ## Service Ports
 
@@ -54,9 +38,10 @@ This will guide you through configuring all required credentials.
 
 ## Configuration
 
-All sensitive configuration is managed through environment variables. See:
+All sensitive configuration is managed via environment variables and config files:
 - `.env.example` - Template for required environment variables
-- `SECURITY.md` - Security guidelines and credential management
+- `appsettings.json` (worker agent) - Stores API key and worker ID
+- See `SECURITY.md` for best practices
 
 ## Development
 
@@ -81,15 +66,15 @@ pip install -r requirements.txt
 uvicorn main:api --reload
 ```
 
-## Security
+### Worker Agent (.NET)
+See `worker/bhbworker/README.md` for build, install, and configuration instructions.
 
-⚠️ **Important**: This repository previously contained exposed credentials. If you have access to the old commits:
+## Security & Privacy
 
-1. **Immediately rotate** all exposed credentials (see SECURITY.md)
-2. Never commit `.env` files to version control
-3. Use different credentials for development and production
-
-See `SECURITY.md` for detailed security guidelines.
+- All credentials and secrets are managed via environment variables and config files
+- Never commit `.env` or secret config files to version control
+- See `SECURITY.md` for credential management and rotation
+- See `PRIVACY.md` for data handling and user privacy policy
 
 ## Project Structure
 
@@ -98,12 +83,15 @@ See `SECURITY.md` for detailed security guidelines.
 ├── backend/          # .NET 10.0 Backend API
 ├── frontend/         # .NET 10.0 Blazor Frontend
 ├── ai/               # Python FastAPI AI Service
+├── worker/           # .NET 8.0 Worker Agent (cross-platform)
+│   └── bhbworker/    # Worker agent source and install guide
 ├── shared/           # Shared code
 ├── infra/            # Infrastructure configs
 │   ├── dockerCompose/
 │   └── nginxConfs/
 ├── setup.sh          # Automated setup script
-└── SECURITY.md       # Security documentation
+├── SECURITY.md       # Security documentation
+├── PRIVACY.md        # Privacy policy
 ```
 
 ## Technologies

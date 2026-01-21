@@ -126,6 +126,11 @@ public class LogPusherService : BackgroundService
             try
             {
                 await Task.Delay(_metricsInterval, ct);
+                if (_connection == null || _connection.State != HubConnectionState.Connected)
+                {
+                    _logger.LogDebug("[Metrics] Connection not active, skipping metrics push.");
+                    break;
+                }
                 await PushMetrics();
             }
             catch (OperationCanceledException)
@@ -148,6 +153,11 @@ public class LogPusherService : BackgroundService
             try
             {
                 await Task.Delay(_systemMonitorInterval, ct);
+                if (_connection == null || _connection.State != HubConnectionState.Connected)
+                {
+                    _logger.LogDebug("[SystemMonitor] Connection not active, skipping system monitor push.");
+                    break;
+                }
                 await PushSystemMonitorData();
             }
             catch (OperationCanceledException)

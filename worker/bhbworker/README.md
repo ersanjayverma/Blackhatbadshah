@@ -275,6 +275,13 @@ sc.exe delete "BHBWorker"
 Remove-Item -Recurse -Force "C:\Program Files\BHBWorker"
 ```
 
+## Security & Privacy
+
+- All API keys and credentials are managed via environment variables or config files
+- Never share your API key or worker ID
+- See [../SECURITY.md](../SECURITY.md) for credential management
+- See [../PRIVACY.md](../PRIVACY.md) for privacy policy
+
 ## Support
 
 For issues or questions, visit [github.com/ersanjayverma/Blackhatbadshah/issues](https://github.com/ersanjayverma/Blackhatbadshah/issues)

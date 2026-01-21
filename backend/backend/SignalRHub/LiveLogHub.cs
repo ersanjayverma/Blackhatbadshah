@@ -458,8 +458,39 @@ public class LiveLogHub : Hub
             ? $"{httpContext.Request.Scheme}://{httpContext.Request.Host}"
             : string.Empty;
 
+        // Log DB presence of worker and register in registry
+        try
+        {
+            if (Guid.TryParse(workerId, out var wid))
+            {
+                var dbWorker = await _db.WorkerAgents.FindAsync(wid);
+                if (dbWorker == null)
+                {
+                    _logger.LogWarning("LiveLogHub: Connected worker {WorkerId} not found in DB (may be unregistered)", workerId);
+                }
+                else
+                {
+                    _logger.LogInformation("LiveLogHub: Connected worker {WorkerId} found in DB. CreatedBy={User}, Status={Status}", workerId, dbWorker.CreatedByUserId, dbWorker.Status);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Error checking worker in DB for {WorkerId}", workerId);
+        }
+
         // Register worker in the registry with basic info
         _workerRegistry.RegisterWorker(workerId, sessionId, apiUrl);
+
+        // Notify all clients that a worker has connected/registered (ensure frontend visibility)
+        try
+        {
+            await _hubNotification.NotifyWorkerRegisteredAsync(workerId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to notify clients about worker registration for {WorkerId}", workerId);
+        }
 
         _logger.LogInformation("LiveLogHub: Worker connected - WorkerId {WorkerId}, Session {SessionId}, ApiUrl {ApiUrl}",
             workerId, sessionId, apiUrl);

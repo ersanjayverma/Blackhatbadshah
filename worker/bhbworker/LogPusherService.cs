@@ -26,11 +26,69 @@ public class LogPusherService : BackgroundService
     private readonly TimeSpan _systemMonitorInterval = TimeSpan.FromSeconds(2);
     private CancellationTokenSource? _metricsCts;
     private SystemMonitorService? _systemMonitorService;
+    private Task? _metricsTask;
+    private Task? _systemMonitorTask;
 
     public LogPusherService(IConfiguration config, ILogger<LogPusherService> logger)
     {
         _config = config;
         _logger = logger;
+    }
+
+    private void StartMetricsAndMonitor(CancellationToken ct)
+    {
+        // Cancel any previous
+        if (_metricsCts != null)
+        {
+            try { _metricsCts.Cancel(); } catch { }
+            _metricsCts.Dispose();
+            _metricsCts = null;
+        }
+
+        _metricsCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var linked = _metricsCts.Token;
+
+        // Start background loops if not already running
+        if (_metricsTask == null || _metricsTask.IsCompleted)
+        {
+            _metricsTask = Task.Run(() => RunMetricsLoop(linked), linked);
+        }
+
+        if (_systemMonitorTask == null || _systemMonitorTask.IsCompleted)
+        {
+            _systemMonitorTask = Task.Run(() => RunSystemMonitorLoop(linked), linked);
+        }
+    }
+
+    private async Task StopMetricsAndMonitorAsync()
+    {
+        if (_metricsCts != null)
+        {
+            try
+            {
+                _metricsCts.Cancel();
+            }
+            catch { }
+
+            try
+            {
+                if (_metricsTask != null)
+                    await _metricsTask.ConfigureAwait(false);
+            }
+            catch { }
+
+            try
+            {
+                if (_systemMonitorTask != null)
+                    await _systemMonitorTask.ConfigureAwait(false);
+            }
+            catch { }
+
+            _metricsCts.Dispose();
+            _metricsCts = null;
+            _metricsTask = null;
+            _systemMonitorTask = null;
+        }
     }
 
     private string GetOrCreateWorkerId()
@@ -97,16 +155,13 @@ public class LogPusherService : BackgroundService
 
                 if (_connection?.State == HubConnectionState.Connected)
                 {
-                    // Start metrics reporting and system monitor in parallel
-                    _metricsCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-                    var metricsTask = RunMetricsLoop(_metricsCts.Token);
-                    var systemMonitorTask = RunSystemMonitorLoop(_metricsCts.Token);
+                    // Start metrics reporting and system monitor
+                    StartMetricsAndMonitor(stoppingToken);
 
                     await TailAndPushLogs(logPaths, batchSize, batchDelayMs, model, stoppingToken);
 
-                    _metricsCts.Cancel();
-                    try { await metricsTask; } catch (OperationCanceledException) { }
-                    try { await systemMonitorTask; } catch (OperationCanceledException) { }
+                    // Stop metrics after logs tailing ends for this session
+                    await StopMetricsAndMonitorAsync();
                 }
             }
             catch (Exception ex)
@@ -281,8 +336,8 @@ public class LogPusherService : BackgroundService
         
         if (useApiKey)
         {
-            // API Key authentication - pass workerId in query, key in header
-            fullUrl = $"{hubUrl}?workerId={Uri.EscapeDataString(workerId)}";
+            // API Key authentication - include workerId and apiKey in query for WebSocket transport
+            fullUrl = $"{hubUrl}?workerId={Uri.EscapeDataString(workerId)}&workerKey={Uri.EscapeDataString(apiKey)}";
             _logger.LogInformation("Using API Key authentication for worker {WorkerId}", workerId);
         }
         else
@@ -297,7 +352,8 @@ public class LogPusherService : BackgroundService
             {
                 if (useApiKey)
                 {
-                    options.Headers.Add("X-Worker-Key", apiKey);
+                    // Add header for transports that support it; also include in query for WebSockets
+                    try { options.Headers.Add("X-Worker-Key", apiKey); } catch { }
                 }
             })
             .WithAutomaticReconnect([TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(30)])
@@ -368,18 +424,24 @@ public class LogPusherService : BackgroundService
         _connection.Reconnecting += (ex) =>
         {
             _logger.LogWarning(ex, "Connection lost, reconnecting...");
+            // stop metrics while reconnecting
+            _ = StopMetricsAndMonitorAsync();
             return Task.CompletedTask;
         };
 
         _connection.Reconnected += async (connectionId) =>
         {
             _logger.LogInformation("Reconnected with connection ID: {ConnectionId}", connectionId);
+            // restart metrics on reconnect
+            StartMetricsAndMonitor(ct);
             await PushMetrics();
         };
 
         _connection.Closed += async (ex) =>
         {
             _logger.LogWarning(ex, "Connection closed permanently after retries");
+            // ensure metrics stopped
+            await StopMetricsAndMonitorAsync();
             await Task.Delay(reconnectDelay, ct);
         };
 

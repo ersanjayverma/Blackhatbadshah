@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.SignalR;
 using backend.Services;
+using backend.Handlers;
 using shared.Dto;
 using System.Text.RegularExpressions;
 
@@ -12,6 +13,7 @@ public class LiveLogHub : Hub
     private readonly IHubNotificationService _hubNotification;
     private readonly IWorkerRegistry _workerRegistry;
     private readonly IConfiguration _configuration;
+    private readonly backend.Data.AppDbContext _db;
     private readonly ILogger<LiveLogHub> _logger;
 
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> _chunkCounters = new();
@@ -39,7 +41,8 @@ public class LiveLogHub : Hub
         IHubNotificationService hubNotification,
         IWorkerRegistry workerRegistry,
         IConfiguration configuration,
-        ILogger<LiveLogHub> logger)
+        ILogger<LiveLogHub> logger,
+        backend.Data.AppDbContext db)
     {
         _buffer = buffer;
         _analysisQueue = analysisQueue;
@@ -47,9 +50,19 @@ public class LiveLogHub : Hub
         _workerRegistry = workerRegistry;
         _configuration = configuration;
         _logger = logger;
+        _db = db;
     }
 
     private string GetSessionId() => Context.ConnectionId;
+
+    private static string? NormalizeWorkerId(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        // Some authentication schemes prefix the id with 'worker:GUID'
+        if (raw.StartsWith("worker:", StringComparison.OrdinalIgnoreCase))
+            return raw.Substring("worker:".Length);
+        return raw;
+    }
 
     private string? GetPsk()
     {
@@ -61,6 +74,15 @@ public class LiveLogHub : Hub
     {
         var httpContext = Context.GetHttpContext();
         return httpContext?.Request.Query["workerId"].ToString();
+    }
+
+    private string? GetApiKeyFromQuery()
+    {
+        var httpContext = Context.GetHttpContext();
+        // Support both workerKey and apiKey query parameter names
+        var val = httpContext?.Request.Query["workerKey"].ToString();
+        if (string.IsNullOrEmpty(val)) val = httpContext?.Request.Query["apiKey"].ToString();
+        return val;
     }
 
     private bool ValidatePsk(string? psk)
@@ -348,22 +370,81 @@ public class LiveLogHub : Hub
 
     public override async Task OnConnectedAsync()
     {
-        var psk = GetPsk();
-        var workerId = GetWorkerIdFromQuery();
         var sessionId = GetSessionId();
+        var httpContext = Context.GetHttpContext();
+        var queryWorkerId = GetWorkerIdFromQuery();
 
-        if (!ValidatePsk(psk))
+        // Prefer framework authentication (WorkerKey scheme) if available
+        string? workerId = null;
+        if (Context.User?.Identity?.IsAuthenticated == true)
         {
-            _logger.LogWarning("LiveLogHub: Invalid PSK for session {SessionId}", sessionId);
-            Context.Abort();
-            return;
+            workerId = Context.User.FindFirst("workerId")?.Value
+                       ?? Context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            workerId = NormalizeWorkerId(workerId);
         }
 
-        if (string.IsNullOrEmpty(workerId))
+        // If not authenticated via pipeline, try header-based API key or PSK fallback
+        if (string.IsNullOrWhiteSpace(workerId))
         {
-            _logger.LogWarning("LiveLogHub: Missing workerId for session {SessionId}", sessionId);
-            Context.Abort();
-            return;
+            string? apiKey = httpContext?.Request.Headers[WorkerKeyAuthenticationHandler.HeaderName].ToString();
+            if (string.IsNullOrWhiteSpace(apiKey))
+            {
+                apiKey = GetApiKeyFromQuery();
+            }
+            if (!string.IsNullOrWhiteSpace(apiKey))
+            {
+                try
+                {
+                    var hashed = WorkerKeyAuthenticationHandler.HashApiKey(apiKey);
+                    var worker = await _db.WorkerAgents.FirstOrDefaultAsync(w => w.ApiKeyHash == hashed && w.Status == backend.Data.Entities.WorkerAgentStatus.Active);
+                    if (worker == null)
+                    {
+                        _logger.LogWarning("LiveLogHub: Invalid API key for session {SessionId}", sessionId);
+                        Context.Abort();
+                        return;
+                    }
+
+                    workerId = worker.Id.ToString();
+
+                    // update last seen timestamp when authenticating via direct API key
+                    try
+                    {
+                        worker.LastSeenAt = DateTime.UtcNow;
+                        await _db.SaveChangesAsync();
+                    }
+                    catch { }
+
+                    if (!string.IsNullOrWhiteSpace(queryWorkerId) && !string.Equals(queryWorkerId, workerId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        _logger.LogWarning("LiveLogHub: Mismatched workerId query vs API key owner for session {SessionId} - proceeding with API key owner", sessionId);
+                        // Do not abort; prefer API key owner. Continue using worker.Id from API key.
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "LiveLogHub: Exception during API key validation for session {SessionId}", sessionId);
+                    Context.Abort();
+                    return;
+                }
+            }
+            else
+            {
+                var psk = GetPsk();
+                if (!ValidatePsk(psk))
+                {
+                    _logger.LogWarning("LiveLogHub: Invalid PSK for session {SessionId}", sessionId);
+                    Context.Abort();
+                    return;
+                }
+
+                workerId = queryWorkerId;
+                if (string.IsNullOrEmpty(workerId))
+                {
+                    _logger.LogWarning("LiveLogHub: Missing workerId for session {SessionId}", sessionId);
+                    Context.Abort();
+                    return;
+                }
+            }
         }
 
         _sessionWorkerIds[sessionId] = workerId;

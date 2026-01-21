@@ -5,212 +5,244 @@
 @using shared.Dto
 @using frontend.Services
 @inject WorkerService WorkerApi
+@inject WorkerAgentService WorkerAgentApi
 @inject HubConnectionService HubService
 @inject IAccessTokenProvider TokenProvider
 @inject ToastService Toast
 @inject IJSRuntime JS
 @inject LiveLogService LiveLogApi
+@inject NavigationManager Navigation
 @implements IAsyncDisposable
 
 <AuthorizeView>
     <Authorized>
         <div class="container-fluid px-4 py-4">
 
-            <!-- HEADER -->
-            <div class="d-flex justify-content-between align-items-center flex-wrap mb-4">
-                <div>
-                    <h2 class="mb-1 fw-bold text-gradient">
-                        <i class="bi bi-hdd-network me-2"></i>Workers
-                    </h2>
-                    <p class="mb-0">Registered workers and their status</p>
-                </div>
-                <div class="d-flex gap-2 align-items-center">
-                    <span class="badge bg-success px-3 py-2">
-                        <i class="bi bi-circle-fill me-1" style="font-size: 0.5rem;"></i>
-                        @_workers.OnlineCount Online
-                    </span>
-                    <span class="badge bg-secondary px-3 py-2">
-                        @_workers.TotalCount Total
-                    </span>
-                    <button class="btn btn-outline-primary" @onclick="RefreshWorkers" disabled="@_loading">
-                        @if (_loading)
-                        {
-                            <span class="spinner-border spinner-border-sm me-1"></span>
-                        }
-                        else
-                        {
-                            <i class="bi bi-arrow-clockwise me-1"></i>
-                        }
-                        Refresh
-                    </button>
-                </div>
-            </div>
-
-            <!-- SEARCH BAR -->
-            <div class="card modern-card shadow-sm mb-4">
-                <div class="card-body">
-                    <div class="row g-3 align-items-end">
-                        <div class="col-md-6">
-                            <label class="form-label fw-bold">
-                                <i class="bi bi-search me-2"></i>Search by Hostname
-                            </label>
-                            <div class="input-group">
-                                <input type="text" class="form-control" placeholder="Enter hostname to filter..."
-                                       @bind="_searchHostname" @bind:event="oninput" @onkeyup="OnSearchKeyUp" />
-                                <button class="btn btn-primary" @onclick="SearchWorkers">
-                                    <i class="bi bi-search"></i>
-                                </button>
-                                @if (!string.IsNullOrEmpty(_searchHostname))
-                                {
-                                    <button class="btn btn-outline-secondary" @onclick="ClearSearch">
-                                        <i class="bi bi-x"></i>
-                                    </button>
-                                }
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="onlineOnly"
-                                       @bind="_showOnlineOnly" @bind:after="FilterWorkers" />
-                                <label class="form-check-label" for="onlineOnly">
-                                    Show online workers only
-                                </label>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- WORKERS LIST -->
-            @if (_loading && _workers.Workers.Count == 0)
+            @if (!_hasWorkerConfig)
             {
-                <div class="text-center py-5">
-                    <div class="spinner-border text-primary" role="status">
-                        <span class="visually-hidden">Loading...</span>
+                <!-- NO CONFIG - REDIRECT TO SETUP -->
+                <div class="card modern-card shadow-lg border-info">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0">
+                            <i class="bi bi-info-circle me-2"></i>Worker Setup Required
+                        </h5>
                     </div>
-                    <p class="mt-3 fw-bold">Loading workers...</p>
-                </div>
-            }
-            else if (_filteredWorkers.Count == 0)
-            {
-                <div class="card modern-card shadow-sm">
                     <div class="card-body text-center py-5">
-                        <i class="bi bi-hdd-network display-1 fw-bold mb-3"></i>
-                        <h5 class="fw-bold">No Workers Found</h5>
-                        <p class="fw-bold">
-                            @if (!string.IsNullOrEmpty(_searchHostname))
-                            {
-                                <span>No workers matching "@_searchHostname"</span>
-                            }
-                            else if (_showOnlineOnly)
-                            {
-                                <span>No online workers found</span>
-                            }
-                            else
-                            {
-                                <span>No workers have registered yet. Start a BHBWorker to see it here.</span>
-                            }
+                        <i class="bi bi-cpu display-1 text-info mb-4"></i>
+                        <h4 class="fw-bold mb-3">No Workers Configured</h4>
+                        <p class="mb-4">
+                            You need to register workers before you can view their status and pull logs.
+                            Go to <strong>My Workers</strong> to initialize your configuration and register your first worker.
                         </p>
+                        <button class="btn btn-primary btn-lg" @onclick="GoToMyWorkers">
+                            <i class="bi bi-gear me-2"></i>Go to My Workers
+                        </button>
                     </div>
                 </div>
             }
             else
             {
-                <div class="row g-4">
-                    @foreach (var worker in _filteredWorkers)
-                    {
-                        <div class="col-lg-6 col-xl-4">
-                            <div class="card modern-card shadow-sm h-100 @(worker.IsOnline ? "border-success" : "border-secondary") border-2">
-                                <div class="card-header d-flex justify-content-between align-items-center @(worker.IsOnline ? "bg-success bg-opacity-10" : "")">
-                                    <div>
-                                        <h6 class="mb-0 fw-bold">
-                                            <i class="bi bi-hdd me-2"></i>@worker.Hostname
-                                        </h6>
-                                        <small class="fw-bold">@worker.WorkerId</small>
-                                    </div>
-                                    <span class="badge @(worker.IsOnline ? "bg-success" : "bg-secondary")">
-                                        <i class="bi bi-circle-fill me-1" style="font-size: 0.5rem;"></i>
-                                        @(worker.IsOnline ? "Online" : "Offline")
-                                    </span>
-                                </div>
-                                <div class="card-body">
-                                    <div class="mb-3">
-                                        <small class="fw-bold d-block">OS Version</small>
-                                        <span class="text-truncate d-block" title="@worker.OsVersion">
-                                            @(worker.OsVersion.Length > 40 ? worker.OsVersion[..40] + "..." : worker.OsVersion)
-                                        </span>
-                                    </div>
+                <!-- HEADER -->
+                <div class="d-flex justify-content-between align-items-center flex-wrap mb-4">
+                    <div>
+                        <h2 class="mb-1 fw-bold text-gradient">
+                            <i class="bi bi-hdd-network me-2"></i>Live Workers
+                        </h2>
+                        <p class="mb-0">View connected workers and pull logs in real-time</p>
+                    </div>
+                    <div class="d-flex gap-2 align-items-center">
+                        <span class="badge bg-success px-3 py-2">
+                            <i class="bi bi-circle-fill me-1" style="font-size: 0.5rem;"></i>
+                            @_workers.OnlineCount Online
+                        </span>
+                        <span class="badge bg-secondary px-3 py-2">
+                            @_workers.TotalCount Total
+                        </span>
+                        <button class="btn btn-outline-secondary" @onclick="GoToMyWorkers">
+                            <i class="bi bi-gear me-1"></i>Manage Workers
+                        </button>
+                        <button class="btn btn-outline-primary" @onclick="RefreshWorkers" disabled="@_loading">
+                            @if (_loading)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1"></span>
+                            }
+                            else
+                            {
+                                <i class="bi bi-arrow-clockwise me-1"></i>
+                            }
+                            Refresh
+                        </button>
+                    </div>
+                </div>
 
-                                    @if (worker.LastMetrics != null)
+                <!-- SEARCH BAR -->
+                <div class="card modern-card shadow-sm mb-4">
+                    <div class="card-body">
+                        <div class="row g-3 align-items-end">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">
+                                    <i class="bi bi-search me-2"></i>Search by Hostname
+                                </label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control" placeholder="Enter hostname to filter..."
+                                           @bind="_searchHostname" @bind:event="oninput" @onkeyup="OnSearchKeyUp" />
+                                    <button class="btn btn-primary" @onclick="SearchWorkers">
+                                        <i class="bi bi-search"></i>
+                                    </button>
+                                    @if (!string.IsNullOrEmpty(_searchHostname))
                                     {
-                                        <div class="row g-2 mb-3">
-                                            <div class="col-4">
-                                                <div class="text-center p-2 bg-light rounded">
-                                                    <div class="fw-bold text-primary">@worker.LastMetrics.CpuPercent.ToString("F1")%</div>
-                                                    <small class="fw-bold">CPU</small>
-                                                </div>
-                                            </div>
-                                            <div class="col-4">
-                                                <div class="text-center p-2 bg-light rounded">
-                                                    <div class="fw-bold text-info">@worker.LastMetrics.MemoryPercent.ToString("F1")%</div>
-                                                    <small class="fw-bold">Memory</small>
-                                                </div>
-                                            </div>
-                                            <div class="col-4">
-                                                <div class="text-center p-2 bg-light rounded">
-                                                    <div class="fw-bold text-warning">@worker.LastMetrics.DiskPercent.ToString("F1")%</div>
-                                                    <small class="fw-bold">Disk</small>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    }
-
-                                    <div class="mb-3">
-                                        <small class="fw-bold d-block mb-1">Available Log Paths</small>
-                                        @if (worker.AvailableLogPaths.Count == 0)
-                                        {
-                                            <span class="fw-bold">No log paths configured</span>
-                                        }
-                                        else
-                                        {
-                                            <div class="d-flex flex-wrap gap-1">
-                                                @foreach (var path in worker.AvailableLogPaths.Take(3))
-                                                {
-                                                    <span class="badge bg-light text-dark border" title="@path">
-                                                        @Path.GetFileName(path)
-                                                    </span>
-                                                }
-                                                @if (worker.AvailableLogPaths.Count > 3)
-                                                {
-                                                    <span class="badge bg-secondary">+@(worker.AvailableLogPaths.Count - 3) more</span>
-                                                }
-                                            </div>
-                                        }
-                                    </div>
-
-                                    <div class="mb-3">
-                                        <small class="fw-bold d-block">Last Heartbeat</small>
-                                        <span>@worker.LastHeartbeat.ToLocalTime().ToString("g")</span>
-                                    </div>
-                                </div>
-                                <div class="card-footer bg-transparent">
-                                    <div class="d-flex gap-2">
-                                        <button class="btn btn-sm btn-outline-primary flex-grow-1"
-                                                @onclick="() => ShowLogPullModal(worker)"
-                                                disabled="@(!worker.IsOnline)">
-                                            <i class="bi bi-download me-1"></i>Pull Logs
+                                        <button class="btn btn-outline-secondary" @onclick="ClearSearch">
+                                            <i class="bi bi-x"></i>
                                         </button>
-                                        <a href="/livelogs" class="btn btn-sm btn-primary flex-grow-1">
-                                            <i class="bi bi-broadcast me-1"></i>Live Logs
-                                        </a>
-                                    </div>
+                                    }
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="onlineOnly"
+                                           @bind="_showOnlineOnly" @bind:after="FilterWorkers" />
+                                    <label class="form-check-label" for="onlineOnly">
+                                        Show online workers only
+                                    </label>
                                 </div>
                             </div>
                         </div>
-                    }
+                    </div>
                 </div>
-            }
 
+                <!-- WORKERS LIST -->
+                @if (_loading && _workers.Workers.Count == 0)
+                {
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-3 fw-bold">Loading workers...</p>
+                    </div>
+                }
+                else if (_filteredWorkers.Count == 0)
+                {
+                    <div class="card modern-card shadow-sm">
+                        <div class="card-body text-center py-5">
+                            <i class="bi bi-hdd-network display-1 fw-bold mb-3"></i>
+                            <h5 class="fw-bold">No Live Workers</h5>
+                            <p class="fw-bold">
+                                @if (!string.IsNullOrEmpty(_searchHostname))
+                                {
+                                    <span>No workers matching "@_searchHostname"</span>
+                                }
+                                else if (_showOnlineOnly)
+                                {
+                                    <span>No online workers found</span>
+                                }
+                                else
+                                {
+                                    <span>Workers you've registered will appear here when they connect.</span>
+                                }
+                            </p>
+                            <button class="btn btn-primary" @onclick="GoToMyWorkers">
+                                <i class="bi bi-gear me-1"></i>Manage Workers
+                            </button>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="row g-4">
+                        @foreach (var worker in _filteredWorkers)
+                        {
+                            <div class="col-lg-6 col-xl-4">
+                                <div class="card modern-card shadow-sm h-100 @(worker.IsOnline ? "border-success" : "border-secondary") border-2">
+                                    <div class="card-header d-flex justify-content-between align-items-center @(worker.IsOnline ? "bg-success bg-opacity-10" : "")">
+                                        <div>
+                                            <h6 class="mb-0 fw-bold">
+                                                <i class="bi bi-hdd me-2"></i>@worker.Hostname
+                                            </h6>
+                                            <small class="fw-bold">@worker.WorkerId</small>
+                                        </div>
+                                        <span class="badge @(worker.IsOnline ? "bg-success" : "bg-secondary")">
+                                            <i class="bi bi-circle-fill me-1" style="font-size: 0.5rem;"></i>
+                                            @(worker.IsOnline ? "Online" : "Offline")
+                                        </span>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="mb-3">
+                                            <small class="fw-bold d-block">OS Version</small>
+                                            <span class="text-truncate d-block" title="@worker.OsVersion">
+                                                @(worker.OsVersion.Length > 40 ? worker.OsVersion[..40] + "..." : worker.OsVersion)
+                                            </span>
+                                        </div>
+
+                                        @if (worker.LastMetrics != null)
+                                        {
+                                            <div class="row g-2 mb-3">
+                                                <div class="col-4">
+                                                    <div class="text-center p-2 bg-light rounded">
+                                                        <div class="fw-bold text-primary">@worker.LastMetrics.CpuPercent.ToString("F1")%</div>
+                                                        <small class="fw-bold">CPU</small>
+                                                    </div>
+                                                </div>
+                                                <div class="col-4">
+                                                    <div class="text-center p-2 bg-light rounded">
+                                                        <div class="fw-bold text-info">@worker.LastMetrics.MemoryPercent.ToString("F1")%</div>
+                                                        <small class="fw-bold">Memory</small>
+                                                    </div>
+                                                </div>
+                                                <div class="col-4">
+                                                    <div class="text-center p-2 bg-light rounded">
+                                                        <div class="fw-bold text-warning">@worker.LastMetrics.DiskPercent.ToString("F1")%</div>
+                                                        <small class="fw-bold">Disk</small>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        }
+
+                                        <div class="mb-3">
+                                            <small class="fw-bold d-block mb-1">Available Log Paths</small>
+                                            @if (worker.AvailableLogPaths.Count == 0)
+                                            {
+                                                <span class="fw-bold">No log paths configured</span>
+                                            }
+                                            else
+                                            {
+                                                <div class="d-flex flex-wrap gap-1">
+                                                    @foreach (var path in worker.AvailableLogPaths.Take(3))
+                                                    {
+                                                        <span class="badge bg-light text-dark border" title="@path">
+                                                            @Path.GetFileName(path)
+                                                        </span>
+                                                    }
+                                                    @if (worker.AvailableLogPaths.Count > 3)
+                                                    {
+                                                        <span class="badge bg-secondary">+@(worker.AvailableLogPaths.Count - 3) more</span>
+                                                    }
+                                                </div>
+                                            }
+                                        </div>
+
+                                        <div class="mb-3">
+                                            <small class="fw-bold d-block">Last Heartbeat</small>
+                                            <span>@worker.LastHeartbeat.ToLocalTime().ToString("g")</span>
+                                        </div>
+                                    </div>
+                                    <div class="card-footer bg-transparent">
+                                        <div class="d-flex gap-2">
+                                            <button class="btn btn-sm btn-outline-primary flex-grow-1"
+                                                    @onclick="() => ShowLogPullModal(worker)"
+                                                    disabled="@(!worker.IsOnline)">
+                                                <i class="bi bi-download me-1"></i>Pull Logs
+                                            </button>
+                                            <a href="/livelogs" class="btn btn-sm btn-primary flex-grow-1">
+                                                <i class="bi bi-broadcast me-1"></i>Live Logs
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            }
         </div>
 
         <!-- LOG PULL MODAL -->
@@ -359,35 +391,64 @@
 </style>
 
 @code {
-    private WorkerListResponse _workers = new();
-    private List<WorkerRegistration> _filteredWorkers = new();
-    private bool _loading = true;
-    private string _searchHostname = string.Empty;
-    private bool _showOnlineOnly = false;
+private WorkerListResponse _workers = new();
+private List<WorkerRegistration> _filteredWorkers = new();
+private bool _loading = true;
+private string _searchHostname = string.Empty;
+private bool _showOnlineOnly = false;
+private bool _hasWorkerConfig = false;
 
-    // Log pull modal state
-    private bool _showLogPullModal = false;
-    private WorkerRegistration? _selectedWorker;
-    private string _selectedLogPath = string.Empty;
-    private int _pullLines = 100;
-    private bool _pullFromEnd = true;
-    private bool _pulling = false;
-    private List<string> _pulledLogs = new();
-    private string _pullError = string.Empty;
-    private bool _analyzingLogs = false;
-    private string _selectedModel = "claude-sonnet-4-5";
+// Log pull modal state
+private bool _showLogPullModal = false;
+private WorkerRegistration? _selectedWorker;
+private string _selectedLogPath = string.Empty;
+private int _pullLines = 100;
+private bool _pullFromEnd = true;
+private bool _pulling = false;
+private List<string> _pulledLogs = new();
+private string _pullError = string.Empty;
+private bool _analyzingLogs = false;
+private string _selectedModel = "claude-sonnet-4-5";
 
-    // SignalR subscriptions
-    private IDisposable? _workerRegisteredSub;
-    private IDisposable? _logPullResponseSub;
+// SignalR subscriptions
+private IDisposable? _workerRegisteredSub;
+private IDisposable? _logPullResponseSub;
 
-    protected override async Task OnInitializedAsync()
+protected override async Task OnInitializedAsync()
+{
+    await CheckWorkerConfig();
+        
+    if (_hasWorkerConfig)
     {
         await InitializeSignalR();
         await RefreshWorkers();
     }
+    else
+    {
+        _loading = false;
+    }
+}
 
-    private async Task InitializeSignalR()
+private async Task CheckWorkerConfig()
+{
+    try
+    {
+        var config = await WorkerAgentApi.GetConfigAsync();
+        _hasWorkerConfig = config.HasConfig;
+    }
+    catch
+    {
+        // If we can't check config, assume we don't have one
+        _hasWorkerConfig = false;
+    }
+}
+
+private void GoToMyWorkers()
+{
+    Navigation.NavigateTo("/admin/workers");
+}
+
+private async Task InitializeSignalR()
     {
         try
         {

@@ -4,6 +4,7 @@ using backend.Handlers;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 
 namespace backend.Controllers;
 
@@ -21,7 +22,21 @@ public class WorkerAgentsController : ControllerBase
         _logger = logger;
     }
 
-    private string? GetUserId() => User.FindFirst("sub")?.Value;
+    private string? GetUserId()
+    {
+        // Try multiple claim types that Keycloak might use
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                     ?? User.FindFirstValue("sub")
+                     ?? User.FindFirstValue("preferred_username");
+        
+        if (string.IsNullOrEmpty(userId))
+        {
+            _logger.LogWarning("Could not determine user ID from claims. Available claims: {Claims}",
+                string.Join(", ", User.Claims.Select(c => $"{c.Type}={c.Value}")));
+        }
+        
+        return userId;
+    }
 
     // POST /api/worker-agents/register
     [HttpPost("register")]
@@ -29,7 +44,10 @@ public class WorkerAgentsController : ControllerBase
     {
         var userId = GetUserId();
         if (string.IsNullOrEmpty(userId))
-            return Unauthorized();
+        {
+            _logger.LogWarning("Register: User ID is null or empty");
+            return Unauthorized(new { error = "Unable to determine user identity" });
+        }
 
         // Check if user has worker config initialized
         var userConfig = await _db.UserWorkerConfigs

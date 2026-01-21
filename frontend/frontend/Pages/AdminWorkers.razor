@@ -511,9 +511,17 @@ BHB_API_URL=https://api.blackhatbadshah.com</code></pre>
                 FilterWorkers();
             }
         }
+        catch (HttpRequestException ex) when (ex.Message.Contains("401"))
+        {
+            // Authentication issue - user may need to re-login
+            Toast.ShowWarning("Please log in again to access this page.");
+            _config = new UserWorkerConfigResponse { HasConfig = false };
+        }
         catch (Exception ex)
         {
+            Console.WriteLine($"RefreshAll error: {ex}");
             Toast.ShowError($"Failed to load data: {ex.Message}");
+            _config = new UserWorkerConfigResponse { HasConfig = false };
         }
         finally
         {

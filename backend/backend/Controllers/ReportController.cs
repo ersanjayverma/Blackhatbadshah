@@ -96,6 +96,9 @@ public class ReportsController : ControllerBase
             Title = report.Title,
             Content = content,
             ChartData = chartData,
+            Model = report.Model,
+            FileName = report.Log?.FileName ?? "Log Deleted",
+            CreatedAtUtc = report.CreatedAtUtc,
             Status = report.Status
         };
     }

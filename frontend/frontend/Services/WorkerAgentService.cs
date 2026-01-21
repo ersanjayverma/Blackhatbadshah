@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Net;
 
 namespace frontend.Services;
 
@@ -14,10 +15,25 @@ public class WorkerAgentService
     // Worker Config APIs
     public async Task<UserWorkerConfigResponse> GetConfigAsync()
     {
-        var response = await _http.GetAsync("api/worker-config");
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<UserWorkerConfigResponse>() 
-            ?? new UserWorkerConfigResponse();
+        try
+        {
+            var response = await _http.GetAsync("api/worker-config");
+            
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                // Return empty config if not authenticated - user needs to log in
+                return new UserWorkerConfigResponse { HasConfig = false };
+            }
+            
+            response.EnsureSuccessStatusCode();
+            return await response.Content.ReadFromJsonAsync<UserWorkerConfigResponse>() 
+                ?? new UserWorkerConfigResponse();
+        }
+        catch (HttpRequestException ex)
+        {
+            Console.WriteLine($"GetConfigAsync error: {ex.Message}");
+            throw;
+        }
     }
 
     public async Task<InitializeConfigResponse> InitializeConfigAsync(string? configName = null)

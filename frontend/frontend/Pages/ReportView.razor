@@ -1,0 +1,356 @@
+@page "/reports/{ReportId:guid}"
+@using Microsoft.AspNetCore.Components.WebAssembly.Authentication
+@using frontend.Services
+@using shared.Dto
+@inject ReportService ReportService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<AuthorizeView>
+    <Authorized>
+        <div class="container-fluid px-4 py-4">
+            @if (_loading)
+            {
+                <div class="text-center py-5">
+                    <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;"></div>
+                    <p class="fw-semibold">Loading report...</p>
+                </div>
+            }
+            else if (_error != null)
+            {
+                <div class="alert alert-danger shadow-sm">
+                    <i class="bi bi-exclamation-triangle me-2"></i>@_error
+                </div>
+                <button class="btn btn-secondary" @onclick="GoBack">
+                    <i class="bi bi-arrow-left me-2"></i>Back to Reports
+                </button>
+            }
+            else if (_report != null)
+            {
+                <!-- HEADER -->
+                <div class="d-flex justify-content-between align-items-start flex-wrap mb-4">
+                    <div>
+                        <button class="btn btn-outline-secondary mb-3" @onclick="GoBack">
+                            <i class="bi bi-arrow-left me-2"></i>Back to Reports
+                        </button>
+                        <h2 class="mb-1 fw-bold text-gradient">
+                            <i class="bi bi-file-earmark-bar-graph me-2"></i>@_report.Title
+                        </h2>
+                        <p class="text-muted mb-0">
+                            <i class="bi bi-calendar me-1"></i>
+                            Created: @_report.CreatedAtUtc.ToLocalTime().ToString("f")
+                        </p>
+                    </div>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <button class="btn btn-info" @onclick="DownloadReport">
+                            <i class="bi bi-download me-2"></i>Download
+                        </button>
+                    </div>
+                </div>
+
+                <!-- METADATA CARD -->
+                <div class="card modern-card shadow-sm mb-4">
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-3">
+                                <div class="d-flex align-items-center">
+                                    <div class="bg-primary bg-opacity-10 rounded-circle p-3 me-3">
+                                        <i class="bi bi-cpu text-primary fs-4"></i>
+                                    </div>
+                                    <div>
+                                        <small class="text-muted d-block">AI Model</small>
+                                        <span class="fw-bold">@(string.IsNullOrEmpty(_report.Model) ? "Unknown" : GetModelDisplayName(_report.Model))</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="d-flex align-items-center">
+                                    <div class="bg-info bg-opacity-10 rounded-circle p-3 me-3">
+                                        <i class="bi bi-file-earmark text-info fs-4"></i>
+                                    </div>
+                                    <div>
+                                        <small class="text-muted d-block">Log File</small>
+                                        <span class="fw-bold">@(_report.FileName ?? "Log Deleted")</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="d-flex align-items-center">
+                                    <div class="bg-success bg-opacity-10 rounded-circle p-3 me-3">
+                                        <i class="bi bi-check-circle text-success fs-4"></i>
+                                    </div>
+                                    <div>
+                                        <small class="text-muted d-block">Status</small>
+                                        <span class="fw-bold">@GetStatusDisplay(_report.Status)</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="d-flex align-items-center">
+                                    <div class="bg-warning bg-opacity-10 rounded-circle p-3 me-3">
+                                        <i class="bi bi-clock text-warning fs-4"></i>
+                                    </div>
+                                    <div>
+                                        <small class="text-muted d-block">Created</small>
+                                        <span class="fw-bold">@_report.CreatedAtUtc.ToLocalTime().ToString("g")</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- REPORT CONTENT -->
+                <div class="card modern-card shadow-lg mb-4">
+                    <div class="card-header gradient-header-dark">
+                        <h5 class="mb-0">
+                            <i class="bi bi-file-text me-2"></i>Analysis Report
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="report-content">
+                            @((MarkupString)ConvertMarkdownToHtml(_report.Content))
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CHART -->
+                @if (!string.IsNullOrEmpty(_report.ChartData))
+                {
+                    <div class="card modern-card shadow-lg">
+                        <div class="card-header gradient-header-dark">
+                            <h5 class="mb-0">
+                                <i class="bi bi-bar-chart me-2"></i>Visualization
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="chart-container" style="height: 400px;">
+                                <canvas id="reportChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    </Authorized>
+
+    <NotAuthorized>
+        <div class="container mt-5">
+            <div class="alert alert-warning shadow-sm">
+                <i class="bi bi-lock me-2"></i>
+                You must be logged in to view reports.
+            </div>
+        </div>
+    </NotAuthorized>
+</AuthorizeView>
+
+<style>
+    .report-content {
+        font-size: 1rem;
+        line-height: 1.7;
+    }
+
+    .report-content h1,
+    .report-content h2,
+    .report-content h3 {
+        margin-top: 1.5rem;
+        margin-bottom: 1rem;
+        font-weight: 600;
+    }
+
+    .report-content pre {
+        background-color: #1e1e1e;
+        color: #d4d4d4;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        overflow-x: auto;
+    }
+
+    .report-content code {
+        background-color: rgba(0, 0, 0, 0.1);
+        padding: 0.2rem 0.4rem;
+        border-radius: 0.25rem;
+        font-size: 0.9em;
+    }
+
+    .report-content pre code {
+        background-color: transparent;
+        padding: 0;
+    }
+
+    .report-content ul,
+    .report-content ol {
+        margin-left: 1.5rem;
+    }
+
+    .report-content blockquote {
+        border-left: 4px solid #0d6efd;
+        padding-left: 1rem;
+        margin-left: 0;
+        color: #6c757d;
+    }
+
+    .chart-container {
+        position: relative;
+    }
+</style>
+
+@code {
+    [Parameter]
+    public Guid ReportId { get; set; }
+
+    private ReportDetail? _report;
+    private bool _loading = true;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadReport();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender && _report?.ChartData != null)
+        {
+            await RenderChart();
+        }
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        _error = null;
+        StateHasChanged();
+
+        try
+        {
+            _report = await ReportService.GetAsync(ReportId);
+        }
+        catch (HttpRequestException ex) when (ex.Message.Contains("404"))
+        {
+            _error = "Report not found.";
+        }
+        catch (HttpRequestException ex) when (ex.Message.Contains("401"))
+        {
+            _error = "Please log in to view this report.";
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load report: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void GoBack()
+    {
+        Navigation.NavigateTo("/reports");
+    }
+
+    private async Task DownloadReport()
+    {
+        if (_report == null) return;
+
+        try
+        {
+            using var stream = await ReportService.DownloadAsync(ReportId);
+            using var memoryStream = new MemoryStream();
+            await stream.CopyToAsync(memoryStream);
+            var bytes = memoryStream.ToArray();
+            
+            var fileName = $"{_report.Title?.Replace(" ", "_") ?? "report"}.md";
+            var base64 = Convert.ToBase64String(bytes);
+            
+            await JS.InvokeVoidAsync("downloadFileFromBase64", fileName, "text/markdown", base64);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Download failed: {ex.Message}");
+        }
+    }
+
+    private async Task RenderChart()
+    {
+        if (_report?.ChartData == null) return;
+
+        try
+        {
+            await JS.InvokeVoidAsync("renderChart", "reportChart", _report.ChartData);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Chart render failed: {ex.Message}");
+        }
+    }
+
+    private string GetModelDisplayName(string? model)
+    {
+        return model switch
+        {
+            "claude-opus-4-5" => "Claude Opus 4.5",
+            "claude-sonnet-4-5" => "Claude Sonnet 4.5",
+            "claude-sonnet-3-5" => "Claude Sonnet 3.5",
+            "gpt-4o" => "GPT-4o",
+            "gpt-4-turbo" => "GPT-4 Turbo",
+            "gpt-4-turbo-preview" => "GPT-4 Turbo Preview",
+            "gpt-3.5-turbo" => "GPT-3.5 Turbo",
+            "together-llama-3-70b" => "Llama 3 70B",
+            "together-llama-3.1-405b" => "Llama 3.1 405B",
+            "together-mixtral-8x7b" => "Mixtral 8x7B",
+            "together-qwen" => "Qwen",
+            "gpt-oss-120b" => "GPT-OSS 120B",
+            _ => model ?? "Unknown"
+        };
+    }
+
+    private string GetStatusDisplay(ReportStatus status)
+    {
+        return status switch
+        {
+            ReportStatus.InProgress => "In Progress",
+            ReportStatus.Completed => "Completed",
+            ReportStatus.Failed => "Failed",
+            _ => "Unknown"
+        };
+    }
+
+    private string ConvertMarkdownToHtml(string markdown)
+    {
+        if (string.IsNullOrEmpty(markdown))
+            return string.Empty;
+
+        // Basic markdown to HTML conversion
+        var html = markdown;
+
+        // Headers
+        html = System.Text.RegularExpressions.Regex.Replace(html, @"^### (.+)$", "<h3>$1</h3>", System.Text.RegularExpressions.RegexOptions.Multiline);
+        html = System.Text.RegularExpressions.Regex.Replace(html, @"^## (.+)$", "<h2>$1</h2>", System.Text.RegularExpressions.RegexOptions.Multiline);
+        html = System.Text.RegularExpressions.Regex.Replace(html, @"^# (.+)$", "<h1>$1</h1>", System.Text.RegularExpressions.RegexOptions.Multiline);
+
+        // Bold and italic
+        html = System.Text.RegularExpressions.Regex.Replace(html, @"\*\*(.+?)\*\*", "<strong>$1</strong>");
+        html = System.Text.RegularExpressions.Regex.Replace(html, @"\*(.+?)\*", "<em>$1</em>");
+
+        // Code blocks
+        html = System.Text.RegularExpressions.Regex.Replace(html, @"```(\w*)\n([\s\S]*?)```", "<pre><code>$2</code></pre>");
+        
+        // Inline code
+        html = System.Text.RegularExpressions.Regex.Replace(html, @"`(.+?)`", "<code>$1</code>");
+
+        // Lists
+        html = System.Text.RegularExpressions.Regex.Replace(html, @"^- (.+)$", "<li>$1</li>", System.Text.RegularExpressions.RegexOptions.Multiline);
+        html = System.Text.RegularExpressions.Regex.Replace(html, @"(<li>.*</li>\n?)+", "<ul>$0</ul>");
+
+        // Paragraphs
+        html = System.Text.RegularExpressions.Regex.Replace(html, @"\n\n", "</p><p>");
+        html = $"<p>{html}</p>";
+
+        // Clean up empty paragraphs
+        html = System.Text.RegularExpressions.Regex.Replace(html, @"<p>\s*</p>", "");
+
+        return html;
+    }
+}

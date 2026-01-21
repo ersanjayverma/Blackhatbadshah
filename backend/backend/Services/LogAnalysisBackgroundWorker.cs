@@ -137,6 +137,7 @@ public class LogAnalysisBackgroundWorker : BackgroundService
                 Summary = "Analysis in progress...",
                 ReportPath = reportPath,
                 ChartPath = chartPath,
+                Model = model,
                 Status = ReportStatus.InProgress,
                 CreatedAtUtc = DateTime.UtcNow
             };

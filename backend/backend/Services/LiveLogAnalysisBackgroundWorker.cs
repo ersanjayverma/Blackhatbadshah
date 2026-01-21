@@ -106,6 +106,7 @@ public class LiveLogAnalysisBackgroundWorker : BackgroundService
                 Summary = "Analysis in progress...",
                 ReportPath = reportPath,
                 ChartPath = chartPath,
+                Model = job.Model,
                 Status = ReportStatus.InProgress,
                 CreatedAtUtc = DateTime.UtcNow
             };

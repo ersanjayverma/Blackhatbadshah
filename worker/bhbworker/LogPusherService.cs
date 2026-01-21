@@ -424,6 +424,8 @@ public class LogPusherService : BackgroundService
 
                 // Send registration metadata so the backend/frontend know about this worker
                 await RegisterWorkerAsync();
+                // Push a single metric to mark worker as online in backend registry
+                await PushMetrics();
             }
             catch (Exception ex)
             {

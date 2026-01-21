@@ -86,9 +86,6 @@
                     <button class="btn btn-sm btn-outline-warning" @onclick="ShowRotatePskModal">
                         <i class="bi bi-arrow-repeat me-1"></i>Rotate PSK
                     </button>
-                    <button class="btn btn-sm btn-outline-primary" @onclick="ShowCurrentPskModal">
-                        <i class="bi bi-key me-1"></i>Show PSK
-                    </button>
                             <button class="btn btn-sm btn-outline-info" @onclick="ShowInstallInstructions">
                                 <i class="bi bi-book me-1"></i>Install Guide
                             </button>
@@ -651,23 +648,6 @@ BHB_API_URL=https://api.blackhatbadshah.com</code></pre>
         await RotatePsk();
     }
 
-    private async void ShowCurrentPskModal()
-    {
-        try
-        {
-            var result = await WorkerAgentApi.GetCurrentPskAsync();
-            _keyModalTitle = "Current Pre-Shared Key (PSK)";
-            _keyLabel = "Pre-Shared Key (PSK)";
-            _displayWorkerId = string.Empty;
-            _displayKey = result.Psk;
-            _showKey = false;
-            _showKeyModal = true;
-        }
-        catch (Exception ex)
-        {
-            Toast.ShowError($"Failed to retrieve PSK: {ex.Message}");
-        }
-    }
 
     private async Task RotatePsk()
     {

@@ -99,18 +99,6 @@ public class WorkerAgentService
         return await response.Content.ReadFromJsonAsync<RotateKeyResponse>()
                ?? throw new Exception("Failed to parse response");
     }
-    public async Task<CurrentPskResponse> GetCurrentPskAsync()
-    {
-        var response = await _http.GetAsync("api/worker-config/psk");
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<CurrentPskResponse>() ?? new CurrentPskResponse();
-    }
-
-public class CurrentPskResponse
-{
-    public string Psk { get; set; } = string.Empty;
-    public string Message { get; set; } = string.Empty;
-}
 
     public async Task<ReactivateWorkerResponse> ReactivateAsync(Guid workerId)
     {
@@ -170,6 +158,7 @@ public class WorkerAgentListItem
 {
     public Guid Id { get; set; }
     public string Name { get; set; } = string.Empty;
+    public string Hostname { get; set; } = string.Empty;
     public int Status { get; set; } // 1 = Active, 2 = Revoked
     public DateTime CreatedAt { get; set; }
     public DateTime? LastSeenAt { get; set; }

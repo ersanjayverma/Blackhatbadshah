@@ -12,6 +12,7 @@
 @inject ILocalStorageService LocalStorage
 @inject IJSRuntime JS
 @inject ToastService Toast
+@inject NavigationManager Navigation
 @implements IAsyncDisposable
 
 <AuthorizeView>
@@ -368,6 +369,26 @@
                 </div>
             }
 
+            <!-- LIVE LOGS (SignalR) -->
+            @if (_liveLogs.Count > 0)
+            {
+                <div class="card modern-card shadow-lg mb-4">
+                    <div class="card-header gradient-header-dark">
+                        <h5 class="mb-0">
+                            <i class="bi bi-terminal me-2"></i>Live Logs
+                        </h5>
+                    </div>
+                    <div class="card-body" style="max-height:300px;overflow-y:auto;">
+                        <pre>
+                            @foreach (var log in _liveLogs)
+                            {
+                                @log<br />
+                            }
+                        </pre>
+                    </div>
+                </div>
+            }
+
         </div>
     </Authorized>
 
@@ -462,6 +483,12 @@
     private IDisposable? _analysisCompletedSub;
     private IDisposable? _analysisFailedSub;
 
+    private HubConnection? _hubConnection;
+    private List<string> _liveLogs = new();
+    private string? _selectedLogPath;
+    private string? _selectedWorkerId;
+    private IDisposable? _liveLogSub;
+
     private List<LiveLogEntry> FilteredLogs => _logs
         .Where(l => string.IsNullOrEmpty(_filterLevel) || l.Level == _filterLevel)
         .Where(l => string.IsNullOrEmpty(_filterSource) || l.Source == _filterSource)
@@ -475,6 +502,7 @@
         await InitializeSignalR();
         await RefreshWorkers();
         await LoadSavedWorkerId();
+        await StartSignalR();
     }
 
     private async Task RefreshWorkers()
@@ -652,6 +680,40 @@
         }
     }
 
+    private async Task StartSignalR()
+    {
+        _hubConnection = new HubConnectionBuilder()
+            .WithUrl(Navigation.ToAbsoluteUri("/hubs/livelog"))
+            .Build();
+
+        _liveLogSub = _hubConnection.On<object>("LiveLogUpdate", (update) =>
+        {
+            var line = update?.GetType().GetProperty("Line")?.GetValue(update)?.ToString();
+            if (!string.IsNullOrEmpty(line))
+            {
+                _liveLogs.Add(line);
+                InvokeAsync(StateHasChanged);
+            }
+        });
+
+        await _hubConnection.StartAsync();
+    }
+
+    private async Task StartLiveLog(string workerId, string logPath)
+    {
+        _selectedWorkerId = workerId;
+        _selectedLogPath = logPath;
+        await _hubConnection?.InvokeAsync("StartLiveLog", workerId, logPath);
+    }
+
+    private async Task StopLiveLog()
+    {
+        if (_selectedWorkerId != null && _selectedLogPath != null)
+        {
+            await _hubConnection?.InvokeAsync("StopLiveLog", _selectedWorkerId, _selectedLogPath);
+        }
+    }
+
     private void AddLog(LiveLogEntry entry)
     {
         // Limit to last 1000 logs to prevent memory issues
@@ -818,6 +880,15 @@
         _analysisStartedSub?.Dispose();
         _analysisCompletedSub?.Dispose();
         _analysisFailedSub?.Dispose();
+
+        if (_liveLogSub != null)
+        {
+            _liveLogSub.Dispose();
+        }
+        if (_hubConnection != null)
+        {
+            await _hubConnection.DisposeAsync();
+        }
 
         // Unsubscribe from worker when leaving page
         if (_isSubscribed && !string.IsNullOrEmpty(_subscribedWorkerId))

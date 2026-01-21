@@ -584,4 +584,40 @@ public class LiveLogHub : Hub
         // Broadcast log pull response to frontend
         await _hubNotification.NotifyLogPullResponseAsync(workerId, response);
     }
+
+    // Store subscriptions: connectionId -> (workerId, logPath)
+    private static readonly Dictionary<string, (string workerId, string logPath)> _liveLogSubscriptions = new();
+
+    // Called by frontend to start live log streaming for a worker/logPath
+    public async Task StartLiveLog(string workerId, string logPath)
+    {
+        _liveLogSubscriptions[Context.ConnectionId] = (workerId, logPath);
+        // Forward to worker via SignalR (assuming worker is connected as a client)
+        await Clients.Group(workerId).SendAsync("StartLiveLog", logPath);
+    }
+
+    // Called by frontend to stop live log streaming
+    public async Task StopLiveLog(string workerId, string logPath)
+    {
+        _liveLogSubscriptions.Remove(Context.ConnectionId);
+        await Clients.Group(workerId).SendAsync("StopLiveLog", logPath);
+    }
+
+    // Called by worker to push new log lines
+    public async Task LiveLogUpdate(object update)
+    {
+        // Broadcast to all clients subscribed to this worker/logPath
+        if (update is not null)
+        {
+            var workerId = update.GetType().GetProperty("WorkerId")?.GetValue(update)?.ToString();
+            var logPath = update.GetType().GetProperty("LogPath")?.GetValue(update)?.ToString();
+            foreach (var kvp in _liveLogSubscriptions)
+            {
+                if (kvp.Value.workerId == workerId && kvp.Value.logPath == logPath)
+                {
+                    await Clients.Client(kvp.Key).SendAsync("LiveLogUpdate", update);
+                }
+            }
+        }
+    }
 }

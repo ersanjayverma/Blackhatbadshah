@@ -17,6 +17,9 @@ public class LogPusherService : BackgroundService
     private readonly List<FileStream> _streams = new();
     private string _workerId = string.Empty;
 
+    // Live log streaming
+    private readonly Dictionary<string, CancellationTokenSource> _liveLogCts = new();
+
     private const string WorkerIdFileName = ".bhb-worker-id";
 
     // Metrics tracking
@@ -161,7 +164,21 @@ public class LogPusherService : BackgroundService
                     continue;
                 }
 
-                await ConnectToHub(hubUrl, psk, apiKey, _workerId, reconnectDelay, stoppingToken);
+                // Retry logic: keep trying to connect until successful or cancelled
+                bool connected = false;
+                while (!connected && !stoppingToken.IsCancellationRequested)
+                {
+                    try
+                    {
+                        await ConnectToHub(hubUrl, psk, apiKey, _workerId, reconnectDelay, stoppingToken);
+                        connected = _connection != null && _connection.State == HubConnectionState.Connected;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "ConnectToHub failed, retrying in {Delay}ms", reconnectDelay);
+                        await Task.Delay(reconnectDelay, stoppingToken);
+                    }
+                }
 
                 // Do not start log streaming or metrics automatically.
                 // Worker will push data only in response to explicit hub requests.
@@ -214,9 +231,10 @@ public class LogPusherService : BackgroundService
                 if (_connection == null || _connection.State != HubConnectionState.Connected)
                 {
                     _logger.LogDebug("[Metrics] Connection not active, skipping metrics push.");
-                    break;
+                    continue;
                 }
                 await PushMetrics();
+                await PingOnline();
             }
             catch (OperationCanceledException)
             {
@@ -241,7 +259,7 @@ public class LogPusherService : BackgroundService
                 if (_connection == null || _connection.State != HubConnectionState.Connected)
                 {
                     _logger.LogDebug("[SystemMonitor] Connection not active, skipping system monitor push.");
-                    break;
+                    continue;
                 }
                 await PushSystemMonitorData();
             }
@@ -426,6 +444,8 @@ public class LogPusherService : BackgroundService
                 await RegisterWorkerAsync();
                 // Push a single metric to mark worker as online in backend registry
                 await PushMetrics();
+                // Start metrics and monitor loops after successful connection
+                StartMetricsAndMonitor(CancellationToken.None);
             }
             catch (Exception ex)
             {
@@ -481,6 +501,20 @@ public class LogPusherService : BackgroundService
             await PullLogsAsync(logPath, lines, fromEnd);
         });
 
+        // Handle live log stream start
+        _connection.On<string>("StartLiveLog", async (logPath) =>
+        {
+            _logger.LogInformation("[LiveLog] Start streaming: {Path}", logPath);
+            await StartLiveLogStreamingAsync(logPath);
+        });
+
+        // Handle live log stream stop
+        _connection.On<string>("StopLiveLog", (logPath) =>
+        {
+            _logger.LogInformation("[LiveLog] Stop streaming: {Path}", logPath);
+            StopLiveLogStreaming(logPath);
+        });
+
         // Handle registration confirmation
         _connection.On<object>("Registered", data =>
         {
@@ -503,10 +537,10 @@ public class LogPusherService : BackgroundService
 
         _connection.Closed += async (ex) =>
         {
-            _logger.LogWarning(ex, "Connection closed permanently after retries");
+            _logger.LogWarning(ex, "Connection closed, will attempt to reconnect");
             // ensure metrics stopped
             await StopMetricsAndMonitorAsync();
-            await Task.Delay(reconnectDelay, ct);
+            // Do not delay or exit here; let the main loop handle reconnection
         };
 
         _logger.LogInformation("Connecting to LiveLogHub...");
@@ -1093,4 +1127,78 @@ public class LogPusherService : BackgroundService
     }
 
     #endregion
+
+    // Periodic online ping to keep worker online
+    private async Task PingOnline()
+    {
+        try
+        {
+            if (_connection != null && _connection.State == HubConnectionState.Connected)
+            {
+                await _connection.InvokeAsync("WorkerOnline", _workerId);
+                _logger.LogDebug("[Online] WorkerOnline ping sent");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "[Online] WorkerOnline ping failed");
+        }
+    }
+
+    // Live log streaming: monitor file and push new lines
+    private async Task StartLiveLogStreamingAsync(string logPath)
+    {
+        if (_liveLogCts.ContainsKey(logPath)) return; // Already streaming
+        if (!File.Exists(logPath)) return;
+
+        var cts = new CancellationTokenSource();
+        _liveLogCts[logPath] = cts;
+        var token = cts.Token;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var fs = new FileStream(logPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                using var sr = new StreamReader(fs);
+                // Seek to end for tailing
+                fs.Seek(0, SeekOrigin.End);
+                while (!token.IsCancellationRequested)
+                {
+                    var line = await sr.ReadLineAsync();
+                    if (line != null)
+                    {
+                        // Push new line to frontend
+                        if (_connection?.State == HubConnectionState.Connected)
+                        {
+                            await _connection.InvokeAsync("LiveLogUpdate", new {
+                                WorkerId = _workerId,
+                                LogPath = logPath,
+                                Line = line,
+                                Timestamp = DateTime.UtcNow
+                            });
+                        }
+                    }
+                    else
+                    {
+                        await Task.Delay(500, token); // Wait for new lines
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[LiveLog] Error streaming log: {Path}", logPath);
+            }
+        }, token);
+    }
+
+    private void StopLiveLogStreaming(string logPath)
+    {
+        if (_liveLogCts.TryGetValue(logPath, out var cts))
+        {
+            cts.Cancel();
+            cts.Dispose();
+            _liveLogCts.Remove(logPath);
+        }
+    }
 }

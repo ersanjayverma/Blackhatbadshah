@@ -1111,4 +1111,78 @@ public class LogPusherService : BackgroundService
     }
 
     #endregion
+
+    // Periodic online ping to keep worker online
+    private async Task PingOnline()
+    {
+        try
+        {
+            if (_connection != null && _connection.State == HubConnectionState.Connected)
+            {
+                await _connection.InvokeAsync("WorkerOnline", _workerId);
+                _logger.LogDebug("[Online] WorkerOnline ping sent");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "[Online] WorkerOnline ping failed");
+        }
+    }
+
+    // Live log streaming: monitor file and push new lines
+    private async Task StartLiveLogStreamingAsync(string logPath)
+    {
+        if (_liveLogCts.ContainsKey(logPath)) return; // Already streaming
+        if (!File.Exists(logPath)) return;
+
+        var cts = new CancellationTokenSource();
+        _liveLogCts[logPath] = cts;
+        var token = cts.Token;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var fs = new FileStream(logPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                using var sr = new StreamReader(fs);
+                // Seek to end for tailing
+                fs.Seek(0, SeekOrigin.End);
+                while (!token.IsCancellationRequested)
+                {
+                    var line = await sr.ReadLineAsync();
+                    if (line != null)
+                    {
+                        // Push new line to frontend
+                        if (_connection?.State == HubConnectionState.Connected)
+                        {
+                            await _connection.InvokeAsync("LiveLogUpdate", new {
+                                WorkerId = _workerId,
+                                LogPath = logPath,
+                                Line = line,
+                                Timestamp = DateTime.UtcNow
+                            });
+                        }
+                    }
+                    else
+                    {
+                        await Task.Delay(500, token); // Wait for new lines
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[LiveLog] Error streaming log: {Path}", logPath);
+            }
+        }, token);
+    }
+
+    private void StopLiveLogStreaming(string logPath)
+    {
+        if (_liveLogCts.TryGetValue(logPath, out var cts))
+        {
+            cts.Cancel();
+            cts.Dispose();
+            _liveLogCts.Remove(logPath);
+        }
+    }
 }

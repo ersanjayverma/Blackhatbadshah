@@ -260,11 +260,11 @@
             using var memoryStream = new MemoryStream();
             await stream.CopyToAsync(memoryStream);
             var bytes = memoryStream.ToArray();
-            
-            var fileName = $"{_report.Title?.Replace(" ", "_") ?? "report"}.md";
+
+            var fileName = $"{_report.Title?.Replace(" ", "_") ?? "report"}.pdf";
             var base64 = Convert.ToBase64String(bytes);
-            
-            await JS.InvokeVoidAsync("downloadFileFromBase64", fileName, "text/markdown", base64);
+
+            await JS.InvokeVoidAsync("downloadFileFromBase64", fileName, "application/pdf", base64);
         }
         catch (Exception ex)
         {

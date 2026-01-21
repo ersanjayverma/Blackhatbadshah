@@ -164,7 +164,21 @@ public class LogPusherService : BackgroundService
                     continue;
                 }
 
-                await ConnectToHub(hubUrl, psk, apiKey, _workerId, reconnectDelay, stoppingToken);
+                // Retry logic: keep trying to connect until successful or cancelled
+                bool connected = false;
+                while (!connected && !stoppingToken.IsCancellationRequested)
+                {
+                    try
+                    {
+                        await ConnectToHub(hubUrl, psk, apiKey, _workerId, reconnectDelay, stoppingToken);
+                        connected = _connection != null && _connection.State == HubConnectionState.Connected;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "ConnectToHub failed, retrying in {Delay}ms", reconnectDelay);
+                        await Task.Delay(reconnectDelay, stoppingToken);
+                    }
+                }
 
                 // Do not start log streaming or metrics automatically.
                 // Worker will push data only in response to explicit hub requests.
@@ -521,10 +535,10 @@ public class LogPusherService : BackgroundService
 
         _connection.Closed += async (ex) =>
         {
-            _logger.LogWarning(ex, "Connection closed permanently after retries");
+            _logger.LogWarning(ex, "Connection closed, will attempt to reconnect");
             // ensure metrics stopped
             await StopMetricsAndMonitorAsync();
-            await Task.Delay(reconnectDelay, ct);
+            // Do not delay or exit here; let the main loop handle reconnection
         };
 
         _logger.LogInformation("Connecting to LiveLogHub...");

@@ -199,7 +199,7 @@
     [Parameter]
     public Guid ReportId { get; set; }
 
-    private ReportDetail? _report;
+    private shared.Dto.ReportDetail? _report;
     private bool _loading = true;
     private string? _error;
 

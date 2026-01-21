@@ -153,6 +153,7 @@ public class WorkerAgentsController : ControllerBase
             {
                 Id = w.Id,
                 Name = w.Name,
+                Hostname = w.Name, // Use Name as Hostname for PSK/admin workers
                 Status = w.Status,
                 CreatedAt = w.CreatedAt,
                 LastSeenAt = w.LastSeenAt,
@@ -328,6 +329,7 @@ public class WorkerAgentListItem
 {
     public Guid Id { get; set; }
     public string Name { get; set; } = string.Empty;
+    public string Hostname { get; set; } = string.Empty;
     public WorkerAgentStatus Status { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? LastSeenAt { get; set; }

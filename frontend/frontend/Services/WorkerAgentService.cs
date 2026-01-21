@@ -170,6 +170,7 @@ public class WorkerAgentListItem
 {
     public Guid Id { get; set; }
     public string Name { get; set; } = string.Empty;
+    public string Hostname { get; set; } = string.Empty;
     public int Status { get; set; } // 1 = Active, 2 = Revoked
     public DateTime CreatedAt { get; set; }
     public DateTime? LastSeenAt { get; set; }

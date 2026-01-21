@@ -232,20 +232,21 @@
                     _ => "Report status updated"
                 };
 
-                switch (status)
+                await InvokeAsync(() =>
                 {
-                    case ReportStatus.InProgress:
-                        ToastService.ShowInfo(message, "Report Status");
-                        break;
-                    case ReportStatus.Completed:
-                        ToastService.ShowSuccess(message, "Report Ready");
-                        break;
-                    case ReportStatus.Failed:
-                        ToastService.ShowError(message, "Report Error");
-                        break;
-                }
-
-                await InvokeAsync(StateHasChanged);
+                    switch (status)
+                    {
+                        case ReportStatus.InProgress:
+                            ToastService.ShowInfo(message, "Report Status");
+                            break;
+                        case ReportStatus.Completed:
+                            ToastService.ShowSuccess(message, "Report Ready");
+                            break;
+                        case ReportStatus.Failed:
+                            ToastService.ShowError(message, "Report Error");
+                            break;
+                    }
+                });
             });
         }
         catch (Exception ex)
@@ -256,15 +257,18 @@
 
     private void HandleToastShow(ToastMessage toast)
     {
-        _toasts.Add(toast);
-        StateHasChanged();
-
-        // Auto-remove toast after 5 seconds
-        Task.Delay(5000).ContinueWith(_ =>
+        InvokeAsync(() =>
         {
-            InvokeAsync(() =>
+            _toasts.Add(toast);
+            StateHasChanged();
+
+            // Auto-remove toast after 5 seconds
+            _ = Task.Delay(5000).ContinueWith(_ =>
             {
-                RemoveToast(toast);
+                InvokeAsync(() =>
+                {
+                    RemoveToast(toast);
+                });
             });
         });
     }

@@ -15,6 +15,7 @@ public class Report
     public string Summary { get; set; } = null!;
     public string ReportPath { get; set; } = null!; // blob/file path
     public string? ChartPath { get; set; } // blob/file path for chart data
+    public string? Model { get; set; } // AI model used for analysis
 
     public ReportStatus Status { get; set; } = ReportStatus.InProgress;
 

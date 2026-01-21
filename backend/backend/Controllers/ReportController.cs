@@ -71,33 +71,45 @@ public class ReportsController : ControllerBase
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
                      ?? User.FindFirstValue("sub");
 
-        var report = await _db.Reports
-            .Include(r => r.Log)
-            .FirstOrDefaultAsync(r => r.Id == id && r.UserId == userId);
-
-        if (report == null)
-            return NotFound();
-
-        if (!System.IO.File.Exists(report.ReportPath))
-            return NotFound("Report content missing");
-
-        var content = await System.IO.File.ReadAllTextAsync(report.ReportPath);
-
-        string? chartData = null;
-        if (!string.IsNullOrWhiteSpace(report.ChartPath) &&
-            System.IO.File.Exists(report.ChartPath))
+        try
         {
-            chartData = await System.IO.File.ReadAllTextAsync(report.ChartPath);
+            var report = await _db.Reports
+                .Include(r => r.Log)
+                .FirstOrDefaultAsync(r => r.Id == id && r.UserId == userId);
+
+            if (report == null)
+                return NotFound();
+
+            if (!System.IO.File.Exists(report.ReportPath))
+                return NotFound("Report content missing");
+
+            var content = await System.IO.File.ReadAllTextAsync(report.ReportPath);
+
+            string? chartData = null;
+            if (!string.IsNullOrWhiteSpace(report.ChartPath) &&
+                System.IO.File.Exists(report.ChartPath))
+            {
+                chartData = await System.IO.File.ReadAllTextAsync(report.ChartPath);
+            }
+
+            return new ReportDetail
+            {
+                Id = report.Id,
+                Title = report.Title,
+                Content = content,
+                ChartData = chartData,
+                Model = report.Model,
+                FileName = report.Log?.FileName ?? "Log Deleted",
+                CreatedAtUtc = report.CreatedAtUtc,
+                Status = report.Status
+            };
         }
-
-        return new ReportDetail
+        catch (Exception ex)
         {
-            Id = report.Id,
-            Title = report.Title,
-            Content = content,
-            ChartData = chartData,
-            Status = report.Status
-        };
+            // Log the error for debugging
+            Console.WriteLine($"Error fetching report {id}: {ex.Message}");
+            return StatusCode(500, new { error = "Failed to fetch report", details = ex.Message });
+        }
     }
 
     // ----------------------------------------------------
@@ -106,35 +118,47 @@ public class ReportsController : ControllerBase
     [HttpGet("{id:guid}/download")]
     public async Task<IActionResult> Download(Guid id)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                     ?? User.FindFirstValue("sub");
-
-        var report = await _db.Reports
-            .Include(r => r.Log)
-            .FirstOrDefaultAsync(r => r.Id == id && r.UserId == userId);
-
-        if (report == null)
-            return NotFound();
-
-        if (!System.IO.File.Exists(report.ReportPath))
-            return NotFound("Report file not found");
-
-        var markdown = await System.IO.File.ReadAllTextAsync(report.ReportPath);
-
-        string? chartData = null;
-        if (!string.IsNullOrWhiteSpace(report.ChartPath) &&
-            System.IO.File.Exists(report.ChartPath))
+        try
         {
-            chartData = await System.IO.File.ReadAllTextAsync(report.ChartPath);
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                         ?? User.FindFirstValue("sub");
+
+            if (string.IsNullOrEmpty(userId))
+                return Unauthorized(new { error = "Unable to determine user identity" });
+
+            var report = await _db.Reports
+                .Include(r => r.Log)
+                .FirstOrDefaultAsync(r => r.Id == id && r.UserId == userId);
+
+            if (report == null)
+                return NotFound(new { error = "Report not found" });
+
+            if (string.IsNullOrEmpty(report.ReportPath) || !System.IO.File.Exists(report.ReportPath))
+                return NotFound(new { error = "Report file not found on disk" });
+
+            var markdown = await System.IO.File.ReadAllTextAsync(report.ReportPath);
+
+            string? chartData = null;
+            if (!string.IsNullOrWhiteSpace(report.ChartPath) &&
+                System.IO.File.Exists(report.ChartPath))
+            {
+                chartData = await System.IO.File.ReadAllTextAsync(report.ChartPath);
+            }
+
+            var originalName = Path.GetFileNameWithoutExtension(report.ReportPath);
+            var fileName = $"{originalName}.pdf";
+
+            var pdfBytes = await PdfGenerator.FromMarkdownAsync(markdown, chartData);
+
+            return File(pdfBytes, "application/pdf", fileName);
         }
-
-        var originalName = Path.GetFileNameWithoutExtension(report.ReportPath);
-        var fileName = $"{originalName}.pdf";
-
-        var pdfBytes = await PdfGenerator.FromMarkdownAsync(markdown, chartData);
-
-        return File(pdfBytes, "application/pdf", fileName);
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error downloading report {id}: {ex.Message}");
+            return StatusCode(500, new { error = "Failed to download report", details = ex.Message });
+        }
     }
+
 
     // ----------------------------------------------------
     // DELETE /api/reports/{id}
@@ -142,60 +166,24 @@ public class ReportsController : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                     ?? User.FindFirstValue("sub")
-                     ?? string.Empty;
-
-        var report = await _db.Reports
-            .FirstOrDefaultAsync(r => r.Id == id && r.UserId == userId);
-
-        if (report == null)
-            return NotFound();
-
         try
         {
-            if (System.IO.File.Exists(report.ReportPath))
-                System.IO.File.Delete(report.ReportPath);
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                         ?? User.FindFirstValue("sub")
+                         ?? string.Empty;
 
-            if (!string.IsNullOrWhiteSpace(report.ChartPath) &&
-                System.IO.File.Exists(report.ChartPath))
-                System.IO.File.Delete(report.ChartPath);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Failed to delete files for report {id}: {ex.Message}");
-        }
+            if (string.IsNullOrEmpty(userId))
+                return Unauthorized(new { error = "Unable to determine user identity" });
 
-        _db.Reports.Remove(report);
-        await _db.SaveChangesAsync();
+            var report = await _db.Reports
+                .FirstOrDefaultAsync(r => r.Id == id && r.UserId == userId);
 
-        await _hubNotification.NotifyReportDeletedAsync(userId, id);
+            if (report == null)
+                return NotFound();
 
-        return NoContent();
-    }
-
-    // ----------------------------------------------------
-    // DELETE /api/reports/all
-    // ----------------------------------------------------
-    [HttpDelete("all")]
-    public async Task<IActionResult> DeleteAll()
-    {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                     ?? User.FindFirstValue("sub")
-                     ?? string.Empty;
-
-        var reports = await _db.Reports
-            .Where(r => r.UserId == userId)
-            .ToListAsync();
-
-        if (reports.Count == 0)
-            return NoContent();
-
-        foreach (var report in reports)
-        {
             try
             {
-                if (System.IO.File.Exists(report.ReportPath))
+                if (!string.IsNullOrEmpty(report.ReportPath) && System.IO.File.Exists(report.ReportPath))
                     System.IO.File.Delete(report.ReportPath);
 
                 if (!string.IsNullOrWhiteSpace(report.ChartPath) &&
@@ -204,15 +192,73 @@ public class ReportsController : ControllerBase
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Failed to delete files for report {report.Id}: {ex.Message}");
+                Console.WriteLine($"Failed to delete files for report {id}: {ex.Message}");
             }
+
+            _db.Reports.Remove(report);
+            await _db.SaveChangesAsync();
+
+            await _hubNotification.NotifyReportDeletedAsync(userId, id);
+
+            return NoContent();
         }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error deleting report {id}: {ex.Message}");
+            return StatusCode(500, new { error = "Failed to delete report", details = ex.Message });
+        }
+    }
 
-        _db.Reports.RemoveRange(reports);
-        await _db.SaveChangesAsync();
+    // ----------------------------------------------------
+    // DELETE /api/reports/all
+    // ----------------------------------------------------
+    [HttpDelete("all")]
+    public async Task<IActionResult> DeleteAll()
+    {
+        try
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                         ?? User.FindFirstValue("sub")
+                         ?? string.Empty;
 
-        await _hubNotification.NotifyAllReportsDeletedAsync(userId, reports.Count);
+            if (string.IsNullOrEmpty(userId))
+                return Unauthorized(new { error = "Unable to determine user identity" });
 
-        return Ok(new DeleteAllResponse { Deleted = reports.Count });
+            var reports = await _db.Reports
+                .Where(r => r.UserId == userId)
+                .ToListAsync();
+
+            if (reports.Count == 0)
+                return Ok(new DeleteAllResponse { Deleted = 0 });
+
+            foreach (var report in reports)
+            {
+                try
+                {
+                    if (!string.IsNullOrEmpty(report.ReportPath) && System.IO.File.Exists(report.ReportPath))
+                        System.IO.File.Delete(report.ReportPath);
+
+                    if (!string.IsNullOrWhiteSpace(report.ChartPath) &&
+                        System.IO.File.Exists(report.ChartPath))
+                        System.IO.File.Delete(report.ChartPath);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Failed to delete files for report {report.Id}: {ex.Message}");
+                }
+            }
+
+            _db.Reports.RemoveRange(reports);
+            await _db.SaveChangesAsync();
+
+            await _hubNotification.NotifyAllReportsDeletedAsync(userId, reports.Count);
+
+            return Ok(new DeleteAllResponse { Deleted = reports.Count });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error deleting all reports: {ex.Message}");
+            return StatusCode(500, new { error = "Failed to delete reports", details = ex.Message });
+        }
     }
 }

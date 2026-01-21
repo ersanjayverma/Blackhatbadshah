@@ -15,23 +15,23 @@
             <div class="d-flex justify-content-between align-items-center flex-wrap mb-4">
                 <div>
                     <h2 class="mb-1 fw-bold text-gradient">
-                        <i class="bi bi-cpu me-2"></i>Worker Agents
-                        <span class="admin-badge">ADMIN</span>
+                        <i class="bi bi-cpu me-2"></i>My Workers
                     </h2>
-                    <p class="mb-0">Manage API-authenticated worker agents for your workspaces</p>
+                    <p class="mb-0">Manage your worker agents for log collection</p>
                 </div>
                 <div class="d-flex gap-2 align-items-center">
+                    @if (_config != null && _config.HasConfig)
+                    {
+                        <span class="badge bg-info px-3 py-2">
+                            <i class="bi bi-stack me-1"></i>
+                            @_summary.ActiveWorkers / @_config.MaxWorkers Workers
+                        </span>
+                    }
                     <span class="badge bg-success px-3 py-2">
                         <i class="bi bi-circle-fill me-1" style="font-size: 0.5rem;"></i>
                         @_workers.Count(w => w.IsActive) Active
                     </span>
-                    <span class="badge bg-secondary px-3 py-2">
-                        @_workers.Count Total
-                    </span>
-                    <button class="btn btn-primary" @onclick="ShowRegisterModal">
-                        <i class="bi bi-plus-lg me-1"></i>Register Worker
-                    </button>
-                    <button class="btn btn-outline-primary" @onclick="RefreshWorkers" disabled="@_loading">
+                    <button class="btn btn-outline-primary" @onclick="RefreshAll" disabled="@_loading">
                         @if (_loading)
                         {
                             <span class="spinner-border spinner-border-sm me-1"></span>
@@ -45,30 +45,123 @@
                 </div>
             </div>
 
-            <!-- FILTER -->
-            <div class="card modern-card shadow-sm mb-4">
-                <div class="card-body">
-                    <div class="row g-3 align-items-end">
-                        <div class="col-md-6">
-                            <label class="form-label fw-bold">
-                                <i class="bi bi-funnel me-2"></i>Filter
-                            </label>
-                            <select class="form-select" @bind="_statusFilter" @bind:after="FilterWorkers">
-                                <option value="all">All Workers</option>
-                                <option value="active">Active Only</option>
-                                <option value="revoked">Revoked Only</option>
-                            </select>
+            <!-- CONFIG SECTION -->
+            @if (_config == null || !_config.HasConfig)
+            {
+                <div class="card modern-card shadow-lg mb-4 border-warning">
+                    <div class="card-header bg-warning text-dark">
+                        <h5 class="mb-0">
+                            <i class="bi bi-exclamation-triangle me-2"></i>Setup Required
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="mb-3">
+                            You need to initialize your worker configuration before registering workers.
+                            This will generate a unique Pre-Shared Key (PSK) for your account.
+                        </p>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Configuration Name (optional)</label>
+                            <input type="text" class="form-control" placeholder="My Production Servers"
+                                   @bind="_newConfigName" />
                         </div>
-                        <div class="col-md-6">
-                            <label class="form-label fw-bold">
-                                <i class="bi bi-search me-2"></i>Search
-                            </label>
-                            <input type="text" class="form-control" placeholder="Search by name..."
-                                   @bind="_searchTerm" @bind:event="oninput" @bind:after="FilterWorkers" />
+                        <button class="btn btn-primary btn-lg" @onclick="InitializeConfig" disabled="@_initializing">
+                            @if (_initializing)
+                            {
+                                <span class="spinner-border spinner-border-sm me-2"></span>
+                            }
+                            <i class="bi bi-key me-2"></i>Initialize Worker Configuration
+                        </button>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <!-- CONFIG INFO CARD -->
+                <div class="card modern-card shadow-sm mb-4">
+                    <div class="card-header gradient-header-dark d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            <i class="bi bi-gear me-2"></i>Worker Configuration
+                        </h5>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-sm btn-outline-warning" @onclick="ShowRotatePskModal">
+                                <i class="bi bi-arrow-repeat me-1"></i>Rotate PSK
+                            </button>
+                            <button class="btn btn-sm btn-outline-info" @onclick="ShowInstallInstructions">
+                                <i class="bi bi-book me-1"></i>Install Guide
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-3">
+                                <small class="fw-bold d-block mb-1">Configuration</small>
+                                <span>@(_config.ConfigName ?? "Default")</span>
+                            </div>
+                            <div class="col-md-3">
+                                <small class="fw-bold d-block mb-1">Status</small>
+                                @if (_config.IsEnabled)
+                                {
+                                    <span class="badge bg-success">Enabled</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-danger">Disabled</span>
+                                }
+                            </div>
+                            <div class="col-md-3">
+                                <small class="fw-bold d-block mb-1">Worker Limit</small>
+                                <span>@_summary.ActiveWorkers / @_config.MaxWorkers</span>
+                            </div>
+                            <div class="col-md-3">
+                                <small class="fw-bold d-block mb-1">PSK Last Rotated</small>
+                                <span>@(_config.LastPskRotatedAt?.ToLocalTime().ToString("g") ?? "Never")</span>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
+
+                <!-- ACTION BUTTONS -->
+                <div class="d-flex gap-2 mb-4">
+                    <button class="btn btn-primary" @onclick="ShowRegisterModal" 
+                            disabled="@(_summary.ActiveWorkers >= _config.MaxWorkers)">
+                        <i class="bi bi-plus-lg me-1"></i>Register New Worker
+                    </button>
+                    @if (_summary.ActiveWorkers >= _config.MaxWorkers)
+                    {
+                        <span class="text-warning align-self-center">
+                            <i class="bi bi-info-circle me-1"></i>Worker limit reached
+                        </span>
+                    }
+                </div>
+            }
+
+            <!-- FILTER -->
+            @if (_config?.HasConfig == true)
+            {
+                <div class="card modern-card shadow-sm mb-4">
+                    <div class="card-body">
+                        <div class="row g-3 align-items-end">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">
+                                    <i class="bi bi-funnel me-2"></i>Filter
+                                </label>
+                                <select class="form-select" @bind="_statusFilter" @bind:after="FilterWorkers">
+                                    <option value="all">All Workers</option>
+                                    <option value="active">Active Only</option>
+                                    <option value="revoked">Revoked Only</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">
+                                    <i class="bi bi-search me-2"></i>Search
+                                </label>
+                                <input type="text" class="form-control" placeholder="Search by name..."
+                                       @bind="_searchTerm" @bind:event="oninput" @bind:after="FilterWorkers" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
 
             <!-- WORKERS LIST -->
             @if (_loading && _workers.Count == 0)
@@ -80,12 +173,12 @@
                     <p class="mt-3 fw-bold">Loading workers...</p>
                 </div>
             }
-            else if (_filteredWorkers.Count == 0)
+            else if (_config?.HasConfig == true && _filteredWorkers.Count == 0)
             {
                 <div class="card modern-card shadow-sm">
                     <div class="card-body text-center py-5">
                         <i class="bi bi-cpu display-1 mb-3"></i>
-                        <h5 class="fw-bold">No Worker Agents Found</h5>
+                        <h5 class="fw-bold">No Workers Found</h5>
                         <p class="fw-bold">
                             @if (!string.IsNullOrEmpty(_searchTerm))
                             {
@@ -93,7 +186,7 @@
                             }
                             else
                             {
-                                <span>Register a worker agent to get started.</span>
+                                <span>Register a worker to start collecting logs.</span>
                             }
                         </p>
                         <button class="btn btn-primary" @onclick="ShowRegisterModal">
@@ -102,13 +195,14 @@
                     </div>
                 </div>
             }
-            else
+            else if (_config?.HasConfig == true)
             {
                 <div class="table-responsive">
                     <table class="table table-hover modern-table">
                         <thead>
                             <tr>
                                 <th><i class="bi bi-tag me-1"></i>Name</th>
+                                <th><i class="bi bi-fingerprint me-1"></i>Worker ID</th>
                                 <th><i class="bi bi-activity me-1"></i>Status</th>
                                 <th><i class="bi bi-calendar me-1"></i>Created</th>
                                 <th><i class="bi bi-clock me-1"></i>Last Seen</th>
@@ -120,6 +214,12 @@
                             {
                                 <tr>
                                     <td class="fw-semibold">@worker.Name</td>
+                                    <td>
+                                        <code class="small">@worker.Id.ToString()[..8]...</code>
+                                        <button class="btn btn-sm btn-link p-0 ms-1" @onclick="() => CopyWorkerId(worker.Id)">
+                                            <i class="bi bi-clipboard"></i>
+                                        </button>
+                                    </td>
                                     <td>
                                         @if (worker.IsActive)
                                         {
@@ -160,6 +260,15 @@
                                                     <i class="bi bi-slash-circle"></i>
                                                 </button>
                                             }
+                                            else
+                                            {
+                                                <button class="btn btn-sm btn-outline-success"
+                                                        @onclick="() => ReactivateWorker(worker)"
+                                                        title="Reactivate Worker"
+                                                        disabled="@(_summary.ActiveWorkers >= _config.MaxWorkers)">
+                                                    <i class="bi bi-arrow-counterclockwise"></i>
+                                                </button>
+                                            }
                                             <button class="btn btn-sm btn-outline-danger"
                                                     @onclick="() => DeleteWorker(worker)"
                                                     title="Delete Worker">
@@ -183,28 +292,22 @@
                     <div class="modal-content">
                         <div class="modal-header">
                             <h5 class="modal-title">
-                                <i class="bi bi-plus-circle me-2"></i>Register Worker Agent
+                                <i class="bi bi-plus-circle me-2"></i>Register Worker
                             </h5>
                             <button type="button" class="btn-close" @onclick="CloseRegisterModal"></button>
                         </div>
                         <div class="modal-body">
                             <div class="mb-3">
                                 <label class="form-label fw-bold">Worker Name</label>
-                                <input type="text" class="form-control" placeholder="Enter worker name..."
+                                <input type="text" class="form-control" placeholder="e.g., web-server-1, prod-db-primary"
                                        @bind="_newWorkerName" />
-                                <small class="form-text">A unique name to identify this worker agent.</small>
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label fw-bold">Workspace ID</label>
-                                <input type="text" class="form-control" placeholder="Enter workspace GUID..."
-                                       @bind="_newWorkspaceId" />
-                                <small class="form-text">The workspace this worker belongs to.</small>
+                                <small class="form-text">A unique, descriptive name for this worker.</small>
                             </div>
                         </div>
                         <div class="modal-footer">
                             <button type="button" class="btn btn-secondary" @onclick="CloseRegisterModal">Cancel</button>
                             <button type="button" class="btn btn-primary" @onclick="RegisterWorker"
-                                    disabled="@(string.IsNullOrWhiteSpace(_newWorkerName) || !Guid.TryParse(_newWorkspaceId, out _))">
+                                    disabled="@string.IsNullOrWhiteSpace(_newWorkerName)">
                                 <i class="bi bi-check-lg me-1"></i>Register
                             </button>
                         </div>
@@ -213,49 +316,141 @@
             </div>
         }
 
-        <!-- API KEY MODAL -->
-        @if (_showApiKeyModal)
+        <!-- PSK/API KEY MODAL -->
+        @if (_showKeyModal)
         {
             <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
-                <div class="modal-dialog">
+                <div class="modal-dialog modal-lg">
                     <div class="modal-content">
-                        <div class="modal-header bg-warning">
-                            <h5 class="modal-title text-dark">
-                                <i class="bi bi-key me-2"></i>@(_apiKeyModalTitle)
+                        <div class="modal-header bg-warning text-dark">
+                            <h5 class="modal-title">
+                                <i class="bi bi-key me-2"></i>@_keyModalTitle
                             </h5>
-                            <button type="button" class="btn-close" @onclick="CloseApiKeyModal"></button>
+                            <button type="button" class="btn-close" @onclick="CloseKeyModal"></button>
                         </div>
                         <div class="modal-body">
                             <div class="alert alert-warning">
                                 <i class="bi bi-exclamation-triangle me-2"></i>
-                                <strong>Important:</strong> This API key will only be shown ONCE. Copy it now and store it securely.
+                                <strong>Important:</strong> This key will only be shown ONCE. Copy it now and store it securely.
                             </div>
+                            
+                            @if (!string.IsNullOrEmpty(_displayWorkerId))
+                            {
+                                <div class="mb-3">
+                                    <label class="form-label fw-bold">Worker ID</label>
+                                    <div class="input-group">
+                                        <input type="text" class="form-control font-monospace" value="@_displayWorkerId" readonly />
+                                        <button class="btn btn-outline-secondary" @onclick="() => CopyToClipboard(_displayWorkerId)">
+                                            <i class="bi bi-clipboard"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            }
+                            
                             <div class="mb-3">
-                                <label class="form-label fw-bold">Worker ID</label>
-                                <input type="text" class="form-control" value="@_displayWorkerId" readonly />
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label fw-bold">API Key</label>
+                                <label class="form-label fw-bold">@_keyLabel</label>
                                 <div class="input-group">
-                                    <input type="@(_showApiKey ? "text" : "password")" class="form-control font-monospace"
-                                           value="@_displayApiKey" readonly />
-                                    <button class="btn btn-outline-secondary" @onclick="ToggleApiKeyVisibility">
-                                        <i class="bi @(_showApiKey ? "bi-eye-slash" : "bi-eye")"></i>
+                                    <input type="@(_showKey ? "text" : "password")" class="form-control font-monospace"
+                                           value="@_displayKey" readonly />
+                                    <button class="btn btn-outline-secondary" @onclick="ToggleKeyVisibility">
+                                        <i class="bi @(_showKey ? "bi-eye-slash" : "bi-eye")"></i>
                                     </button>
-                                    <button class="btn btn-primary" @onclick="CopyApiKey">
+                                    <button class="btn btn-primary" @onclick="() => CopyToClipboard(_displayKey)">
                                         <i class="bi bi-clipboard me-1"></i>Copy
                                     </button>
                                 </div>
                             </div>
-                            <div class="mb-3">
-                                <label class="form-label fw-bold">Usage</label>
-                                <pre class="bg-dark text-light p-3 rounded"><code>X-Worker-Key: @_displayApiKey</code></pre>
+
+                            @if (!string.IsNullOrEmpty(_displayWorkerId))
+                            {
+                                <div class="mb-3">
+                                    <label class="form-label fw-bold">Environment Variables</label>
+                                    <pre class="bg-dark text-light p-3 rounded small"><code>BHB_WORKER_ID=@_displayWorkerId
+BHB_WORKER_KEY=@_displayKey
+BHB_API_URL=https://api.blackhatbadshah.com</code></pre>
+                                </div>
+                            }
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-primary" @onclick="CloseKeyModal">
+                                <i class="bi bi-check-lg me-1"></i>I've Saved the Key
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <!-- INSTALL INSTRUCTIONS MODAL -->
+        @if (_showInstallModal)
+        {
+            <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+                <div class="modal-dialog modal-xl">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">
+                                <i class="bi bi-book me-2"></i>Worker Installation Guide
+                            </h5>
+                            <button type="button" class="btn-close" @onclick="CloseInstallModal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="alert alert-info mb-3">
+                                <i class="bi bi-info-circle me-2"></i>
+                                <strong>Before you begin:</strong> Make sure you have registered a worker and saved the API Key and Worker ID.
+                            </div>
+                            
+                            <ul class="nav nav-tabs" role="tablist">
+                                <li class="nav-item">
+                                    <button class="nav-link @(_installTab == "linux" ? "active" : "")" 
+                                            @onclick='() => _installTab = "linux"'>
+                                        <i class="bi bi-ubuntu me-1"></i>Linux (systemd)
+                                    </button>
+                                </li>
+                                <li class="nav-item">
+                                    <button class="nav-link @(_installTab == "windows" ? "active" : "")"
+                                            @onclick='() => _installTab = "windows"'>
+                                        <i class="bi bi-windows me-1"></i>Windows Service
+                                    </button>
+                                </li>
+                            </ul>
+                            
+                            <div class="tab-content mt-3">
+                                @if (_installTab == "linux" && _instructions != null)
+                                {
+                                    <div>
+                                        <h6 class="fw-bold">Linux Installation (Complete Steps)</h6>
+                                        <p class="small text-secondary">Copy and run these commands in your terminal:</p>
+                                        <pre class="bg-dark text-light p-3 rounded small" style="max-height: 500px; overflow-y: auto; white-space: pre-wrap;">@_instructions.LinuxInstallCommands</pre>
+                                        
+                                        <div class="alert alert-warning mt-3">
+                                            <i class="bi bi-exclamation-triangle me-2"></i>
+                                            <strong>Important:</strong> Replace <code>YOUR_API_KEY_HERE</code> and <code>YOUR_WORKER_ID_HERE</code> 
+                                            in the appsettings.json with the values from your registered worker.
+                                        </div>
+                                    </div>
+                                }
+                                else if (_installTab == "windows" && _instructions != null)
+                                {
+                                    <div>
+                                        <h6 class="fw-bold">Windows Service Installation</h6>
+                                        <p class="small text-secondary">Run PowerShell as Administrator and execute these commands:</p>
+                                        <pre class="bg-dark text-light p-3 rounded small" style="max-height: 500px; overflow-y: auto; white-space: pre-wrap;">@_instructions.WindowsServiceCommands</pre>
+                                        
+                                        <div class="alert alert-warning mt-3">
+                                            <i class="bi bi-exclamation-triangle me-2"></i>
+                                            <strong>Important:</strong> Replace <code>YOUR_API_KEY_HERE</code> and <code>YOUR_WORKER_ID_HERE</code> 
+                                            in the appsettings.json with the values from your registered worker.
+                                        </div>
+                                    </div>
+                                }
                             </div>
                         </div>
                         <div class="modal-footer">
-                            <button type="button" class="btn btn-primary" @onclick="CloseApiKeyModal">
-                                <i class="bi bi-check-lg me-1"></i>I've Saved the Key
-                            </button>
+                            <a href="https://github.com/ersanjayverma/Blackhatbadshah/tree/master/worker/bhbworker" 
+                               target="_blank" class="btn btn-outline-primary">
+                                <i class="bi bi-github me-1"></i>View on GitHub
+                            </a>
+                            <button type="button" class="btn btn-secondary" @onclick="CloseInstallModal">Close</button>
                         </div>
                     </div>
                 </div>
@@ -267,53 +462,107 @@
         <div class="container mt-5">
             <div class="alert alert-warning shadow-sm">
                 <i class="bi bi-lock me-2"></i>
-                You must be logged in to manage worker agents.
+                You must be logged in to manage workers.
             </div>
         </div>
     </NotAuthorized>
 </AuthorizeView>
 
 @code {
+    private UserWorkerConfigResponse? _config;
+    private WorkerSummaryResponse _summary = new();
     private List<WorkerAgentListItem> _workers = new();
     private List<WorkerAgentListItem> _filteredWorkers = new();
     private bool _loading = true;
+    private bool _initializing = false;
     private string _statusFilter = "all";
     private string _searchTerm = string.Empty;
+    private string _newConfigName = string.Empty;
 
     // Register modal
     private bool _showRegisterModal = false;
     private string _newWorkerName = string.Empty;
-    private string _newWorkspaceId = string.Empty;
 
-    // API key modal
-    private bool _showApiKeyModal = false;
-    private string _apiKeyModalTitle = string.Empty;
+    // Key modal (for PSK, API keys)
+    private bool _showKeyModal = false;
+    private string _keyModalTitle = string.Empty;
+    private string _keyLabel = string.Empty;
     private string _displayWorkerId = string.Empty;
-    private string _displayApiKey = string.Empty;
-    private bool _showApiKey = false;
+    private string _displayKey = string.Empty;
+    private bool _showKey = false;
+
+    // Install instructions modal
+    private bool _showInstallModal = false;
+    private WorkerInstallInstructions? _instructions;
+    private string _installTab = "linux";
 
     protected override async Task OnInitializedAsync()
     {
-        await RefreshWorkers();
+        await RefreshAll();
     }
 
-    private async Task RefreshWorkers()
+    private async Task RefreshAll()
     {
         _loading = true;
         StateHasChanged();
 
         try
         {
-            _workers = await WorkerAgentApi.GetAllAsync();
-            FilterWorkers();
+            _config = await WorkerAgentApi.GetConfigAsync();
+            
+            if (_config.HasConfig)
+            {
+                _summary = await WorkerAgentApi.GetSummaryAsync();
+                _workers = await WorkerAgentApi.GetAllAsync();
+                FilterWorkers();
+            }
+        }
+        catch (HttpRequestException ex) when (ex.Message.Contains("401"))
+        {
+            // Authentication issue - user may need to re-login
+            Toast.ShowWarning("Please log in again to access this page.");
+            _config = new UserWorkerConfigResponse { HasConfig = false };
         }
         catch (Exception ex)
         {
-            Toast.ShowError($"Failed to load workers: {ex.Message}");
+            Console.WriteLine($"RefreshAll error: {ex}");
+            Toast.ShowError($"Failed to load data: {ex.Message}");
+            _config = new UserWorkerConfigResponse { HasConfig = false };
         }
         finally
         {
             _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task InitializeConfig()
+    {
+        _initializing = true;
+        StateHasChanged();
+
+        try
+        {
+            var result = await WorkerAgentApi.InitializeConfigAsync(
+                string.IsNullOrWhiteSpace(_newConfigName) ? null : _newConfigName);
+
+            _keyModalTitle = "Worker Configuration Initialized";
+            _keyLabel = "Pre-Shared Key (PSK)";
+            _displayWorkerId = string.Empty;
+            _displayKey = result.Psk;
+            _showKey = false;
+            _showKeyModal = true;
+
+            Toast.ShowSuccess("Configuration initialized! Save your PSK securely.");
+            await RefreshAll();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to initialize: {ex.Message}");
+        }
+        finally
+        {
+            _initializing = false;
             StateHasChanged();
         }
     }
@@ -323,11 +572,9 @@
         _filteredWorkers = _workers
             .Where(w =>
             {
-                // Status filter
                 if (_statusFilter == "active" && !w.IsActive) return false;
                 if (_statusFilter == "revoked" && !w.IsRevoked) return false;
 
-                // Search filter
                 if (!string.IsNullOrWhiteSpace(_searchTerm))
                 {
                     return w.Name.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase);
@@ -342,7 +589,6 @@
     private void ShowRegisterModal()
     {
         _newWorkerName = string.Empty;
-        _newWorkspaceId = Guid.NewGuid().ToString(); // Default to new GUID
         _showRegisterModal = true;
     }
 
@@ -353,33 +599,33 @@
 
     private async Task RegisterWorker()
     {
-        if (string.IsNullOrWhiteSpace(_newWorkerName) || !Guid.TryParse(_newWorkspaceId, out var workspaceId))
+        if (string.IsNullOrWhiteSpace(_newWorkerName))
             return;
 
         try
         {
-            var result = await WorkerAgentApi.RegisterAsync(workspaceId, _newWorkerName);
+            var result = await WorkerAgentApi.RegisterAsync(_newWorkerName);
 
             _showRegisterModal = false;
-            _apiKeyModalTitle = "New Worker Registered";
+            _keyModalTitle = "Worker Registered Successfully";
+            _keyLabel = "Worker API Key";
             _displayWorkerId = result.WorkerId.ToString();
-            _displayApiKey = result.ApiKey;
-            _showApiKey = false;
-            _showApiKeyModal = true;
+            _displayKey = result.ApiKey;
+            _showKey = false;
+            _showKeyModal = true;
 
-            Toast.ShowSuccess($"Worker '{_newWorkerName}' registered successfully!");
-            await RefreshWorkers();
+            Toast.ShowSuccess($"Worker '{_newWorkerName}' registered!");
+            await RefreshAll();
         }
         catch (Exception ex)
         {
-            Toast.ShowError($"Failed to register worker: {ex.Message}");
+            Toast.ShowError($"Failed to register: {ex.Message}");
         }
     }
 
-    private void ShowRotateKeyModal(WorkerAgentListItem worker)
+    private async void ShowRotateKeyModal(WorkerAgentListItem worker)
     {
-        _displayWorkerId = worker.Id.ToString();
-        RotateKey(worker);
+        await RotateKey(worker);
     }
 
     private async Task RotateKey(WorkerAgentListItem worker)
@@ -388,11 +634,12 @@
         {
             var result = await WorkerAgentApi.RotateKeyAsync(worker.Id);
 
-            _apiKeyModalTitle = "API Key Rotated";
+            _keyModalTitle = "API Key Rotated";
+            _keyLabel = "New Worker API Key";
             _displayWorkerId = result.WorkerId.ToString();
-            _displayApiKey = result.ApiKey;
-            _showApiKey = false;
-            _showApiKeyModal = true;
+            _displayKey = result.ApiKey;
+            _showKey = false;
+            _showKeyModal = true;
 
             Toast.ShowSuccess($"API key rotated for '{worker.Name}'!");
         }
@@ -402,17 +649,66 @@
         }
     }
 
+    private async void ShowRotatePskModal()
+    {
+        await RotatePsk();
+    }
+
+    private async Task RotatePsk()
+    {
+        try
+        {
+            var result = await WorkerAgentApi.RotatePskAsync();
+
+            _keyModalTitle = "PSK Rotated";
+            _keyLabel = "New Pre-Shared Key (PSK)";
+            _displayWorkerId = string.Empty;
+            _displayKey = result.Psk;
+            _showKey = false;
+            _showKeyModal = true;
+
+            Toast.ShowSuccess("PSK rotated! Update all your workers.");
+            await RefreshAll();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to rotate PSK: {ex.Message}");
+        }
+    }
+
     private async Task RevokeWorker(WorkerAgentListItem worker)
     {
         try
         {
             await WorkerAgentApi.RevokeAsync(worker.Id);
             Toast.ShowSuccess($"Worker '{worker.Name}' revoked!");
-            await RefreshWorkers();
+            await RefreshAll();
         }
         catch (Exception ex)
         {
-            Toast.ShowError($"Failed to revoke worker: {ex.Message}");
+            Toast.ShowError($"Failed to revoke: {ex.Message}");
+        }
+    }
+
+    private async Task ReactivateWorker(WorkerAgentListItem worker)
+    {
+        try
+        {
+            var result = await WorkerAgentApi.ReactivateAsync(worker.Id);
+
+            _keyModalTitle = "Worker Reactivated";
+            _keyLabel = "New Worker API Key";
+            _displayWorkerId = result.WorkerId.ToString();
+            _displayKey = result.ApiKey;
+            _showKey = false;
+            _showKeyModal = true;
+
+            Toast.ShowSuccess($"Worker '{worker.Name}' reactivated!");
+            await RefreshAll();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to reactivate: {ex.Message}");
         }
     }
 
@@ -422,35 +718,60 @@
         {
             await WorkerAgentApi.DeleteAsync(worker.Id);
             Toast.ShowSuccess($"Worker '{worker.Name}' deleted!");
-            await RefreshWorkers();
+            await RefreshAll();
         }
         catch (Exception ex)
         {
-            Toast.ShowError($"Failed to delete worker: {ex.Message}");
+            Toast.ShowError($"Failed to delete: {ex.Message}");
         }
     }
 
-    private void CloseApiKeyModal()
-    {
-        _showApiKeyModal = false;
-        _displayApiKey = string.Empty;
-    }
-
-    private void ToggleApiKeyVisibility()
-    {
-        _showApiKey = !_showApiKey;
-    }
-
-    private async Task CopyApiKey()
+    private async Task ShowInstallInstructions()
     {
         try
         {
-            await JS.InvokeVoidAsync("navigator.clipboard.writeText", _displayApiKey);
-            Toast.ShowSuccess("API key copied to clipboard!");
+            _instructions = await WorkerAgentApi.GetInstallInstructionsAsync();
+            _installTab = "linux";
+            _showInstallModal = true;
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to load instructions: {ex.Message}");
+        }
+    }
+
+    private void CloseInstallModal()
+    {
+        _showInstallModal = false;
+    }
+
+    private void CloseKeyModal()
+    {
+        _showKeyModal = false;
+        _displayKey = string.Empty;
+        _displayWorkerId = string.Empty;
+    }
+
+    private void ToggleKeyVisibility()
+    {
+        _showKey = !_showKey;
+    }
+
+    private async Task CopyToClipboard(string text)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", text);
+            Toast.ShowSuccess("Copied to clipboard!");
         }
         catch (Exception ex)
         {
             Toast.ShowError($"Failed to copy: {ex.Message}");
         }
+    }
+
+    private async Task CopyWorkerId(Guid workerId)
+    {
+        await CopyToClipboard(workerId.ToString());
     }
 }

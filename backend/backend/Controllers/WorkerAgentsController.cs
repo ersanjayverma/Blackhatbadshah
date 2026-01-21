@@ -31,13 +31,36 @@ public class WorkerAgentsController : ControllerBase
         if (string.IsNullOrEmpty(userId))
             return Unauthorized();
 
-        // Check if worker with same name exists in workspace
+        // Check if user has worker config initialized
+        var userConfig = await _db.UserWorkerConfigs
+            .FirstOrDefaultAsync(c => c.UserId == userId);
+
+        if (userConfig == null)
+        {
+            return BadRequest(new { error = "Please initialize your worker configuration first at /api/worker-config/initialize" });
+        }
+
+        if (!userConfig.IsEnabled)
+        {
+            return BadRequest(new { error = "Your worker configuration is disabled" });
+        }
+
+        // Check worker limit
+        var currentWorkerCount = await _db.WorkerAgents
+            .CountAsync(w => w.CreatedByUserId == userId && w.Status == WorkerAgentStatus.Active);
+
+        if (currentWorkerCount >= userConfig.MaxWorkers)
+        {
+            return BadRequest(new { error = $"Maximum worker limit ({userConfig.MaxWorkers}) reached. Upgrade your plan or revoke unused workers." });
+        }
+
+        // Check if worker with same name exists for this user
         var existingWorker = await _db.WorkerAgents
-            .FirstOrDefaultAsync(w => w.WorkspaceId == request.WorkspaceId && w.Name == request.Name);
+            .FirstOrDefaultAsync(w => w.CreatedByUserId == userId && w.Name == request.Name);
 
         if (existingWorker != null)
         {
-            return Conflict(new { error = "A worker with this name already exists in the workspace" });
+            return Conflict(new { error = "A worker with this name already exists" });
         }
 
         // Generate API key
@@ -47,7 +70,7 @@ public class WorkerAgentsController : ControllerBase
         var worker = new WorkerAgent
         {
             Id = Guid.NewGuid(),
-            WorkspaceId = request.WorkspaceId,
+            WorkspaceId = request.WorkspaceId ?? Guid.NewGuid(), // Auto-generate if not provided
             Name = request.Name,
             ApiKeyHash = apiKeyHash,
             Status = WorkerAgentStatus.Active,
@@ -58,40 +81,43 @@ public class WorkerAgentsController : ControllerBase
         _db.WorkerAgents.Add(worker);
         await _db.SaveChangesAsync();
 
-        _logger.LogInformation("Worker agent {WorkerId} registered for workspace {WorkspaceId} by user {UserId}",
-            worker.Id, request.WorkspaceId, userId);
+        _logger.LogInformation("Worker agent {WorkerId} registered by user {UserId}, name: {WorkerName}",
+            worker.Id, userId, worker.Name);
 
         return Ok(new RegisterWorkerAgentResponse
         {
             WorkerId = worker.Id,
-            ApiKey = apiKey // Returned ONCE only
+            ApiKey = apiKey, // Returned ONCE only
+            WorkerName = worker.Name,
+            Message = "Worker registered successfully. Save the API key securely - it will not be shown again!"
         });
     }
 
-    // GET /api/worker-agents/workspaces/{workspaceId}
-    [HttpGet("workspaces/{workspaceId:guid}")]
-    public async Task<IActionResult> GetByWorkspace(Guid workspaceId)
+    // GET /api/worker-agents/summary (summary for current user)
+    [HttpGet("summary")]
+    public async Task<IActionResult> GetSummary()
     {
         var userId = GetUserId();
         if (string.IsNullOrEmpty(userId))
             return Unauthorized();
 
+        var userConfig = await _db.UserWorkerConfigs
+            .FirstOrDefaultAsync(c => c.UserId == userId);
+
         var workers = await _db.WorkerAgents
-            .Where(w => w.WorkspaceId == workspaceId)
-            .OrderByDescending(w => w.CreatedAt)
-            .Select(w => new WorkerAgentListItem
-            {
-                Id = w.Id,
-                Name = w.Name,
-                Status = w.Status,
-                CreatedAt = w.CreatedAt,
-                LastSeenAt = w.LastSeenAt,
-                RevokedAt = w.RevokedAt,
-                CreatedByUserId = w.CreatedByUserId
-            })
+            .Where(w => w.CreatedByUserId == userId)
             .ToListAsync();
 
-        return Ok(workers);
+        return Ok(new WorkerSummaryResponse
+        {
+            HasConfig = userConfig != null,
+            IsEnabled = userConfig?.IsEnabled ?? false,
+            MaxWorkers = userConfig?.MaxWorkers ?? 3,
+            TotalWorkers = workers.Count,
+            ActiveWorkers = workers.Count(w => w.Status == WorkerAgentStatus.Active),
+            RevokedWorkers = workers.Count(w => w.Status == WorkerAgentStatus.Revoked),
+            LastWorkerActivityAt = userConfig?.LastWorkerActivityAt
+        });
     }
 
     // GET /api/worker-agents (all workers for current user)
@@ -207,12 +233,62 @@ public class WorkerAgentsController : ControllerBase
 
         return Ok(new { message = "Worker deleted successfully" });
     }
+
+    // POST /api/worker-agents/{workerId}/reactivate
+    [HttpPost("{workerId:guid}/reactivate")]
+    public async Task<IActionResult> Reactivate(Guid workerId)
+    {
+        var userId = GetUserId();
+        if (string.IsNullOrEmpty(userId))
+            return Unauthorized();
+
+        var worker = await _db.WorkerAgents.FindAsync(workerId);
+        if (worker == null)
+            return NotFound(new { error = "Worker not found" });
+
+        // Only allow creator to reactivate
+        if (worker.CreatedByUserId != userId)
+            return Forbid();
+
+        if (worker.Status == WorkerAgentStatus.Active)
+            return BadRequest(new { error = "Worker is already active" });
+
+        // Check worker limit before reactivating
+        var userConfig = await _db.UserWorkerConfigs
+            .FirstOrDefaultAsync(c => c.UserId == userId);
+
+        var activeCount = await _db.WorkerAgents
+            .CountAsync(w => w.CreatedByUserId == userId && w.Status == WorkerAgentStatus.Active);
+
+        if (userConfig != null && activeCount >= userConfig.MaxWorkers)
+        {
+            return BadRequest(new { error = $"Maximum worker limit ({userConfig.MaxWorkers}) reached. Revoke other workers first." });
+        }
+
+        // Generate new API key for reactivated worker
+        var apiKey = WorkerKeyAuthenticationHandler.GenerateApiKey();
+        var apiKeyHash = WorkerKeyAuthenticationHandler.HashApiKey(apiKey);
+
+        worker.Status = WorkerAgentStatus.Active;
+        worker.RevokedAt = null;
+        worker.ApiKeyHash = apiKeyHash;
+        await _db.SaveChangesAsync();
+
+        _logger.LogInformation("Worker agent {WorkerId} reactivated by user {UserId}", workerId, userId);
+
+        return Ok(new ReactivateWorkerResponse
+        {
+            WorkerId = workerId,
+            ApiKey = apiKey, // Returned ONCE only
+            Message = "Worker reactivated with a new API key. Update your worker configuration."
+        });
+    }
 }
 
 // Request/Response DTOs
 public class RegisterWorkerAgentRequest
 {
-    public Guid WorkspaceId { get; set; }
+    public Guid? WorkspaceId { get; set; }
     public string Name { get; set; } = string.Empty;
 }
 
@@ -220,6 +296,8 @@ public class RegisterWorkerAgentResponse
 {
     public Guid WorkerId { get; set; }
     public string ApiKey { get; set; } = string.Empty;
+    public string WorkerName { get; set; } = string.Empty;
+    public string Message { get; set; } = string.Empty;
 }
 
 public class RotateKeyResponse
@@ -238,4 +316,22 @@ public class WorkerAgentListItem
     public DateTime? RevokedAt { get; set; }
     public string CreatedByUserId { get; set; } = string.Empty;
     public Guid WorkspaceId { get; set; }
+}
+
+public class WorkerSummaryResponse
+{
+    public bool HasConfig { get; set; }
+    public bool IsEnabled { get; set; }
+    public int MaxWorkers { get; set; }
+    public int TotalWorkers { get; set; }
+    public int ActiveWorkers { get; set; }
+    public int RevokedWorkers { get; set; }
+    public DateTime? LastWorkerActivityAt { get; set; }
+}
+
+public class ReactivateWorkerResponse
+{
+    public Guid WorkerId { get; set; }
+    public string ApiKey { get; set; } = string.Empty;
+    public string Message { get; set; } = string.Empty;
 }

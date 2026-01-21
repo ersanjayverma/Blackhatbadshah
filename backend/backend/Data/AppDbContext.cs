@@ -14,6 +14,7 @@ public class AppDbContext : DbContext
     public DbSet<PaymentHistory> PaymentHistories => Set<PaymentHistory>();
     public DbSet<UsageTracking> UsageTrackings => Set<UsageTracking>();
     public DbSet<WorkerAgent> WorkerAgents => Set<WorkerAgent>();
+    public DbSet<UserWorkerConfig> UserWorkerConfigs => Set<UserWorkerConfig>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -67,17 +68,22 @@ public class AppDbContext : DbContext
             .HasIndex(u => new { u.UserId, u.Year, u.Month })
             .IsUnique();
 
-        // Configure WorkerAgent
+        // Configure WorkerAgent - now user-scoped
         modelBuilder.Entity<WorkerAgent>()
-            .HasIndex(w => new { w.WorkspaceId, w.Status });
+            .HasIndex(w => new { w.CreatedByUserId, w.Status });
 
         modelBuilder.Entity<WorkerAgent>()
-            .HasIndex(w => new { w.WorkspaceId, w.Name })
+            .HasIndex(w => new { w.CreatedByUserId, w.Name })
             .IsUnique();
 
         modelBuilder.Entity<WorkerAgent>()
             .Property(w => w.Status)
             .HasConversion<int>();
+
+        // Configure UserWorkerConfig
+        modelBuilder.Entity<UserWorkerConfig>()
+            .HasIndex(c => c.UserId)
+            .IsUnique();
 
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
     }

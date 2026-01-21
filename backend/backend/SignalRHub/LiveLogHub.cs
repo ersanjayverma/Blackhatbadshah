@@ -3,6 +3,8 @@ using backend.Services;
 using backend.Handlers;
 using shared.Dto;
 using System.Text.RegularExpressions;
+using System.Security.Claims;
+using Microsoft.EntityFrameworkCore;
 
 namespace backend.Hubs;
 
@@ -386,7 +388,7 @@ public class LiveLogHub : Hub
         // If not authenticated via pipeline, try header-based API key or PSK fallback
         if (string.IsNullOrWhiteSpace(workerId))
         {
-            string? apiKey = httpContext?.Request.Headers[WorkerKeyAuthenticationHandler.HeaderName].ToString();
+            string? apiKey = httpContext?.Request.Headers[WorkerKeyAuthenticationOptions.HeaderName].ToString();
             if (string.IsNullOrWhiteSpace(apiKey))
             {
                 apiKey = GetApiKeyFromQuery();
@@ -452,7 +454,6 @@ public class LiveLogHub : Hub
         await Groups.AddToGroupAsync(sessionId, $"livelog_{workerId}");
 
         // Get the API URL from the request for visibility filtering
-        var httpContext = Context.GetHttpContext();
         var apiUrl = httpContext != null
             ? $"{httpContext.Request.Scheme}://{httpContext.Request.Host}"
             : string.Empty;

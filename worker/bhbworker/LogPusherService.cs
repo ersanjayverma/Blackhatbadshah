@@ -26,7 +26,7 @@ public class LogPusherService : BackgroundService
     private DateTime _startTime;
     private TimeSpan _previousTotalCpuTime;
     private DateTime _previousCpuCheck;
-    private readonly TimeSpan _metricsInterval = TimeSpan.FromSeconds(10);
+    private readonly TimeSpan _metricsInterval = TimeSpan.FromSeconds(5);
     private readonly TimeSpan _systemMonitorInterval = TimeSpan.FromSeconds(2);
     private CancellationTokenSource? _metricsCts;
     private SystemMonitorService? _systemMonitorService;

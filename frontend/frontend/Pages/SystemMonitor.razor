@@ -563,12 +563,12 @@
                                         <span class="detail-value @GetMemoryColorClass(_data.MemoryPercent)">@_data.MemoryPercent.ToString("F2")%</span>
                                     </div>
                                     <div class="detail-item">
-                                        <span class="detail-label">Cached</span>
-                                        <span class="detail-value">@FormatMB(_data.MemoryCachedMB)</span>
+                                        <span class="detail-label">Total</span>
+                                        <span class="detail-value">@FormatMB(_data.MemoryTotalMB)</span>
                                     </div>
                                     <div class="detail-item">
-                                        <span class="detail-label">Buffers</span>
-                                        <span class="detail-value">@FormatMB(_data.MemoryBuffersMB)</span>
+                                        <span class="detail-label">Available</span>
+                                        <span class="detail-value">@FormatMB(_data.MemoryAvailableMB)</span>
                                     </div>
                                 </div>
                             </div>
@@ -658,7 +658,6 @@
                                     <thead>
                                         <tr>
                                             <th>Mount Point</th>
-                                            <th>Device</th>
                                             <th>File System</th>
                                             <th>Total</th>
                                             <th>Used</th>
@@ -671,7 +670,6 @@
                                         {
                                             <tr>
                                                 <td class="fw-bold">@disk.MountPoint</td>
-                                                <td>@disk.Device</td>
                                                 <td>@disk.FileSystem</td>
                                                 <td>@FormatGB(disk.TotalGB)</td>
                                                 <td>@FormatGB(disk.UsedGB)</td>

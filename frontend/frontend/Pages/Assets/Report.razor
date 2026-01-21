@@ -70,15 +70,15 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    @foreach (var report in _reports)
+                                    @foreach (var report in _reports.Where(r => r != null))
                                     {
                                         <tr class="table-row-hover">
-                                            <td class="fw-semibold">@report.Title</td>
+                                            <td class="fw-semibold">@(string.IsNullOrEmpty(report.Title) ? "Untitled Report" : report.Title)</td>
 
                                             <td>
-                                                @if (report.FileName == "Log Deleted")
+                                                @if (string.IsNullOrEmpty(report.FileName) || report.FileName == "Log Deleted")
                                                 {
-                                                    <span class="fst-italic">@report.FileName</span>
+                                                    <span class="fst-italic">@(string.IsNullOrEmpty(report.FileName) ? "Unknown" : report.FileName)</span>
                                                 }
                                                 else
                                                 {
@@ -340,24 +340,37 @@
 
             _reportCreatedSubscription = HubService.On<ReportListItem>("ReportCreated", async (report) =>
             {
-                _reports.Insert(0, report);
-                await InvokeAsync(StateHasChanged);
+                if (report != null && report.Id != Guid.Empty)
+                {
+                    // Prevent duplicate entries
+                    if (!_reports.Any(r => r.Id == report.Id))
+                    {
+                        _reports.Insert(0, report);
+                        await InvokeAsync(StateHasChanged);
+                    }
+                }
             });
 
             _reportStatusChangedSubscription = HubService.On<Guid, ReportStatus>("ReportStatusChanged", async (reportId, status) =>
             {
-                var report = _reports.FirstOrDefault(r => r.Id == reportId);
-                if (report != null)
+                if (reportId != Guid.Empty)
                 {
-                    report.Status = status;
-                    await InvokeAsync(StateHasChanged);
+                    var report = _reports.FirstOrDefault(r => r.Id == reportId);
+                    if (report != null)
+                    {
+                        report.Status = status;
+                        await InvokeAsync(StateHasChanged);
+                    }
                 }
             });
 
             _reportDeletedSubscription = HubService.On<Guid>("ReportDeleted", async (reportId) =>
             {
-                _reports.RemoveAll(r => r.Id == reportId);
-                await InvokeAsync(StateHasChanged);
+                if (reportId != Guid.Empty)
+                {
+                    _reports.RemoveAll(r => r.Id == reportId);
+                    await InvokeAsync(StateHasChanged);
+                }
             });
 
             _allReportsDeletedSubscription = HubService.On("AllReportsDeleted", async () =>
@@ -378,7 +391,8 @@
         _reportStatusChangedSubscription?.Dispose();
         _reportDeletedSubscription?.Dispose();
         _allReportsDeletedSubscription?.Dispose();
-            await HubService.StopAsync();
+        // Note: Don't stop the shared HubService here as it affects other pages
+        await Task.CompletedTask;
     }
 
     private async Task LoadReports()

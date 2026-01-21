@@ -39,7 +39,7 @@
                 <!-- SUMMARY CARDS - CLICKABLE -->
                 <div class="row g-4 mb-4">
                     <div class="col-md-3 col-sm-6">
-                        <div class="card modern-card shadow-sm stat-card clickable" @onclick="() => ShowDetailModal('Total')">
+                        <div class="card modern-card shadow-sm stat-card clickable" @onclick="@(() => ShowDetailModal("Total"))">
                             <div class="card-body text-center">
                                 <i class="bi bi-file-earmark-text stat-icon text-primary"></i>
                                 <h3 class="stat-value">@_analyses.Count</h3>
@@ -48,7 +48,7 @@
                         </div>
                     </div>
                     <div class="col-md-3 col-sm-6">
-                        <div class="card modern-card shadow-sm stat-card clickable" @onclick="() => ShowDetailModal('Completed')">
+                        <div class="card modern-card shadow-sm stat-card clickable" @onclick="@(() => ShowDetailModal("Completed"))">
                             <div class="card-body text-center">
                                 <i class="bi bi-check-circle stat-icon text-success"></i>
                                 <h3 class="stat-value text-success">@_analyses.Count(a => a.Status == ReportStatus.Completed)</h3>
@@ -57,7 +57,7 @@
                         </div>
                     </div>
                     <div class="col-md-3 col-sm-6">
-                        <div class="card modern-card shadow-sm stat-card clickable" @onclick="() => ShowDetailModal('InProgress')">
+                        <div class="card modern-card shadow-sm stat-card clickable" @onclick="@(() => ShowDetailModal("InProgress"))">
                             <div class="card-body text-center">
                                 <i class="bi bi-hourglass-split stat-icon text-warning"></i>
                                 <h3 class="stat-value text-warning">@_analyses.Count(a => a.Status == ReportStatus.InProgress)</h3>
@@ -66,7 +66,7 @@
                         </div>
                     </div>
                     <div class="col-md-3 col-sm-6">
-                        <div class="card modern-card shadow-sm stat-card clickable" @onclick="() => ShowDetailModal('Failed')">
+                        <div class="card modern-card shadow-sm stat-card clickable" @onclick="@(() => ShowDetailModal("Failed"))">
                             <div class="card-body text-center">
                                 <i class="bi bi-x-circle stat-icon text-danger"></i>
                                 <h3 class="stat-value text-danger">@_analyses.Count(a => a.Status == ReportStatus.Failed)</h3>
@@ -173,16 +173,16 @@
                                             <th><i class="bi bi-calendar me-1"></i>Date & Time</th>
                                             <th><i class="bi bi-file-text me-1"></i>Title</th>
                                             <th><i class="bi bi-activity me-1"></i>Status</th>
-                                            <th><i class="bi bi-lightbulb me-1"></i>Summary</th>
+                                            <th><i class="bi bi-file-text me-1"></i>File</th>
                                             <th><i class="bi bi-gear me-1"></i>Action</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        @foreach (var analysis in _filteredAnalyses.OrderByDescending(a => a.CreatedAt).Take(50))
+                                        @foreach (var analysis in _filteredAnalyses.OrderByDescending(a => a.CreatedAtUtc).Take(50))
                                         {
                                             <tr class="analysis-card" @onclick="() => ViewReport(analysis.Id)">
                                                 <td class="fw-semibold">
-                                                    @analysis.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+                                                    @analysis.CreatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
                                                 </td>
                                                 <td>@analysis.Title</td>
                                                 <td>
@@ -206,7 +206,7 @@
                                                     }
                                                 </td>
                                                 <td class="small" style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                                                    @analysis.Summary
+                                                    @(string.IsNullOrEmpty(analysis.FileName) ? "-" : analysis.FileName)
                                                 </td>
                                                 <td>
                                                     <button class="btn btn-sm btn-primary" @onclick:stopPropagation="true"
@@ -251,7 +251,7 @@
                                         @foreach (var item in _detailModalItems)
                                         {
                                             <tr class="analysis-card" @onclick="() => ViewReport(item.Id)">
-                                                <td>@item.CreatedAt.ToLocalTime().ToString("g")</td>
+                                                <td>@item.CreatedAtUtc.ToLocalTime().ToString("g")</td>
                                                 <td>@item.Title</td>
                                                 <td>
                                                     @switch (item.Status)
@@ -348,7 +348,7 @@
 
         try
         {
-            _analyses = await ReportService.GetAllAsync() ?? new();
+            _analyses = await ReportService.ListAsync() ?? new();
             FilterAnalyses();
         }
         catch (Exception ex)
@@ -372,7 +372,7 @@
             .Where(a =>
             {
                 // Date filter
-                var date = a.CreatedAt.Date;
+                var date = a.CreatedAtUtc.Date;
                 if (date < _fromDate.Date || date > _toDate.Date)
                     return false;
 
@@ -400,7 +400,7 @@
         {
             // Daily trend chart
             var dailyData = _filteredAnalyses
-                .GroupBy(a => a.CreatedAt.Date)
+                .GroupBy(a => a.CreatedAtUtc.Date)
                 .OrderBy(g => g.Key)
                 .ToList();
 
@@ -421,7 +421,7 @@
                 .Select(h => new
                 {
                     Hour = h,
-                    Count = _filteredAnalyses.Count(a => a.CreatedAt.ToLocalTime().Hour == h)
+                    Count = _filteredAnalyses.Count(a => a.CreatedAtUtc.ToLocalTime().Hour == h)
                 })
                 .ToList();
 
@@ -468,10 +468,10 @@
         _detailModalTitle = type;
         _detailModalItems = type switch
         {
-            "Total" => _analyses.OrderByDescending(a => a.CreatedAt).Take(50).ToList(),
-            "Completed" => _analyses.Where(a => a.Status == ReportStatus.Completed).OrderByDescending(a => a.CreatedAt).Take(50).ToList(),
-            "InProgress" => _analyses.Where(a => a.Status == ReportStatus.InProgress).OrderByDescending(a => a.CreatedAt).Take(50).ToList(),
-            "Failed" => _analyses.Where(a => a.Status == ReportStatus.Failed).OrderByDescending(a => a.CreatedAt).Take(50).ToList(),
+            "Total" => _analyses.OrderByDescending(a => a.CreatedAtUtc).Take(50).ToList(),
+            "Completed" => _analyses.Where(a => a.Status == ReportStatus.Completed).OrderByDescending(a => a.CreatedAtUtc).Take(50).ToList(),
+            "InProgress" => _analyses.Where(a => a.Status == ReportStatus.InProgress).OrderByDescending(a => a.CreatedAtUtc).Take(50).ToList(),
+            "Failed" => _analyses.Where(a => a.Status == ReportStatus.Failed).OrderByDescending(a => a.CreatedAtUtc).Take(50).ToList(),
             _ => new()
         };
         _showDetailModal = true;

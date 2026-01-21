@@ -422,6 +422,7 @@
         _dashboardUpdateSubscription?.Dispose();
         _reportCreatedSubscription?.Dispose();
         _reportStatusChangedSubscription?.Dispose();
-        await HubService.StopAsync();
+        // Note: Don't stop the shared HubService here as it affects other pages
+        await Task.CompletedTask;
     }
 }

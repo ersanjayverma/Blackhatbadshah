@@ -45,41 +45,49 @@ public class WorkerConfigController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetConfig()
     {
-        var userId = GetUserId();
-        if (string.IsNullOrEmpty(userId))
+        try
         {
-            _logger.LogWarning("GetConfig: User ID is null or empty");
-            return Unauthorized(new { error = "Unable to determine user identity" });
-        }
+            var userId = GetUserId();
+            if (string.IsNullOrEmpty(userId))
+            {
+                _logger.LogWarning("GetConfig: User ID is null or empty");
+                return Unauthorized(new { error = "Unable to determine user identity" });
+            }
 
-        var config = await _db.UserWorkerConfigs
-            .FirstOrDefaultAsync(c => c.UserId == userId);
+            var config = await _db.UserWorkerConfigs
+                .FirstOrDefaultAsync(c => c.UserId == userId);
 
-        if (config == null)
-        {
+            if (config == null)
+            {
+                return Ok(new UserWorkerConfigResponse
+                {
+                    HasConfig = false,
+                    WorkerCount = 0,
+                    MaxWorkers = 3
+                });
+            }
+
+            var workerCount = await _db.WorkerAgents
+                .CountAsync(w => w.CreatedByUserId == userId && w.Status == WorkerAgentStatus.Active);
+
             return Ok(new UserWorkerConfigResponse
             {
-                HasConfig = false,
-                WorkerCount = 0,
-                MaxWorkers = 3
+                HasConfig = true,
+                ConfigId = config.Id,
+                ConfigName = config.ConfigName,
+                IsEnabled = config.IsEnabled,
+                MaxWorkers = config.MaxWorkers,
+                WorkerCount = workerCount,
+                CreatedAt = config.CreatedAt,
+                LastPskRotatedAt = config.LastPskRotatedAt,
+                LastWorkerActivityAt = config.LastWorkerActivityAt
             });
         }
-
-        var workerCount = await _db.WorkerAgents
-            .CountAsync(w => w.CreatedByUserId == userId && w.Status == WorkerAgentStatus.Active);
-
-        return Ok(new UserWorkerConfigResponse
+        catch (Exception ex)
         {
-            HasConfig = true,
-            ConfigId = config.Id,
-            ConfigName = config.ConfigName,
-            IsEnabled = config.IsEnabled,
-            MaxWorkers = config.MaxWorkers,
-            WorkerCount = workerCount,
-            CreatedAt = config.CreatedAt,
-            LastPskRotatedAt = config.LastPskRotatedAt,
-            LastWorkerActivityAt = config.LastWorkerActivityAt
-        });
+            _logger.LogError(ex, "Error getting worker config");
+            return StatusCode(500, new { error = "Failed to get worker config", details = ex.Message });
+        }
     }
 
     /// <summary>
@@ -88,45 +96,53 @@ public class WorkerConfigController : ControllerBase
     [HttpPost("initialize")]
     public async Task<IActionResult> Initialize([FromBody] InitializeWorkerConfigRequest? request)
     {
-        var userId = GetUserId();
-        if (string.IsNullOrEmpty(userId))
-            return Unauthorized();
-
-        // Check if config already exists
-        var existingConfig = await _db.UserWorkerConfigs
-            .FirstOrDefaultAsync(c => c.UserId == userId);
-
-        if (existingConfig != null)
+        try
         {
-            return Conflict(new { error = "Worker configuration already exists. Use rotate-psk to generate a new key." });
+            var userId = GetUserId();
+            if (string.IsNullOrEmpty(userId))
+                return Unauthorized(new { error = "Unable to determine user identity" });
+
+            // Check if config already exists
+            var existingConfig = await _db.UserWorkerConfigs
+                .FirstOrDefaultAsync(c => c.UserId == userId);
+
+            if (existingConfig != null)
+            {
+                return Conflict(new { error = "Worker configuration already exists. Use rotate-psk to generate a new key." });
+            }
+
+            // Generate PSK
+            var psk = GeneratePsk();
+            var pskHash = WorkerKeyAuthenticationHandler.HashApiKey(psk);
+
+            var config = new UserWorkerConfig
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                PskHash = pskHash,
+                ConfigName = request?.ConfigName ?? "Default Configuration",
+                MaxWorkers = 3, // Default limit - can be updated based on subscription
+                IsEnabled = true,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            _db.UserWorkerConfigs.Add(config);
+            await _db.SaveChangesAsync();
+
+            _logger.LogInformation("Worker configuration initialized for user {UserId}", userId);
+
+            return Ok(new InitializeWorkerConfigResponse
+            {
+                ConfigId = config.Id,
+                Psk = psk, // Only returned ONCE
+                Message = "Worker configuration initialized successfully. Save your PSK securely - it will not be shown again!"
+            });
         }
-
-        // Generate PSK
-        var psk = GeneratePsk();
-        var pskHash = WorkerKeyAuthenticationHandler.HashApiKey(psk);
-
-        var config = new UserWorkerConfig
+        catch (Exception ex)
         {
-            Id = Guid.NewGuid(),
-            UserId = userId,
-            PskHash = pskHash,
-            ConfigName = request?.ConfigName ?? "Default Configuration",
-            MaxWorkers = 3, // Default limit - can be updated based on subscription
-            IsEnabled = true,
-            CreatedAt = DateTime.UtcNow
-        };
-
-        _db.UserWorkerConfigs.Add(config);
-        await _db.SaveChangesAsync();
-
-        _logger.LogInformation("Worker configuration initialized for user {UserId}", userId);
-
-        return Ok(new InitializeWorkerConfigResponse
-        {
-            ConfigId = config.Id,
-            Psk = psk, // Only returned ONCE
-            Message = "Worker configuration initialized successfully. Save your PSK securely - it will not be shown again!"
-        });
+            _logger.LogError(ex, "Error initializing worker config");
+            return StatusCode(500, new { error = "Failed to initialize worker config", details = ex.Message });
+        }
     }
 
     /// <summary>
@@ -135,34 +151,42 @@ public class WorkerConfigController : ControllerBase
     [HttpPost("rotate-psk")]
     public async Task<IActionResult> RotatePsk()
     {
-        var userId = GetUserId();
-        if (string.IsNullOrEmpty(userId))
-            return Unauthorized();
-
-        var config = await _db.UserWorkerConfigs
-            .FirstOrDefaultAsync(c => c.UserId == userId);
-
-        if (config == null)
+        try
         {
-            return NotFound(new { error = "Worker configuration not found. Initialize first." });
+            var userId = GetUserId();
+            if (string.IsNullOrEmpty(userId))
+                return Unauthorized(new { error = "Unable to determine user identity" });
+
+            var config = await _db.UserWorkerConfigs
+                .FirstOrDefaultAsync(c => c.UserId == userId);
+
+            if (config == null)
+            {
+                return NotFound(new { error = "Worker configuration not found. Initialize first." });
+            }
+
+            // Generate new PSK
+            var psk = GeneratePsk();
+            var pskHash = WorkerKeyAuthenticationHandler.HashApiKey(psk);
+
+            config.PskHash = pskHash;
+            config.LastPskRotatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync();
+
+            _logger.LogInformation("PSK rotated for user {UserId}", userId);
+
+            return Ok(new RotatePskResponse
+            {
+                Psk = psk, // Only returned ONCE
+                RotatedAt = config.LastPskRotatedAt.Value,
+                Message = "PSK rotated successfully. Update your workers with the new PSK. The old PSK is now invalid."
+            });
         }
-
-        // Generate new PSK
-        var psk = GeneratePsk();
-        var pskHash = WorkerKeyAuthenticationHandler.HashApiKey(psk);
-
-        config.PskHash = pskHash;
-        config.LastPskRotatedAt = DateTime.UtcNow;
-        await _db.SaveChangesAsync();
-
-        _logger.LogInformation("PSK rotated for user {UserId}", userId);
-
-        return Ok(new RotatePskResponse
+        catch (Exception ex)
         {
-            Psk = psk, // Only returned ONCE
-            RotatedAt = config.LastPskRotatedAt.Value,
-            Message = "PSK rotated successfully. Update your workers with the new PSK. The old PSK is now invalid."
-        });
+            _logger.LogError(ex, "Error rotating PSK");
+            return StatusCode(500, new { error = "Failed to rotate PSK", details = ex.Message });
+        }
     }
 
     /// <summary>

@@ -1,6 +1,9 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
+using backend.Data;
+using backend.Data.Entities;
 using backend.Hubs;
 using backend.Services;
 using shared.Dto;
@@ -16,89 +19,141 @@ public class WorkersController : ControllerBase
     private readonly IWorkerRegistry _workerRegistry;
     private readonly IHubContext<LiveLogHub> _liveLogHub;
     private readonly ILogger<WorkersController> _logger;
+    private readonly AppDbContext _db;
 
     public WorkersController(
         IWorkerRegistry workerRegistry,
         IHubContext<LiveLogHub> liveLogHub,
-        ILogger<WorkersController> logger)
+        ILogger<WorkersController> logger,
+        AppDbContext db)
     {
         _workerRegistry = workerRegistry;
         _liveLogHub = liveLogHub;
         _logger = logger;
+        _db = db;
     }
 
     /// <summary>
-    /// Get all registered workers visible to the current API URL
+    /// Get all registered workers visible to the current user
     /// </summary>
     [HttpGet]
-    public ActionResult<WorkerListResponse> GetWorkers([FromQuery] string? hostname = null)
+    public async Task<ActionResult<WorkerListResponse>> GetWorkers([FromQuery] string? hostname = null)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                     ?? User.FindFirstValue("sub");
-
-        if (string.IsNullOrEmpty(userId))
-            return Unauthorized();
-
-        // Get the API URL from the current request for visibility filtering
-        var apiUrl = $"{Request.Scheme}://{Request.Host}";
-
-        var response = _workerRegistry.GetWorkers(apiUrl);
-
-        // Filter by hostname if provided
-        if (!string.IsNullOrEmpty(hostname))
+        try
         {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                         ?? User.FindFirstValue("sub");
+
+            if (string.IsNullOrEmpty(userId))
+                return Unauthorized(new { error = "Unable to determine user identity" });
+
+            // Get the API URL from the current request for visibility filtering
+            var apiUrl = $"{Request.Scheme}://{Request.Host}";
+
+            // Get all workers from the registry
+            var response = _workerRegistry.GetWorkers(apiUrl);
+
+            // Get user's registered worker IDs from database
+            var userWorkerIds = await _db.WorkerAgents
+                .Where(w => w.CreatedByUserId == userId && w.Status == WorkerAgentStatus.Active)
+                .Select(w => w.Id.ToString())
+                .ToListAsync();
+
+            // Filter to only show workers that belong to this user
             response.Workers = response.Workers
-                .Where(w => w.Hostname.Contains(hostname, StringComparison.OrdinalIgnoreCase))
+                .Where(w => userWorkerIds.Contains(w.WorkerId, StringComparer.OrdinalIgnoreCase))
                 .ToList();
+
+            // Filter by hostname if provided
+            if (!string.IsNullOrEmpty(hostname))
+            {
+                response.Workers = response.Workers
+                    .Where(w => w.Hostname.Contains(hostname, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+            }
+
             response.TotalCount = response.Workers.Count;
             response.OnlineCount = response.Workers.Count(w => w.IsOnline);
+
+            _logger.LogDebug("GetWorkers: Returning {Count} workers for user {UserId}",
+                response.TotalCount, userId);
+
+            return Ok(response);
         }
-
-        _logger.LogDebug("GetWorkers: Returning {Count} workers for API {ApiUrl}",
-            response.TotalCount, apiUrl);
-
-        return Ok(response);
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting workers");
+            return StatusCode(500, new { error = "Failed to get workers", details = ex.Message });
+        }
     }
 
     /// <summary>
     /// Get workers by hostname
     /// </summary>
     [HttpGet("by-hostname/{hostname}")]
-    public ActionResult<List<WorkerRegistration>> GetWorkersByHostname(string hostname)
+    public async Task<ActionResult<List<WorkerRegistration>>> GetWorkersByHostname(string hostname)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                     ?? User.FindFirstValue("sub");
+        try
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                         ?? User.FindFirstValue("sub");
 
-        if (string.IsNullOrEmpty(userId))
-            return Unauthorized();
+            if (string.IsNullOrEmpty(userId))
+                return Unauthorized(new { error = "Unable to determine user identity" });
 
-        var workers = _workerRegistry.GetWorkersByHostname(hostname);
-        return Ok(workers);
+            // Get user's registered worker IDs
+            var userWorkerIds = await _db.WorkerAgents
+                .Where(w => w.CreatedByUserId == userId && w.Status == WorkerAgentStatus.Active)
+                .Select(w => w.Id.ToString())
+                .ToListAsync();
+
+            var workers = _workerRegistry.GetWorkersByHostname(hostname)
+                .Where(w => userWorkerIds.Contains(w.WorkerId, StringComparer.OrdinalIgnoreCase))
+                .ToList();
+
+            return Ok(workers);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting workers by hostname");
+            return StatusCode(500, new { error = "Failed to get workers", details = ex.Message });
+        }
     }
 
     /// <summary>
     /// Get a specific worker by ID
     /// </summary>
     [HttpGet("{workerId}")]
-    public ActionResult<WorkerRegistration> GetWorker(string workerId)
+    public async Task<ActionResult<WorkerRegistration>> GetWorker(string workerId)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                     ?? User.FindFirstValue("sub");
+        try
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                         ?? User.FindFirstValue("sub");
 
-        if (string.IsNullOrEmpty(userId))
-            return Unauthorized();
+            if (string.IsNullOrEmpty(userId))
+                return Unauthorized(new { error = "Unable to determine user identity" });
 
-        var worker = _workerRegistry.GetWorker(workerId);
+            // Check if user owns this worker
+            var workerGuid = Guid.TryParse(workerId, out var guid) ? guid : Guid.Empty;
+            var userOwnsWorker = await _db.WorkerAgents
+                .AnyAsync(w => w.Id == workerGuid && w.CreatedByUserId == userId && w.Status == WorkerAgentStatus.Active);
 
-        if (worker == null)
-            return NotFound(new { message = $"Worker {workerId} not found" });
+            if (!userOwnsWorker)
+                return NotFound(new { message = $"Worker {workerId} not found or not owned by you" });
 
-        // Check visibility
-        var apiUrl = $"{Request.Scheme}://{Request.Host}";
-        if (!_workerRegistry.IsWorkerVisibleToApi(workerId, apiUrl))
-            return NotFound(new { message = $"Worker {workerId} not visible to this API" });
+            var worker = _workerRegistry.GetWorker(workerId);
 
-        return Ok(worker);
+            if (worker == null)
+                return NotFound(new { message = $"Worker {workerId} not found in registry (may be offline)" });
+
+            return Ok(worker);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting worker {WorkerId}", workerId);
+            return StatusCode(500, new { error = "Failed to get worker", details = ex.Message });
+        }
     }
 
     /// <summary>
@@ -107,33 +162,44 @@ public class WorkersController : ControllerBase
     [HttpPost("pull-logs")]
     public async Task<ActionResult> PullLogs([FromBody] LogPullRequest request)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                     ?? User.FindFirstValue("sub");
+        try
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                         ?? User.FindFirstValue("sub");
 
-        if (string.IsNullOrEmpty(userId))
-            return Unauthorized();
+            if (string.IsNullOrEmpty(userId))
+                return Unauthorized(new { error = "Unable to determine user identity" });
 
-        var worker = _workerRegistry.GetWorker(request.WorkerId);
+            // Check if user owns this worker
+            var workerGuid = Guid.TryParse(request.WorkerId, out var guid) ? guid : Guid.Empty;
+            var userOwnsWorker = await _db.WorkerAgents
+                .AnyAsync(w => w.Id == workerGuid && w.CreatedByUserId == userId && w.Status == WorkerAgentStatus.Active);
 
-        if (worker == null)
-            return NotFound(new { message = $"Worker {request.WorkerId} not found" });
+            if (!userOwnsWorker)
+                return NotFound(new { message = $"Worker {request.WorkerId} not found or not owned by you" });
 
-        if (!worker.IsOnline)
-            return BadRequest(new { message = $"Worker {request.WorkerId} is offline" });
+            var worker = _workerRegistry.GetWorker(request.WorkerId);
 
-        // Check visibility
-        var apiUrl = $"{Request.Scheme}://{Request.Host}";
-        if (!_workerRegistry.IsWorkerVisibleToApi(request.WorkerId, apiUrl))
-            return NotFound(new { message = $"Worker {request.WorkerId} not visible to this API" });
+            if (worker == null)
+                return NotFound(new { message = $"Worker {request.WorkerId} not found" });
 
-        _logger.LogInformation(
-            "Log pull request for worker {WorkerId}, path {LogPath}, lines {Lines}",
-            request.WorkerId, request.LogPath, request.Lines);
+            if (!worker.IsOnline)
+                return BadRequest(new { message = $"Worker {request.WorkerId} is offline" });
 
-        // Send log pull request to the worker
-        await _liveLogHub.Clients.Group($"livelog_{request.WorkerId}")
-            .SendAsync("PullLogs", request.LogPath, request.Lines, request.FromEnd);
+            _logger.LogInformation(
+                "Log pull request for worker {WorkerId}, path {LogPath}, lines {Lines}",
+                request.WorkerId, request.LogPath, request.Lines);
 
-        return Ok(new { message = "Log pull request sent to worker" });
+            // Send log pull request to the worker
+            await _liveLogHub.Clients.Group($"livelog_{request.WorkerId}")
+                .SendAsync("PullLogs", request.LogPath, request.Lines, request.FromEnd);
+
+            return Ok(new { message = "Log pull request sent to worker" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error pulling logs from worker {WorkerId}", request.WorkerId);
+            return StatusCode(500, new { error = "Failed to pull logs", details = ex.Message });
+        }
     }
 }

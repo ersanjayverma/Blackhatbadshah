@@ -180,7 +180,7 @@
                                                 }
                                                 <i class="bi bi-star-fill me-2"></i>Buy 15 Pro Credits
                                             </button>
-                                            <button class="btn btn-light btn-lg" @onclick='() => BuyCredits("Open")' disabled="@_paygLoading">
+                                            <button class="btn btn-success btn-lg" @onclick='() => BuyCredits("Open")' disabled="@_paygLoading">
                                                 @if (_paygLoading && _selectedCreditType == "Open")
                                                 {
                                                     <span class="spinner-border spinner-border-sm me-2"></span>

@@ -39,30 +39,6 @@ public class WorkerConfigController : ControllerBase
         return userId;
     }
 
-    /// <summary>
-    /// Get current user's worker configuration
-    /// </summary>
-    /// <summary>
-    /// Get the current PSK for the user (admin worker scenario)
-    /// </summary>
-    [HttpGet("psk")]
-    public async Task<IActionResult> GetCurrentPsk()
-    {
-        var userId = GetUserId();
-        if (string.IsNullOrEmpty(userId))
-            return Unauthorized(new { error = "Unable to determine user identity" });
-
-        var config = await _db.UserWorkerConfigs.FirstOrDefaultAsync(c => c.UserId == userId);
-        if (config == null)
-            return NotFound(new { error = "Worker configuration not found. Initialize first." });
-
-        // For security, only return the PSK if the user is allowed (admin scenario)
-        // In this implementation, we assume all users can view their PSK on demand
-        // The actual PSK is not stored, only the hash, so this endpoint must be called immediately after rotate/init
-        // If you want to persist the PSK, you must store it in plaintext (not recommended for production)
-        // For demo/dev, you can return a placeholder or a warning
-        return Ok(new { message = "For security, the PSK is only shown once at creation or rotation. Please rotate to get a new PSK." });
-    }
     [HttpGet]
     public async Task<IActionResult> GetConfig()
     {

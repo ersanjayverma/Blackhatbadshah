@@ -231,7 +231,7 @@ public class LogPusherService : BackgroundService
                 if (_connection == null || _connection.State != HubConnectionState.Connected)
                 {
                     _logger.LogDebug("[Metrics] Connection not active, skipping metrics push.");
-                    break;
+                    continue;
                 }
                 await PushMetrics();
                 await PingOnline();
@@ -259,7 +259,7 @@ public class LogPusherService : BackgroundService
                 if (_connection == null || _connection.State != HubConnectionState.Connected)
                 {
                     _logger.LogDebug("[SystemMonitor] Connection not active, skipping system monitor push.");
-                    break;
+                    continue;
                 }
                 await PushSystemMonitorData();
             }

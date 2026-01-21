@@ -17,13 +17,16 @@ public class LogPusherService : BackgroundService
     private readonly List<FileStream> _streams = new();
     private string _workerId = string.Empty;
 
+    // Live log streaming
+    private readonly Dictionary<string, CancellationTokenSource> _liveLogCts = new();
+
     private const string WorkerIdFileName = ".bhb-worker-id";
 
     // Metrics tracking
     private DateTime _startTime;
     private TimeSpan _previousTotalCpuTime;
     private DateTime _previousCpuCheck;
-    private readonly TimeSpan _metricsInterval = TimeSpan.FromSeconds(5);
+    private readonly TimeSpan _metricsInterval = TimeSpan.FromSeconds(10);
     private readonly TimeSpan _systemMonitorInterval = TimeSpan.FromSeconds(2);
     private CancellationTokenSource? _metricsCts;
     private SystemMonitorService? _systemMonitorService;
@@ -217,6 +220,7 @@ public class LogPusherService : BackgroundService
                     break;
                 }
                 await PushMetrics();
+                await PingOnline();
             }
             catch (OperationCanceledException)
             {
@@ -479,6 +483,20 @@ public class LogPusherService : BackgroundService
         {
             _logger.LogInformation("[LogPull] Received pull request: Path={Path}, Lines={Lines}, FromEnd={FromEnd}", logPath, lines, fromEnd);
             await PullLogsAsync(logPath, lines, fromEnd);
+        });
+
+        // Handle live log stream start
+        _connection.On<string>("StartLiveLog", async (logPath) =>
+        {
+            _logger.LogInformation("[LiveLog] Start streaming: {Path}", logPath);
+            await StartLiveLogStreamingAsync(logPath);
+        });
+
+        // Handle live log stream stop
+        _connection.On<string>("StopLiveLog", (logPath) =>
+        {
+            _logger.LogInformation("[LiveLog] Stop streaming: {Path}", logPath);
+            StopLiveLogStreaming(logPath);
         });
 
         // Handle registration confirmation

@@ -118,34 +118,45 @@ public class ReportsController : ControllerBase
     [HttpGet("{id:guid}/download")]
     public async Task<IActionResult> Download(Guid id)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                     ?? User.FindFirstValue("sub");
-
-        var report = await _db.Reports
-            .Include(r => r.Log)
-            .FirstOrDefaultAsync(r => r.Id == id && r.UserId == userId);
-
-        if (report == null)
-            return NotFound();
-
-        if (!System.IO.File.Exists(report.ReportPath))
-            return NotFound("Report file not found");
-
-        var markdown = await System.IO.File.ReadAllTextAsync(report.ReportPath);
-
-        string? chartData = null;
-        if (!string.IsNullOrWhiteSpace(report.ChartPath) &&
-            System.IO.File.Exists(report.ChartPath))
+        try
         {
-            chartData = await System.IO.File.ReadAllTextAsync(report.ChartPath);
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                         ?? User.FindFirstValue("sub");
+
+            if (string.IsNullOrEmpty(userId))
+                return Unauthorized(new { error = "Unable to determine user identity" });
+
+            var report = await _db.Reports
+                .Include(r => r.Log)
+                .FirstOrDefaultAsync(r => r.Id == id && r.UserId == userId);
+
+            if (report == null)
+                return NotFound(new { error = "Report not found" });
+
+            if (string.IsNullOrEmpty(report.ReportPath) || !System.IO.File.Exists(report.ReportPath))
+                return NotFound(new { error = "Report file not found on disk" });
+
+            var markdown = await System.IO.File.ReadAllTextAsync(report.ReportPath);
+
+            string? chartData = null;
+            if (!string.IsNullOrWhiteSpace(report.ChartPath) &&
+                System.IO.File.Exists(report.ChartPath))
+            {
+                chartData = await System.IO.File.ReadAllTextAsync(report.ChartPath);
+            }
+
+            var originalName = Path.GetFileNameWithoutExtension(report.ReportPath);
+            var fileName = $"{originalName}.pdf";
+
+            var pdfBytes = await PdfGenerator.FromMarkdownAsync(markdown, chartData);
+
+            return File(pdfBytes, "application/pdf", fileName);
         }
-
-        var originalName = Path.GetFileNameWithoutExtension(report.ReportPath);
-        var fileName = $"{originalName}.pdf";
-
-        var pdfBytes = await PdfGenerator.FromMarkdownAsync(markdown, chartData);
-
-        return File(pdfBytes, "application/pdf", fileName);
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error downloading report {id}: {ex.Message}");
+            return StatusCode(500, new { error = "Failed to download report", details = ex.Message });
+        }
     }
 
 

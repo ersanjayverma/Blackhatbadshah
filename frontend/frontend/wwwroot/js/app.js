@@ -35,6 +35,25 @@ window.downloadFile = (fileName, contentType, bytes) => {
 
     URL.revokeObjectURL(url);
 };
+
+window.downloadFileFromBase64 = (fileName, contentType, base64) => {
+    const byteCharacters = atob(base64);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    const blob = new Blob([byteArray], { type: contentType });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    a.click();
+
+    URL.revokeObjectURL(url);
+};
+
 window.closeMobileNav = () => {
     const overlay = document.querySelector('.mobile-overlay');
     const sidebar = document.getElementById('main-sidebar');
@@ -47,6 +66,7 @@ let currentChart = null;
 
 window.renderChart = (chartData) => {
     console.log('renderChart called with:', chartData);
+    
     
     try {
         if (typeof Chart === 'undefined') {

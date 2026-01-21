@@ -56,7 +56,12 @@ public class LogPusherService : BackgroundService
     {
         var hubUrl = _config["LiveLogHub:Url"] ?? "https://api.blackhatbadshah.com/hubs/livelog";
         var psk = _config["LiveLogHub:Psk"] ?? "";
-        _workerId = GetOrCreateWorkerId();
+        var apiKey = _config["LiveLogHub:ApiKey"] ?? "";
+        var configuredWorkerId = _config["LiveLogHub:WorkerId"] ?? "";
+        
+        // Use configured WorkerId if provided (for API key auth), otherwise auto-generate (for PSK auth)
+        _workerId = !string.IsNullOrEmpty(configuredWorkerId) ? configuredWorkerId : GetOrCreateWorkerId();
+        
         var model = _config["LiveLogHub:Model"];
         var reconnectDelay = int.Parse(_config["LiveLogHub:ReconnectDelayMs"] ?? "5000");
 
@@ -78,6 +83,7 @@ public class LogPusherService : BackgroundService
         _logger.LogInformation("========================================");
         _logger.LogInformation("BHBWorker starting...");
         _logger.LogInformation("Worker ID: {WorkerId}", _workerId);
+        _logger.LogInformation("Auth Mode: {AuthMode}", !string.IsNullOrEmpty(apiKey) ? "API Key" : "PSK");
         _logger.LogInformation("========================================");
         _logger.LogInformation("Copy the Worker ID above and enter it in the Live Logs page to view logs.");
         _logger.LogInformation("Hub URL: {Url}", hubUrl);
@@ -87,7 +93,7 @@ public class LogPusherService : BackgroundService
         {
             try
             {
-                await ConnectToHub(hubUrl, psk, _workerId, reconnectDelay, stoppingToken);
+                await ConnectToHub(hubUrl, psk, apiKey, _workerId, reconnectDelay, stoppingToken);
 
                 if (_connection?.State == HubConnectionState.Connected)
                 {
@@ -231,7 +237,7 @@ public class LogPusherService : BackgroundService
         return metrics;
     }
 
-    private async Task ConnectToHub(string hubUrl, string psk, string workerId, int reconnectDelay, CancellationToken ct)
+    private async Task ConnectToHub(string hubUrl, string psk, string apiKey, string workerId, int reconnectDelay, CancellationToken ct)
     {
         // If connection exists and is connected, don't recreate
         if (_connection?.State == HubConnectionState.Connected)
@@ -259,10 +265,31 @@ public class LogPusherService : BackgroundService
             }
         }
 
-        var fullUrl = $"{hubUrl}?psk={Uri.EscapeDataString(psk)}&workerId={Uri.EscapeDataString(workerId)}";
+        // Determine authentication method
+        bool useApiKey = !string.IsNullOrEmpty(apiKey);
+        string fullUrl;
+        
+        if (useApiKey)
+        {
+            // API Key authentication - pass workerId in query, key in header
+            fullUrl = $"{hubUrl}?workerId={Uri.EscapeDataString(workerId)}";
+            _logger.LogInformation("Using API Key authentication for worker {WorkerId}", workerId);
+        }
+        else
+        {
+            // Legacy PSK authentication
+            fullUrl = $"{hubUrl}?psk={Uri.EscapeDataString(psk)}&workerId={Uri.EscapeDataString(workerId)}";
+            _logger.LogInformation("Using PSK authentication for worker {WorkerId}", workerId);
+        }
 
         _connection = new HubConnectionBuilder()
-            .WithUrl(fullUrl)
+            .WithUrl(fullUrl, options =>
+            {
+                if (useApiKey)
+                {
+                    options.Headers.Add("X-Worker-Key", apiKey);
+                }
+            })
             .WithAutomaticReconnect([TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(30)])
             .Build();
 

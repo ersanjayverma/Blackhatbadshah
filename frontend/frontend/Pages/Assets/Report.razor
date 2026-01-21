@@ -570,9 +570,10 @@
     {
         try
         {
-            var stream = await ReportService.DownloadAsync(reportId);
-            var bytes = new byte[stream.Length];
-            await stream.ReadAsync(bytes);
+            using var stream = await ReportService.DownloadAsync(reportId);
+            using var memoryStream = new MemoryStream();
+            await stream.CopyToAsync(memoryStream);
+            var bytes = memoryStream.ToArray();
 
             await JS.InvokeVoidAsync(
                 "downloadFile",

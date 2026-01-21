@@ -275,28 +275,17 @@ public class WorkerConfigController : ControllerBase
     private static string GenerateSystemdServiceContent(string workerId)
     {
         return $@"[Unit]
-Description=BlackHatBadshah Worker Agent
+Description=BHB Worker - Log Streaming Agent
 After=network.target
 
 [Service]
-Type=simple
-User=bhbworker
-Group=bhbworker
+Type=notify
 WorkingDirectory=/opt/bhbworker
-ExecStart=/opt/bhbworker/BHBWorker
+ExecStart=/opt/bhbworker/bhbworker
 Restart=always
 RestartSec=10
-Environment=BHB_API_URL=https://api.blackhatbadshah.com
-Environment=BHB_WORKER_ID={workerId}
-Environment=BHB_WORKER_KEY=<YOUR_WORKER_API_KEY>
-Environment=BHB_LOG_PATHS=/var/log/syslog,/var/log/auth.log
-
-# Security hardening
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=true
-NoNewPrivileges=true
-ReadWritePaths=/opt/bhbworker
+User=root
+Environment=DOTNET_ENVIRONMENT=Production
 
 [Install]
 WantedBy=multi-user.target";
@@ -304,54 +293,117 @@ WantedBy=multi-user.target";
 
     private static string GenerateLinuxInstallCommands()
     {
-        return @"# Create user and directory
-sudo useradd -r -s /bin/false bhbworker
+        return @"# Step 1: Create installation directory
 sudo mkdir -p /opt/bhbworker
-sudo chown bhbworker:bhbworker /opt/bhbworker
 
-# Download and extract worker
+# Step 2: Download the latest release
 cd /opt/bhbworker
-sudo curl -L https://github.com/ersanjayverma/Blackhatbadshah/releases/latest/download/bhbworker-linux-x64.tar.gz | sudo tar xz
+sudo curl -L https://github.com/ersanjayverma/Blackhatbadshah/releases/latest/download/bhbworker-linux-x64.tar.gz -o bhbworker.tar.gz
+sudo tar -xzf bhbworker.tar.gz
+sudo rm bhbworker.tar.gz
+sudo chmod +x bhbworker
 
-# Install systemd service
-sudo cp /opt/bhbworker/bhbworker.service /etc/systemd/system/
+# Step 3: Create configuration file
+sudo nano /opt/bhbworker/appsettings.json
+# (Paste the configuration from Step 4 below)
+
+# Step 4: Configuration template - save as appsettings.json:
+# {
+#   ""LiveLogHub"": {
+#     ""Url"": ""https://api.blackhatbadshah.com/hubs/livelog"",
+#     ""ApiKey"": ""YOUR_API_KEY_HERE"",
+#     ""WorkerId"": ""YOUR_WORKER_ID_HERE"",
+#     ""Model"": ""together-qwen"",
+#     ""ReconnectDelayMs"": 5000
+#   },
+#   ""LogReader"": {
+#     ""LogPaths"": [""/var/log/syslog"", ""/var/log/auth.log""],
+#     ""BatchSize"": 50,
+#     ""BatchDelayMs"": 100
+#   }
+# }
+
+# Step 5: Install systemd service
+sudo tee /etc/systemd/system/bhbworker.service > /dev/null << 'EOF'
+[Unit]
+Description=BHB Worker - Log Streaming Agent
+After=network.target
+
+[Service]
+Type=notify
+WorkingDirectory=/opt/bhbworker
+ExecStart=/opt/bhbworker/bhbworker
+Restart=always
+RestartSec=10
+User=root
+Environment=DOTNET_ENVIRONMENT=Production
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Step 6: Enable and start the service
 sudo systemctl daemon-reload
 sudo systemctl enable bhbworker
 sudo systemctl start bhbworker
 
-# Check status
-sudo systemctl status bhbworker";
+# Step 7: Verify it's running
+sudo systemctl status bhbworker
+sudo journalctl -u bhbworker -f";
     }
 
     private static string GenerateWindowsServiceCommands(string workerId)
     {
-        return $@"# Run as Administrator in PowerShell
+        return $@"# Run PowerShell as Administrator
 
-# Create service
-sc.exe create BHBWorker binPath= ""C:\BHBWorker\BHBWorker.exe"" start= auto
-sc.exe description BHBWorker ""BlackHatBadshah Worker Agent""
+# Step 1: Create installation directory
+New-Item -ItemType Directory -Force -Path ""C:\Program Files\BHBWorker""
 
-# Set environment variables
-setx BHB_API_URL ""https://api.blackhatbadshah.com"" /M
-setx BHB_WORKER_ID ""{workerId}"" /M
-setx BHB_WORKER_KEY ""<YOUR_WORKER_API_KEY>"" /M
-setx BHB_LOG_PATHS ""C:\Windows\System32\winevt\Logs"" /M
+# Step 2: Download the latest release
+# Download bhbworker-win-x64.zip from:
+# https://github.com/ersanjayverma/Blackhatbadshah/releases/latest
+# Extract to C:\Program Files\BHBWorker\
 
-# Start service
-sc.exe start BHBWorker";
+# Step 3: Create configuration file
+# Create C:\Program Files\BHBWorker\appsettings.json with:
+# {{
+#   ""LiveLogHub"": {{
+#     ""Url"": ""https://api.blackhatbadshah.com/hubs/livelog"",
+#     ""ApiKey"": ""YOUR_API_KEY_HERE"",
+#     ""WorkerId"": ""{workerId}"",
+#     ""Model"": ""together-qwen"",
+#     ""ReconnectDelayMs"": 5000
+#   }},
+#   ""LogReader"": {{
+#     ""LogPaths"": [""C:\\inetpub\\logs\\LogFiles\\W3SVC1\\*.log""],
+#     ""BatchSize"": 50,
+#     ""BatchDelayMs"": 100
+#   }}
+# }}
+
+# Step 4: Install as Windows Service
+New-Service -Name ""BHBWorker"" `
+  -BinaryPathName '""C:\Program Files\BHBWorker\bhbworker.exe""' `
+  -DisplayName ""BHB Worker"" `
+  -Description ""BlackHatBadshah Log Streaming Agent"" `
+  -StartupType Automatic
+
+# Step 5: Start the service
+Start-Service -Name ""BHBWorker""
+
+# Step 6: Verify it's running
+Get-Service -Name ""BHBWorker""";
     }
 
     private static string GenerateDockerRunCommand(string workerId)
     {
-        return $@"docker run -d \
-  --name bhbworker \
-  --restart unless-stopped \
-  -e BHB_API_URL=https://api.blackhatbadshah.com \
-  -e BHB_WORKER_ID={workerId} \
-  -e BHB_WORKER_KEY=<YOUR_WORKER_API_KEY> \
-  -e BHB_LOG_PATHS=/var/log/syslog,/var/log/auth.log \
-  -v /var/log:/var/log:ro \
-  ghcr.io/ersanjayverma/bhbworker:latest";
+        // Docker support removed - use native installation instead
+        return @"Docker installation is not currently supported.
+
+Please use the Linux or Windows native installation method.
+
+For Linux: Use the systemd service installation
+For Windows: Use the Windows Service installation";
     }
 }
 

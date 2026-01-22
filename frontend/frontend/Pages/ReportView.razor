@@ -1,10 +1,13 @@
 @page "/reports/{ReportId:guid}"
 @using Microsoft.AspNetCore.Components.WebAssembly.Authentication
+@using Microsoft.AspNetCore.Authorization
 @using frontend.Services
 @using shared.Dto
+@attribute [Authorize]
 @inject ReportService ReportService
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
+@inject ToastService Toast
 
 <AuthorizeView>
     <Authorized>
@@ -42,8 +45,17 @@
                         </p>
                     </div>
                     <div class="d-flex gap-2 flex-wrap">
-                        <button class="btn btn-info" @onclick="DownloadReport">
-                            <i class="bi bi-download me-2"></i>Download
+                        <button class="btn btn-info" @onclick="DownloadReport" disabled="@_downloading">
+                            @if (_downloading)
+                            {
+                                <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                                <span>Downloading...</span>
+                            }
+                            else
+                            {
+                                <i class="bi bi-download me-2"></i>
+                                <span>Download</span>
+                            }
                         </button>
                     </div>
                 </div>
@@ -201,11 +213,22 @@
 
     private shared.Dto.ReportDetail? _report;
     private bool _loading = true;
+    private bool _downloading = false;
     private string? _error;
+    private Guid _lastLoadedReportId;
 
     protected override async Task OnInitializedAsync()
     {
         await LoadReport();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Reload if the ReportId parameter changed (e.g., navigating to a different report)
+        if (ReportId != _lastLoadedReportId && _lastLoadedReportId != Guid.Empty)
+        {
+            await LoadReport();
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -220,11 +243,13 @@
     {
         _loading = true;
         _error = null;
+        _report = null;
         StateHasChanged();
 
         try
         {
             _report = await ReportService.GetAsync(ReportId);
+            _lastLoadedReportId = ReportId;
         }
         catch (HttpRequestException ex) when (ex.Message.Contains("404"))
         {
@@ -252,7 +277,10 @@
 
     private async Task DownloadReport()
     {
-        if (_report == null) return;
+        if (_report == null || _downloading) return;
+
+        _downloading = true;
+        StateHasChanged();
 
         try
         {
@@ -261,15 +289,30 @@
             await stream.CopyToAsync(memoryStream);
             var bytes = memoryStream.ToArray();
 
-            var fileName = $"{_report.Title?.Replace(" ", "_") ?? "report"}.pdf";
+            // Download as PDF file
+            var fileName = $"{SanitizeFileName(_report.Title ?? "report")}.pdf";
             var base64 = Convert.ToBase64String(bytes);
 
             await JS.InvokeVoidAsync("downloadFileFromBase64", fileName, "application/pdf", base64);
+            Toast.ShowSuccess("Report downloaded successfully!");
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Download failed: {ex.Message}");
+            Toast.ShowError($"Download failed: {ex.Message}");
         }
+        finally
+        {
+            _downloading = false;
+            StateHasChanged();
+        }
+    }
+
+    private string SanitizeFileName(string name)
+    {
+        // Remove invalid characters for file names
+        var invalid = Path.GetInvalidFileNameChars();
+        return string.Join("_", name.Split(invalid, StringSplitOptions.RemoveEmptyEntries)).Trim();
     }
 
     private async Task RenderChart()

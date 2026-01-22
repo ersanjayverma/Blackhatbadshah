@@ -20,6 +20,11 @@ public interface IWorkerRegistry
     void UpdateHeartbeat(string workerId, WorkerMetrics? metrics = null);
 
     /// <summary>
+    /// Mark a worker as online (e.g., when an explicit online signal is received)
+    /// </summary>
+    void UpdateOnline(string workerId);
+
+    /// <summary>
     /// Get all registered workers, optionally filtered by API URL
     /// </summary>
     WorkerListResponse GetWorkers(string? apiUrlFilter = null);

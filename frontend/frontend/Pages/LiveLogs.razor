@@ -722,60 +722,25 @@
                 await InvokeAsync(StateHasChanged);
             });
 
-            // ✅ FIX: LiveLogUpdate is what backend is actually broadcasting
-            _logUpdateSub = HubService.On<object>("LiveLogUpdate", async (update) =>
+            // ✅ LiveLogUpdate - using strongly typed DTO
+            _logUpdateSub = HubService.On<LiveLogUpdate>("LiveLogUpdate", async (update) =>
             {
                 try
                 {
                     _isConnected = true;
 
-                    string? workerId = null;
-                    string? logPath = null;
-                    string? line = null;
-
-                    // Handle JsonElement from SignalR (camelCase from JSON serialization)
-                    if (update is System.Text.Json.JsonElement je && je.ValueKind == System.Text.Json.JsonValueKind.Object)
-                    {
-                        // Try camelCase first (default JSON serialization)
-                        if (je.TryGetProperty("workerId", out var wProp))
-                            workerId = wProp.GetString();
-                        else if (je.TryGetProperty("WorkerId", out wProp))
-                            workerId = wProp.GetString();
-
-                        if (je.TryGetProperty("logPath", out var lpProp))
-                            logPath = lpProp.GetString();
-                        else if (je.TryGetProperty("LogPath", out lpProp))
-                            logPath = lpProp.GetString();
-
-                        if (je.TryGetProperty("line", out var lProp))
-                            line = lProp.GetString();
-                        else if (je.TryGetProperty("Line", out lProp))
-                            line = lProp.GetString();
-                    }
-                    else
-                    {
-                        // Fallback to reflection for other types
-                        var t = update?.GetType();
-                        workerId = t?.GetProperty("WorkerId")?.GetValue(update)?.ToString()
-                                ?? t?.GetProperty("workerId")?.GetValue(update)?.ToString();
-                        logPath = t?.GetProperty("LogPath")?.GetValue(update)?.ToString()
-                               ?? t?.GetProperty("logPath")?.GetValue(update)?.ToString();
-                        line = t?.GetProperty("Line")?.GetValue(update)?.ToString()
-                            ?? t?.GetProperty("line")?.GetValue(update)?.ToString();
-                    }
-
-                    if (string.IsNullOrWhiteSpace(line))
+                    if (string.IsNullOrWhiteSpace(update?.Line))
                         return;
 
                     // Accept only currently subscribed worker (case-insensitive)
-                    if (!string.IsNullOrWhiteSpace(workerId) &&
-                        !string.Equals(workerId, _subscribedWorkerId, StringComparison.OrdinalIgnoreCase))
+                    if (!string.IsNullOrWhiteSpace(update.WorkerId) &&
+                        !string.Equals(update.WorkerId, _subscribedWorkerId, StringComparison.OrdinalIgnoreCase))
                         return;
 
                     // Accept only selected log path (if streaming a specific path)
                     if (_isStreaming && !string.IsNullOrWhiteSpace(_selectedLogPath) &&
-                        !string.IsNullOrWhiteSpace(logPath) &&
-                        !string.Equals(logPath, _selectedLogPath, StringComparison.OrdinalIgnoreCase))
+                        !string.IsNullOrWhiteSpace(update.LogPath) &&
+                        !string.Equals(update.LogPath, _selectedLogPath, StringComparison.OrdinalIgnoreCase))
                         return;
 
                     var entry = new LiveLogEntry

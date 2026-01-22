@@ -194,19 +194,16 @@ public class LogPusherService : BackgroundService
                 
                 // Track this connection
                 var newConnectionId = conn.ConnectionId;
+                _currentConnectionId = newConnectionId;
+                
                 _logger.LogInformation("Connected to hub. WorkerId: {WorkerId}, ConnectionId: {ConnectionId}", _workerId, newConnectionId);
 
-                // Only register if this is a new connection
-                if (_currentConnectionId != newConnectionId)
-                {
-                    _currentConnectionId = newConnectionId;
-                    _isRegistered = false;
-                }
-                
+                // Register on initial connection (not on SignalR reconnects - handled by Reconnected event)
                 if (!_isRegistered)
                 {
                     await RegisterWorkerAsync();
                     _isRegistered = true;
+                    _logger.LogDebug("Worker registration completed for {WorkerId}", _workerId);
                 }
                 
                 await PushMetrics();
@@ -429,15 +426,12 @@ public class LogPusherService : BackgroundService
 
             try
             {
-                // Check if this is a new connection (server sends Connected event separately)
-                if (_currentConnectionId != connectionId)
-                {
-                    _currentConnectionId = connectionId;
-                    _isRegistered = false;
-                }
+                // Update connection ID tracking
+                _currentConnectionId = connectionId;
                 
-                // Only re-register if not already registered on this connection
-                // The server's Connected event handler may have already done this
+                // Re-register on reconnect. SignalR reconnect does NOT trigger OnConnectedAsync
+                // on the server, and no "Connected" event is sent. We must re-register here
+                // to ensure the server has fresh state. The server handles duplicate registrations gracefully.
                 if (!_isRegistered)
                 {
                     await RegisterWorkerAsync();

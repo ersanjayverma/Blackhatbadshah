@@ -46,8 +46,10 @@ public class WorkerRegistry : IWorkerRegistry
             IsOnline = true
         };
 
+        var isNewRegistration = true;
         _workers.AddOrUpdate(workerId, registration, (_, existing) =>
         {
+            isNewRegistration = false;
             // Update existing registration but keep original registration time
             registration.RegisteredAt = existing.RegisteredAt;
             // Preserve metrics if new registration doesn't have them
@@ -58,9 +60,18 @@ public class WorkerRegistry : IWorkerRegistry
             return registration;
         });
 
-        _logger.LogInformation(
-            "Worker registered: {WorkerId} from {Hostname} via {ApiUrl} with {LogPathCount} log paths",
-            workerId, registration.Hostname, apiUrl, registration.AvailableLogPaths.Count);
+        if (isNewRegistration)
+        {
+            _logger.LogInformation(
+                "Worker registered: {WorkerId} from {Hostname} via {ApiUrl} with {LogPathCount} log paths",
+                workerId, registration.Hostname, apiUrl, registration.AvailableLogPaths.Count);
+        }
+        else
+        {
+            _logger.LogDebug(
+                "Worker re-registered (session refresh): {WorkerId} from {Hostname}",
+                workerId, registration.Hostname);
+        }
     }
 
     public void UnregisterWorker(string workerId, string sessionId)

@@ -14,7 +14,7 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
             <h2 class="mb-1"><i class="bi bi-terminal me-2"></i>Linux System Manager</h2>
-            <p class="text-muted mb-0">Enterprise Linux server management & monitoring</p>
+            <p class=" mb-0">Enterprise Linux server management & monitoring</p>
         </div>
         <div class="d-flex gap-2">
             @if (!string.IsNullOrEmpty(SelectedWorkerId))
@@ -65,19 +65,19 @@
                                     <div class="fs-3 fw-bold @GetSecurityScoreClass(SecurityAudit.SecurityScore)">
                                         @SecurityAudit.SecurityScore/100
                                     </div>
-                                    <small class="text-muted">Security Score</small>
+                                    <small class="">Security Score</small>
                                 </div>
                                 <div class="text-center">
                                     <div class="fs-3 fw-bold">@(SshSessions?.ActiveCount ?? 0)</div>
-                                    <small class="text-muted">SSH Sessions</small>
+                                    <small class="">SSH Sessions</small>
                                 </div>
                                 <div class="text-center">
                                     <div class="fs-3 fw-bold">@(Containers?.RunningCount ?? 0)</div>
-                                    <small class="text-muted">Containers</small>
+                                    <small class="">Containers</small>
                                 </div>
                                 <div class="text-center">
                                     <div class="fs-3 fw-bold">@(Services?.RunningCount ?? 0)</div>
-                                    <small class="text-muted">Services</small>
+                                    <small class="">Services</small>
                                 </div>
                             </div>
                         </div>
@@ -353,7 +353,7 @@
                     <div class="display-1 fw-bold @GetSecurityScoreClass(SecurityAudit?.SecurityScore ?? 0)">
                         @(SecurityAudit?.SecurityScore ?? 0)
                     </div>
-                    <p class="text-muted">out of 100</p>
+                    <p class="">out of 100</p>
                     <div class="progress" style="height: 10px;">
                         <div class="progress-bar @GetSecurityScoreClass(SecurityAudit?.SecurityScore ?? 0).Replace("text-", "bg-")"
                              style="width: @(SecurityAudit?.SecurityScore ?? 0)%"></div>
@@ -372,7 +372,7 @@
                             <div class="d-flex align-items-center">
                                 <i class="bi @(SecurityAudit?.FirewallActive == true ? "bi-shield-check text-success" : "bi-shield-x text-danger") fs-3 me-2"></i>
                                 <div>
-                                    <small class="text-muted">Firewall</small>
+                                    <small class="">Firewall</small>
                                     <div class="fw-semibold">@(SecurityAudit?.FirewallActive == true ? "Active" : "Inactive")</div>
                                 </div>
                             </div>
@@ -381,7 +381,7 @@
                             <div class="d-flex align-items-center">
                                 <i class="bi @(SecurityAudit?.SshRootLoginEnabled == true ? "bi-exclamation-triangle text-warning" : "bi-check-circle text-success") fs-3 me-2"></i>
                                 <div>
-                                    <small class="text-muted">SSH Root</small>
+                                    <small class="">SSH Root</small>
                                     <div class="fw-semibold">@(SecurityAudit?.SshRootLoginEnabled == true ? "Enabled" : "Disabled")</div>
                                 </div>
                             </div>
@@ -390,7 +390,7 @@
                             <div class="d-flex align-items-center">
                                 <i class="bi bi-key fs-3 me-2 @(SecurityAudit?.SshPasswordAuthEnabled == true ? "text-warning" : "text-success")"></i>
                                 <div>
-                                    <small class="text-muted">SSH Password</small>
+                                    <small class="">SSH Password</small>
                                     <div class="fw-semibold">@(SecurityAudit?.SshPasswordAuthEnabled == true ? "Enabled" : "Disabled")</div>
                                 </div>
                             </div>
@@ -399,7 +399,7 @@
                             <div class="d-flex align-items-center">
                                 <i class="bi bi-hdd-network fs-3 me-2 text-info"></i>
                                 <div>
-                                    <small class="text-muted">Open Ports</small>
+                                    <small class="">Open Ports</small>
                                     <div class="fw-semibold">@(SecurityAudit?.OpenPorts ?? 0)</div>
                                 </div>
                             </div>
@@ -408,7 +408,7 @@
                             <div class="d-flex align-items-center">
                                 <i class="bi bi-x-circle fs-3 me-2 @(SecurityAudit?.FailedLoginAttempts24h > 100 ? "text-danger" : "text-success")"></i>
                                 <div>
-                                    <small class="text-muted">Failed Logins (24h)</small>
+                                    <small class="">Failed Logins (24h)</small>
                                     <div class="fw-semibold">@(SecurityAudit?.FailedLoginAttempts24h ?? 0)</div>
                                 </div>
                             </div>
@@ -417,7 +417,7 @@
                             <div class="d-flex align-items-center">
                                 <i class="bi bi-arrow-repeat fs-3 me-2 @(SecurityAudit?.UnattendedUpgradesEnabled == true ? "text-success" : "text-warning")"></i>
                                 <div>
-                                    <small class="text-muted">Auto Updates</small>
+                                    <small class="">Auto Updates</small>
                                     <div class="fw-semibold">@(SecurityAudit?.UnattendedUpgradesEnabled == true ? "Enabled" : "Disabled")</div>
                                 </div>
                             </div>
@@ -432,7 +432,7 @@
         {
             <div class="col-12">
                 <div class="card shadow-sm">
-                    <div class="card-header bg-white">
+                    <div class="card-header ">
                         <h5 class="mb-0"><i class="bi bi-lightbulb me-2"></i>Security Recommendations</h5>
                     </div>
                     <div class="card-body p-0">
@@ -444,7 +444,7 @@
                                         <div>
                                             <span class="badge @GetSeverityClass(rec.Severity) me-2">@rec.Severity.ToUpper()</span>
                                             <strong>@rec.Title</strong>
-                                            <p class="mb-1 mt-1 text-muted">@rec.Description</p>
+                                            <p class="mb-1 mt-1 ">@rec.Description</p>
                                             <small class="text-primary"><i class="bi bi-wrench me-1"></i>@rec.Remediation</small>
                                         </div>
                                     </div>
@@ -459,7 +459,7 @@
         <!-- SSH Sessions -->
         <div class="col-12">
             <div class="card shadow-sm">
-                <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <div class="card-header  d-flex justify-content-between align-items-center">
                     <h5 class="mb-0"><i class="bi bi-terminal me-2"></i>Active SSH Sessions</h5>
                     <span class="badge bg-primary">@(SshSessions?.ActiveCount ?? 0) active</span>
                 </div>
@@ -494,7 +494,7 @@
                     }
                     else
                     {
-                        <p class="text-muted mb-0">No active SSH sessions</p>
+                        <p class=" mb-0">No active SSH sessions</p>
                     }
                 </div>
             </div>
@@ -503,7 +503,7 @@
 
     private RenderFragment RenderServicesTab() => @<div>
         <div class="card shadow-sm">
-            <div class="card-header bg-white">
+            <div class="card-header ">
                 <div class="row align-items-center">
                     <div class="col-md-6">
                         <h5 class="mb-0"><i class="bi bi-gear me-2"></i>System Services (systemctl)</h5>
@@ -524,7 +524,7 @@
                 {
                     <div class="table-responsive" style="max-height: 600px; overflow-y: auto;">
                         <table class="table table-hover mb-0">
-                            <thead class="sticky-top bg-white">
+                            <thead class="sticky-top ">
                                 <tr>
                                     <th>Service</th>
                                     <th>Status</th>
@@ -559,7 +559,7 @@
                                             }
                                             else
                                             {
-                                                <span class="text-muted"><i class="bi bi-x-circle"></i> disabled</span>
+                                                <span class=""><i class="bi bi-x-circle"></i> disabled</span>
                                             }
                                         </td>
                                         <td class="text-truncate" style="max-width: 300px;">@service.Description</td>
@@ -590,14 +590,14 @@
                 }
                 else
                 {
-                    <p class="text-muted text-center py-4">No services found or failed to load services</p>
+                    <p class=" text-center py-4">No services found or failed to load services</p>
                 }
             </div>
-            <div class="card-footer bg-white">
-                <small class="text-muted">
+            <div class="card-footer ">
+                <small class="">
                     Showing @FilteredServices.Count() of @(Services?.TotalCount ?? 0) services
-                    • @(Services?.RunningCount ?? 0) running
-                    • @(Services?.FailedCount ?? 0) failed
+                    ï¿½ @(Services?.RunningCount ?? 0) running
+                    ï¿½ @(Services?.FailedCount ?? 0) failed
                 </small>
             </div>
         </div>
@@ -605,7 +605,7 @@
 
     private RenderFragment RenderDockerTab() => @<div>
         <div class="card shadow-sm">
-            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <div class="card-header  d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><i class="bi bi-box me-2"></i>Docker Containers</h5>
                 @if (Containers?.DockerAvailable == true)
                 {
@@ -634,17 +634,17 @@
                                                 @container.State
                                             </span>
                                         </div>
-                                        <p class="card-text small text-muted mb-2">
+                                        <p class="card-text small  mb-2">
                                             <i class="bi bi-box-seam me-1"></i>@container.Image
                                         </p>
                                         @if (container.State == "running")
                                         {
                                             <div class="row g-2 mb-2 small">
                                                 <div class="col-6">
-                                                    <span class="text-muted">CPU:</span> @container.CpuPercent.ToString("F1")%
+                                                    <span class="">CPU:</span> @container.CpuPercent.ToString("F1")%
                                                 </div>
                                                 <div class="col-6">
-                                                    <span class="text-muted">Memory:</span> @container.MemoryPercent.ToString("F1")%
+                                                    <span class="">Memory:</span> @container.MemoryPercent.ToString("F1")%
                                                 </div>
                                             </div>
                                         }
@@ -680,16 +680,16 @@
                 }
                 else
                 {
-                    <p class="text-muted text-center mb-0">No containers found</p>
+                    <p class=" text-center mb-0">No containers found</p>
                 }
             </div>
             @if (Containers?.DockerAvailable == true)
             {
-                <div class="card-footer bg-white">
-                    <small class="text-muted">
+                <div class="card-footer ">
+                    <small class="">
                         @Containers.TotalCount containers total
-                        • @Containers.RunningCount running
-                        • @Containers.StoppedCount stopped
+                        ï¿½ @Containers.RunningCount running
+                        ï¿½ @Containers.StoppedCount stopped
                     </small>
                 </div>
             }
@@ -700,7 +700,7 @@
         <div class="row g-4">
             <div class="col-md-5">
                 <div class="card shadow-sm h-100">
-                    <div class="card-header bg-white">
+                    <div class="card-header ">
                         <h5 class="mb-0"><i class="bi bi-folder me-2"></i>File Browser</h5>
                     </div>
                     <div class="card-body">
@@ -734,13 +734,13 @@
                                             @entry.Name
                                             @if (entry.Type == "file")
                                             {
-                                                <small class="text-muted ms-2">@FormatFileSize(entry.Size)</small>
+                                                <small class=" ms-2">@FormatFileSize(entry.Size)</small>
                                             }
                                         </div>
                                     }
                                 </div>
                             </div>
-                            <div class="mt-2 small text-muted">
+                            <div class="mt-2 small ">
                                 @DirectoryListing.DirectoryCount directories, @DirectoryListing.FileCount files
                             </div>
                         }
@@ -753,17 +753,17 @@
             </div>
             <div class="col-md-7">
                 <div class="card shadow-sm h-100">
-                    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                    <div class="card-header  d-flex justify-content-between align-items-center">
                         <h5 class="mb-0"><i class="bi bi-file-text me-2"></i>File Content</h5>
                         @if (!string.IsNullOrEmpty(SelectedFilePath))
                         {
-                            <small class="text-muted">@SelectedFilePath</small>
+                            <small class="">@SelectedFilePath</small>
                         }
                     </div>
                     <div class="card-body">
                         @if (FileContent == null)
                         {
-                            <p class="text-muted text-center">Select a file to view its contents</p>
+                            <p class=" text-center">Select a file to view its contents</p>
                         }
                         else if (FileContent.Success)
                         {
@@ -791,7 +791,7 @@
 
     private RenderFragment RenderUsersTab() => @<div>
         <div class="card shadow-sm">
-            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <div class="card-header  d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><i class="bi bi-people me-2"></i>System Users</h5>
                 <button class="btn btn-sm btn-outline-primary" @onclick="LoadUsers">
                     <i class="bi bi-arrow-clockwise me-1"></i>Refresh
@@ -810,7 +810,7 @@
                 {
                     <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
                         <table class="table table-hover mb-0">
-                            <thead class="sticky-top bg-white">
+                            <thead class="sticky-top ">
                                 <tr>
                                     <th>Username</th>
                                     <th>UID</th>
@@ -828,7 +828,7 @@
                                             <i class="bi bi-person me-1"></i>@user.Username
                                             @if (!string.IsNullOrEmpty(user.FullName))
                                             {
-                                                <small class="text-muted ms-1">(@user.FullName)</small>
+                                                <small class=" ms-1">(@user.FullName)</small>
                                             }
                                         </td>
                                         <td>@user.Uid</td>
@@ -841,7 +841,7 @@
                                             }
                                             @if ((user.Groups?.Count ?? 0) > 3)
                                             {
-                                                <span class="text-muted">+@(user.Groups!.Count - 3) more</span>
+                                                <span class="">+@(user.Groups!.Count - 3) more</span>
                                             }
                                         </td>
                                         <td>
@@ -862,16 +862,16 @@
                 }
                 else
                 {
-                    <p class="text-muted text-center py-4">@(Users?.Error ?? "No users found")</p>
+                    <p class=" text-center py-4">@(Users?.Error ?? "No users found")</p>
                 }
             </div>
             @if (Users != null)
             {
-                <div class="card-footer bg-white">
-                    <small class="text-muted">
+                <div class="card-footer ">
+                    <small class="">
                         @Users.TotalCount users total
-                        • @Users.HumanUserCount human users
-                        • @Users.SystemUserCount system users
+                        ï¿½ @Users.HumanUserCount human users
+                        ï¿½ @Users.SystemUserCount system users
                     </small>
                 </div>
             }
@@ -880,7 +880,7 @@
 
     private RenderFragment RenderFirewallTab() => @<div>
         <div class="card shadow-sm">
-            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <div class="card-header  d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><i class="bi bi-bricks me-2"></i>Firewall Status</h5>
                 <button class="btn btn-sm btn-outline-primary" @onclick="LoadFirewall">
                     <i class="bi bi-arrow-clockwise me-1"></i>Refresh
@@ -907,19 +907,19 @@
                         <div class="col-md-3">
                             <div class="text-center p-3 border rounded">
                                 <div class="fs-4 fw-bold text-primary">@Firewall.FirewallType.ToUpper()</div>
-                                <small class="text-muted">Firewall Type</small>
+                                <small class="">Firewall Type</small>
                             </div>
                         </div>
                         <div class="col-md-3">
                             <div class="text-center p-3 border rounded">
                                 <div class="fs-4 fw-bold">@Firewall.DefaultIncoming</div>
-                                <small class="text-muted">Default Incoming</small>
+                                <small class="">Default Incoming</small>
                             </div>
                         </div>
                         <div class="col-md-3">
                             <div class="text-center p-3 border rounded">
                                 <div class="fs-4 fw-bold">@Firewall.DefaultOutgoing</div>
-                                <small class="text-muted">Default Outgoing</small>
+                                <small class="">Default Outgoing</small>
                             </div>
                         </div>
                     </div>
@@ -982,7 +982,7 @@
                             {
                                 <pre class="text-danger mb-0" style="white-space: pre-wrap;">@cmd.StdErr</pre>
                             }
-                            <small class="text-muted">Exit code: @cmd.ExitCode | Time: @cmd.ExecutionTimeMs ms</small>
+                            <small class="">Exit code: @cmd.ExitCode | Time: @cmd.ExecutionTimeMs ms</small>
                         </div>
                     }
                 </div>
@@ -1005,7 +1005,7 @@
                     </button>
                 </div>
             </div>
-            <div class="card-footer bg-dark text-muted small">
+            <div class="card-footer bg-dark  small">
                 <i class="bi bi-exclamation-triangle me-1"></i>
                 Some commands are blocked for security. Use with caution.
             </div>
@@ -1014,7 +1014,7 @@
 
     private RenderFragment RenderCronTab() => @<div>
         <div class="card shadow-sm">
-            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <div class="card-header  d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><i class="bi bi-clock-history me-2"></i>Scheduled Tasks (Cron Jobs)</h5>
                 <button class="btn btn-sm btn-outline-primary" @onclick="LoadCronJobs">
                     <i class="bi bi-arrow-clockwise me-1"></i>Refresh
@@ -1068,13 +1068,13 @@
                 }
                 else
                 {
-                    <p class="text-muted text-center py-4">@(CronJobs?.Error ?? "No cron jobs found")</p>
+                    <p class=" text-center py-4">@(CronJobs?.Error ?? "No cron jobs found")</p>
                 }
             </div>
             @if (CronJobs != null)
             {
-                <div class="card-footer bg-white">
-                    <small class="text-muted">@CronJobs.TotalCount scheduled tasks</small>
+                <div class="card-footer ">
+                    <small class="">@CronJobs.TotalCount scheduled tasks</small>
                 </div>
             }
         </div>

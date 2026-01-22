@@ -6,6 +6,7 @@
 @inject ToastService Toast
 @inject IJSRuntime JS
 @attribute [Authorize]
+@implements IAsyncDisposable
 
 <AuthorizeView>
     <Authorized>
@@ -19,18 +20,21 @@
                     </h2>
                     <p class="mb-0">Manage your worker agents for log collection</p>
                 </div>
+
                 <div class="d-flex gap-2 align-items-center">
                     @if (_config != null && _config.HasConfig)
                     {
-                    <span class="badge bg-info px-3 py-2">
-                        <i class="bi bi-stack me-1"></i>
-                        Unlimited Workers (PSK Mode)
-                    </span>
+                        <span class="badge bg-info px-3 py-2">
+                            <i class="bi bi-shield-lock me-1"></i>
+                            Workers: @_summary.ActiveWorkers / @_config.MaxWorkers
+                        </span>
                     }
+
                     <span class="badge bg-success px-3 py-2">
                         <i class="bi bi-circle-fill me-1" style="font-size: 0.5rem;"></i>
                         @_workers.Count(w => w.IsActive) Active
                     </span>
+
                     <button class="btn btn-outline-primary" @onclick="RefreshAll" disabled="@_loading">
                         @if (_loading)
                         {
@@ -83,9 +87,9 @@
                             <i class="bi bi-gear me-2"></i>Worker Configuration
                         </h5>
                         <div class="d-flex gap-2">
-                    <button class="btn btn-sm btn-outline-warning" @onclick="ShowRotatePskModal">
-                        <i class="bi bi-arrow-repeat me-1"></i>Rotate PSK
-                    </button>
+                            <button class="btn btn-sm btn-outline-warning" @onclick="ShowRotatePskModal">
+                                <i class="bi bi-arrow-repeat me-1"></i>Rotate PSK
+                            </button>
                             <button class="btn btn-sm btn-outline-info" @onclick="ShowInstallInstructions">
                                 <i class="bi bi-book me-1"></i>Install Guide
                             </button>
@@ -122,7 +126,7 @@
 
                 <!-- ACTION BUTTONS -->
                 <div class="d-flex gap-2 mb-4">
-                    <button class="btn btn-primary" @onclick="ShowRegisterModal" 
+                    <button class="btn btn-primary" @onclick="ShowRegisterModal"
                             disabled="@(_summary.ActiveWorkers >= _config.MaxWorkers)">
                         <i class="bi bi-plus-lg me-1"></i>Register New Worker
                     </button>
@@ -326,7 +330,7 @@
                                 <i class="bi bi-exclamation-triangle me-2"></i>
                                 <strong>Important:</strong> This key will only be shown ONCE. Copy it now and store it securely.
                             </div>
-                            
+
                             @if (!string.IsNullOrEmpty(_displayWorkerId))
                             {
                                 <div class="mb-3">
@@ -339,7 +343,7 @@
                                     </div>
                                 </div>
                             }
-                            
+
                             <div class="mb-3">
                                 <label class="form-label fw-bold">@_keyLabel</label>
                                 <div class="input-group">
@@ -391,10 +395,10 @@ BHB_API_URL=https://api.blackhatbadshah.com</code></pre>
                                 <i class="bi bi-info-circle me-2"></i>
                                 <strong>Before you begin:</strong> Make sure you have registered a worker and saved the API Key and Worker ID.
                             </div>
-                            
+
                             <ul class="nav nav-tabs" role="tablist">
                                 <li class="nav-item">
-                                    <button class="nav-link @(_installTab == "linux" ? "active" : "")" 
+                                    <button class="nav-link @(_installTab == "linux" ? "active" : "")"
                                             @onclick='() => _installTab = "linux"'>
                                         <i class="bi bi-ubuntu me-1"></i>Linux (systemd)
                                     </button>
@@ -406,7 +410,7 @@ BHB_API_URL=https://api.blackhatbadshah.com</code></pre>
                                     </button>
                                 </li>
                             </ul>
-                            
+
                             <div class="tab-content mt-3">
                                 @if (_installTab == "linux" && _instructions != null)
                                 {
@@ -414,10 +418,9 @@ BHB_API_URL=https://api.blackhatbadshah.com</code></pre>
                                         <h6 class="fw-bold">Linux Installation (Complete Steps)</h6>
                                         <p class="small text-secondary">Copy and run these commands in your terminal:</p>
                                         <pre class="bg-dark text-light p-3 rounded small" style="max-height: 500px; overflow-y: auto; white-space: pre-wrap;">@_instructions.LinuxInstallCommands</pre>
-                                        
                                         <div class="alert alert-warning mt-3">
                                             <i class="bi bi-exclamation-triangle me-2"></i>
-                                            <strong>Important:</strong> Replace <code>YOUR_API_KEY_HERE</code> and <code>YOUR_WORKER_ID_HERE</code> 
+                                            <strong>Important:</strong> Replace <code>YOUR_API_KEY_HERE</code> and <code>YOUR_WORKER_ID_HERE</code>
                                             in the appsettings.json with the values from your registered worker.
                                         </div>
                                     </div>
@@ -428,10 +431,9 @@ BHB_API_URL=https://api.blackhatbadshah.com</code></pre>
                                         <h6 class="fw-bold">Windows Service Installation</h6>
                                         <p class="small text-secondary">Run PowerShell as Administrator and execute these commands:</p>
                                         <pre class="bg-dark text-light p-3 rounded small" style="max-height: 500px; overflow-y: auto; white-space: pre-wrap;">@_instructions.WindowsServiceCommands</pre>
-                                        
                                         <div class="alert alert-warning mt-3">
                                             <i class="bi bi-exclamation-triangle me-2"></i>
-                                            <strong>Important:</strong> Replace <code>YOUR_API_KEY_HERE</code> and <code>YOUR_WORKER_ID_HERE</code> 
+                                            <strong>Important:</strong> Replace <code>YOUR_API_KEY_HERE</code> and <code>YOUR_WORKER_ID_HERE</code>
                                             in the appsettings.json with the values from your registered worker.
                                         </div>
                                     </div>
@@ -439,7 +441,7 @@ BHB_API_URL=https://api.blackhatbadshah.com</code></pre>
                             </div>
                         </div>
                         <div class="modal-footer">
-                            <a href="https://github.com/ersanjayverma/Blackhatbadshah/tree/master/worker/bhbworker" 
+                            <a href="https://github.com/ersanjayverma/Blackhatbadshah/tree/master/worker/bhbworker"
                                target="_blank" class="btn btn-outline-primary">
                                 <i class="bi bi-github me-1"></i>View on GitHub
                             </a>
@@ -451,6 +453,7 @@ BHB_API_URL=https://api.blackhatbadshah.com</code></pre>
         }
 
     </Authorized>
+
     <NotAuthorized>
         <div class="container mt-5">
             <div class="alert alert-warning shadow-sm">
@@ -466,8 +469,10 @@ BHB_API_URL=https://api.blackhatbadshah.com</code></pre>
     private WorkerSummaryResponse _summary = new();
     private List<WorkerAgentListItem> _workers = new();
     private List<WorkerAgentListItem> _filteredWorkers = new();
+
     private bool _loading = true;
     private bool _initializing = false;
+
     private string _statusFilter = "all";
     private string _searchTerm = string.Empty;
     private string _newConfigName = string.Empty;
@@ -476,7 +481,7 @@ BHB_API_URL=https://api.blackhatbadshah.com</code></pre>
     private bool _showRegisterModal = false;
     private string _newWorkerName = string.Empty;
 
-    // Key modal (for PSK, API keys)
+    // Key modal
     private bool _showKeyModal = false;
     private string _keyModalTitle = string.Empty;
     private string _keyLabel = string.Empty;
@@ -484,14 +489,50 @@ BHB_API_URL=https://api.blackhatbadshah.com</code></pre>
     private string _displayKey = string.Empty;
     private bool _showKey = false;
 
-    // Install instructions modal
+    // Install instructions
     private bool _showInstallModal = false;
     private WorkerInstallInstructions? _instructions;
     private string _installTab = "linux";
 
+    // heartbeat refresh loop
+    private CancellationTokenSource? _pageCts;
+    private Task? _pollTask;
+
     protected override async Task OnInitializedAsync()
     {
+        _pageCts = new CancellationTokenSource();
         await RefreshAll();
+        StartHeartbeatPolling();
+    }
+
+    private void StartHeartbeatPolling()
+    {
+        // refresh every 10 seconds to update LastSeenAt and counts
+        _pollTask = Task.Run(async () =>
+        {
+            try
+            {
+                using var timer = new PeriodicTimer(TimeSpan.FromSeconds(10));
+                while (_pageCts != null && await timer.WaitForNextTickAsync(_pageCts.Token))
+                {
+                    if (_config?.HasConfig != true) continue;
+
+                    try
+                    {
+                        // don't show loading spinner on background polling
+                        _summary = await WorkerAgentApi.GetSummaryAsync();
+                        _workers = await WorkerAgentApi.GetAllAsync();
+                        FilterWorkers();
+                        await InvokeAsync(StateHasChanged);
+                    }
+                    catch
+                    {
+                        // ignore background polling errors
+                    }
+                }
+            }
+            catch { }
+        });
     }
 
     private async Task RefreshAll()
@@ -502,7 +543,7 @@ BHB_API_URL=https://api.blackhatbadshah.com</code></pre>
         try
         {
             _config = await WorkerAgentApi.GetConfigAsync();
-            
+
             if (_config.HasConfig)
             {
                 _summary = await WorkerAgentApi.GetSummaryAsync();
@@ -512,7 +553,6 @@ BHB_API_URL=https://api.blackhatbadshah.com</code></pre>
         }
         catch (HttpRequestException ex) when (ex.Message.Contains("401"))
         {
-            // Authentication issue - user may need to re-login
             Toast.ShowWarning("Please log in again to access this page.");
             _config = new UserWorkerConfigResponse { HasConfig = false };
         }
@@ -569,9 +609,7 @@ BHB_API_URL=https://api.blackhatbadshah.com</code></pre>
                 if (_statusFilter == "revoked" && !w.IsRevoked) return false;
 
                 if (!string.IsNullOrWhiteSpace(_searchTerm))
-                {
                     return w.Name.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase);
-                }
 
                 return true;
             })
@@ -642,12 +680,10 @@ BHB_API_URL=https://api.blackhatbadshah.com</code></pre>
         }
     }
 
-
     private async void ShowRotatePskModal()
     {
         await RotatePsk();
     }
-
 
     private async Task RotatePsk()
     {
@@ -765,8 +801,22 @@ BHB_API_URL=https://api.blackhatbadshah.com</code></pre>
         }
     }
 
-    private async Task CopyWorkerId(Guid workerId)
+    public async ValueTask DisposeAsync()
     {
-        await CopyToClipboard(workerId.ToString());
+        try
+        {
+            if (_pageCts != null)
+            {
+                _pageCts.Cancel();
+                _pageCts.Dispose();
+                _pageCts = null;
+            }
+        }
+        catch { }
+
+        if (_pollTask != null)
+        {
+            try { await _pollTask; } catch { }
+        }
     }
 }

@@ -715,10 +715,28 @@
                 {
                     _isConnected = true;
 
-                    var t = update?.GetType();
-                    var workerId = t?.GetProperty("WorkerId")?.GetValue(update)?.ToString();
-                    var logPath = t?.GetProperty("LogPath")?.GetValue(update)?.ToString();
-                    var line = t?.GetProperty("Line")?.GetValue(update)?.ToString();
+                    string? workerId = null;
+                    string? logPath = null;
+                    string? line = null;
+
+                    // Handle JsonElement from SignalR
+                    if (update is System.Text.Json.JsonElement je && je.ValueKind == System.Text.Json.JsonValueKind.Object)
+                    {
+                        if (je.TryGetProperty("WorkerId", out var wProp))
+                            workerId = wProp.GetString();
+                        if (je.TryGetProperty("LogPath", out var lpProp))
+                            logPath = lpProp.GetString();
+                        if (je.TryGetProperty("Line", out var lProp))
+                            line = lProp.GetString();
+                    }
+                    else
+                    {
+                        // Fallback to reflection for other types
+                        var t = update?.GetType();
+                        workerId = t?.GetProperty("WorkerId")?.GetValue(update)?.ToString();
+                        logPath = t?.GetProperty("LogPath")?.GetValue(update)?.ToString();
+                        line = t?.GetProperty("Line")?.GetValue(update)?.ToString();
+                    }
 
                     if (string.IsNullOrWhiteSpace(line))
                         return;
@@ -728,8 +746,8 @@
                         !string.Equals(workerId, _subscribedWorkerId, StringComparison.OrdinalIgnoreCase))
                         return;
 
-                    // accept only selected log path
-                    if (!string.IsNullOrWhiteSpace(_selectedLogPath) &&
+                    // accept only selected log path (if streaming a specific path)
+                    if (_isStreaming && !string.IsNullOrWhiteSpace(_selectedLogPath) &&
                         !string.IsNullOrWhiteSpace(logPath) &&
                         !string.Equals(logPath, _selectedLogPath, StringComparison.OrdinalIgnoreCase))
                         return;
@@ -741,7 +759,7 @@
                         SessionId = _sessionId,
                         RawLine = line,
                         Message = line,
-                        Source = "LiveLog",
+                        Source = logPath ?? "LiveLog",
                         Level = "INFO",
                         Timestamp = DateTime.UtcNow
                     };
@@ -752,9 +770,9 @@
                     if (_autoScroll)
                         await ScrollToBottom();
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // ignore parsing issues
+                    Console.WriteLine($"LiveLogUpdate error: {ex.Message}");
                 }
             });
 

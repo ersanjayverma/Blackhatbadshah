@@ -271,13 +271,14 @@ public class LiveLogHub : Hub
 
     public async Task WorkerOnline(string workerId)
     {
-        // heartbeat from worker
+        // heartbeat from worker - just update registry, don't broadcast
         if (Guid.TryParse(workerId, out var wid))
             await TouchWorkerLastSeenAsync(wid);
 
         _workerRegistry.UpdateOnline(workerId);
-
-        await _hubNotification.NotifyWorkerRegisteredAsync(workerId);
+        
+        // Don't call NotifyWorkerRegisteredAsync on every heartbeat - causes spam
+        // Only notify on actual registration (see RegisterWorker method)
     }
 
     public async Task RegisterWorker(RegisterWorkerRequest request)
@@ -352,14 +353,8 @@ public class LiveLogHub : Hub
         if (update == null || string.IsNullOrWhiteSpace(update.WorkerId))
             return;
 
-        foreach (var kvp in _liveLogSubscriptions)
-        {
-            if (kvp.Value.workerId == update.WorkerId &&
-                string.Equals(kvp.Value.logPath, update.LogPath, StringComparison.OrdinalIgnoreCase))
-            {
-                await Clients.Client(kvp.Key).SendAsync("LiveLogUpdate", update);
-            }
-        }
+        // Use the notification service to broadcast to DataHub clients
+        await _hubNotification.NotifyLiveLogUpdateAsync(update.WorkerId, update.LogPath, update.Line, update.Timestamp);
     }
 
     /// <summary>
@@ -375,27 +370,9 @@ public class LiveLogHub : Hub
             return;
         }
 
-        // Use the session's worker ID (ignore passed workerId for security)
-        var update = new LiveLogUpdateDto
-        {
-            WorkerId = sessionWorkerId,
-            LogPath = logPath,
-            Line = line,
-            Timestamp = timestamp
-        };
-
-        // Send to all frontend clients subscribed to this worker+logPath
-        foreach (var kvp in _liveLogSubscriptions)
-        {
-            if (kvp.Value.workerId == sessionWorkerId &&
-                string.Equals(kvp.Value.logPath, logPath, StringComparison.OrdinalIgnoreCase))
-            {
-                await Clients.Client(kvp.Key).SendAsync("LiveLogUpdate", update);
-            }
-        }
-
-        // Also broadcast to the livelog group for dashboard listeners
-        await Clients.Group(LiveLogGroup(sessionWorkerId)).SendAsync("LiveLogUpdate", update);
+        // Use the notification service to broadcast to DataHub clients
+        // This ensures frontend clients connected to DataHub receive the update
+        await _hubNotification.NotifyLiveLogUpdateAsync(sessionWorkerId, logPath, line, timestamp);
     }
 
     // ============================================================

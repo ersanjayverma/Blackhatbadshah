@@ -832,8 +832,7 @@ public class LogPusherService : BackgroundService
                             DateTime.UtcNow,
                             token);
 
-                        // ✅ Keep worker online aggressively while streaming
-                        await PingOnline();
+                        // Don't ping on every line - metrics loop handles heartbeat
                     }
                     catch (OperationCanceledException)
                     {

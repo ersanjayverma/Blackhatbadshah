@@ -466,7 +466,7 @@ private async Task InitializeSignalR()
             // Subscribe to worker registration events
             _workerRegisteredSub = HubService.On<object>("WorkerRegistered", async (data) =>
             {
-                Toast.ShowInfo("A worker has been registered/updated");
+                // Just refresh silently - no toast to avoid spam
                 await RefreshWorkers();
                 await InvokeAsync(StateHasChanged);
             });

@@ -622,6 +622,8 @@
                 await HubService.Connection.SendAsync("UnsubscribeFromWorker", _subscribedWorkerId);
             }
 
+            Console.WriteLine($"[Subscribe] Subscribing to workerId: {_workerIdInput.Trim()}");
+
             await HubService.Connection.SendAsync("SubscribeToWorker", _workerIdInput.Trim());
             _subscribedWorkerId = _workerIdInput.Trim();
 
@@ -752,19 +754,27 @@
                         line = t?.GetProperty("Line")?.GetValue(update)?.ToString();
                     }
 
+                    Console.WriteLine($"[LiveLogUpdate] Received: workerId={workerId}, logPath={logPath}, line={(line?.Length > 50 ? line?.Substring(0, 50) + "..." : line)}");
+
                     if (string.IsNullOrWhiteSpace(line))
                         return;
 
-                    // accept only currently subscribed worker
+                    // accept only currently subscribed worker (case-insensitive)
                     if (!string.IsNullOrWhiteSpace(workerId) &&
                         !string.Equals(workerId, _subscribedWorkerId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        Console.WriteLine($"[LiveLogUpdate] Filtered out: workerId mismatch ({workerId} != {_subscribedWorkerId})");
                         return;
+                    }
 
                     // accept only selected log path (if streaming a specific path)
                     if (_isStreaming && !string.IsNullOrWhiteSpace(_selectedLogPath) &&
                         !string.IsNullOrWhiteSpace(logPath) &&
                         !string.Equals(logPath, _selectedLogPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        Console.WriteLine($"[LiveLogUpdate] Filtered out: logPath mismatch ({logPath} != {_selectedLogPath})");
                         return;
+                    }
 
                     var entry = new LiveLogEntry
                     {
@@ -870,6 +880,8 @@
             await SafeStopStream();
 
             await LocalStorage.SetItemAsync(LogPathStorageKey, _selectedLogPath);
+
+            Console.WriteLine($"[StartStream] Starting live log: workerId={_subscribedWorkerId}, logPath={_selectedLogPath}");
 
             await HubService.Connection.SendAsync("StartLiveLog", _subscribedWorkerId, _selectedLogPath);
 

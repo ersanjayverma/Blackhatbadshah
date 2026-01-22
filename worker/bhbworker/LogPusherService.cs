@@ -792,10 +792,25 @@ public class LogPusherService : BackgroundService
                 using var fs = new FileStream(logPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
                 using var sr = new StreamReader(fs);
 
-                // tail
-                fs.Seek(0, SeekOrigin.End);
-
                 _logger.LogInformation("[LiveLog] Streaming started: {Path}", logPath);
+
+                // Send last 20 lines first to give immediate feedback
+                var initialLines = await ReadLastLinesAsync(logPath, 20);
+                foreach (var line in initialLines)
+                {
+                    if (token.IsCancellationRequested) break;
+                    if (_connection?.State == HubConnectionState.Connected)
+                    {
+                        try
+                        {
+                            await _connection.InvokeAsync("LiveLogLine", _workerId, logPath, line, DateTime.UtcNow, token);
+                        }
+                        catch { }
+                    }
+                }
+
+                // Now seek to end and tail new lines
+                fs.Seek(0, SeekOrigin.End);
 
                 while (!token.IsCancellationRequested)
                 {
@@ -810,22 +825,18 @@ public class LogPusherService : BackgroundService
                     // Wait until connection is available
                     if (_connection == null || _connection.State != HubConnectionState.Connected)
                     {
-                        // if disconnected, wait and retry
                         await Task.Delay(500, token);
                         continue;
                     }
 
                     try
                     {
-                        // ✅ FIX: call hub method LiveLogLine(workerId, logPath, line, timestamp)
                         await _connection.InvokeAsync("LiveLogLine",
                             _workerId,
                             logPath,
                             line,
                             DateTime.UtcNow,
                             token);
-
-                        // Don't ping on every line - metrics loop handles heartbeat
                     }
                     catch (OperationCanceledException)
                     {
@@ -833,7 +844,6 @@ public class LogPusherService : BackgroundService
                     }
                     catch (Exception ex)
                     {
-                        // do not kill streaming loop
                         _logger.LogDebug(ex, "[LiveLog] send failed");
                         await Task.Delay(500, token);
                     }

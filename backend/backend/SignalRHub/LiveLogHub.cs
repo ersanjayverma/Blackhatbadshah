@@ -348,7 +348,7 @@ public class LiveLogHub : Hub
         await Clients.Caller.SendAsync("LiveStreamStopped", new { workerId, logPath });
     }
 
-    public async Task LiveLogUpdate(LiveLogUpdateDto update)
+    public async Task LiveLogUpdate(LiveLogUpdate update)
     {
         if (update == null || string.IsNullOrWhiteSpace(update.WorkerId))
             return;
@@ -505,13 +505,4 @@ public class LiveLogHub : Hub
 
         await base.OnDisconnectedAsync(exception);
     }
-}
-
-// ✅ Strong typed update payload (avoid reflection)
-public class LiveLogUpdateDto
-{
-    public string WorkerId { get; set; } = string.Empty;
-    public string LogPath { get; set; } = string.Empty;
-    public string Line { get; set; } = string.Empty;
-    public DateTime Timestamp { get; set; }
 }

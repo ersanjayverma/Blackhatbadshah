@@ -746,13 +746,13 @@
                     var entry = new LiveLogEntry
                     {
                         Id = Guid.NewGuid().ToString("N"),
-                        WorkerId = workerId ?? _subscribedWorkerId,
+                        WorkerId = update.WorkerId ?? _subscribedWorkerId,
                         SessionId = _sessionId,
-                        RawLine = line,
-                        Message = line,
-                        Source = logPath ?? "LiveLog",
+                        RawLine = update.Line,
+                        Message = update.Line,
+                        Source = update.LogPath ?? "LiveLog",
                         Level = "INFO",
-                        Timestamp = DateTime.UtcNow
+                        Timestamp = update.Timestamp
                     };
 
                     AddLog(entry);

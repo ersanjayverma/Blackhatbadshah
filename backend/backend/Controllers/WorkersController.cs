@@ -186,12 +186,8 @@ public class WorkersController : ControllerBase
             if (!worker.IsOnline)
                 return BadRequest(new { message = $"Worker {request.WorkerId} is offline" });
 
-            _logger.LogInformation(
-                "Log pull request for worker {WorkerId}, path {LogPath}, lines {Lines}",
-                request.WorkerId, request.LogPath, request.Lines);
-
-            // Send log pull request to the worker
-            await _liveLogHub.Clients.Group($"livelog_{request.WorkerId}")
+            // Send log pull request to the worker (worker joins worker_{workerId} group)
+            await _liveLogHub.Clients.Group($"worker_{request.WorkerId}")
                 .SendAsync("PullLogs", request.LogPath, request.Lines, request.FromEnd);
 
             return Ok(new { message = "Log pull request sent to worker" });

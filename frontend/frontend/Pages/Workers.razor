@@ -346,18 +346,19 @@
                         </div>
                         <div class="modal-footer">
                             <button type="button" class="btn btn-secondary" @onclick="CloseLogPullModal">Close</button>
-                            <button type="button" class="btn btn-primary" @onclick="PullLogs"
-                                    disabled="@(string.IsNullOrEmpty(_selectedLogPath) || _pulling)">
-                                @if (_pulling)
-                                {
-                                    <span class="spinner-border spinner-border-sm me-1"></span>
-                                }
-                                else
-                                {
-                                    <i class="bi bi-download me-1"></i>
-                                }
-                                Pull Logs
-                            </button>
+                            @if (_pulling)
+                            {
+                                <button type="button" class="btn btn-warning" @onclick="CancelPullLogs">
+                                    <i class="bi bi-x-circle me-1"></i>Cancel
+                                </button>
+                            }
+                            else
+                            {
+                                <button type="button" class="btn btn-primary" @onclick="PullLogs"
+                                        disabled="@string.IsNullOrEmpty(_selectedLogPath)">
+                                    <i class="bi bi-download me-1"></i>Pull Logs
+                                </button>
+                            }
                         </div>
                     </div>
                 </div>
@@ -409,6 +410,7 @@ private List<string> _pulledLogs = new();
 private string _pullError = string.Empty;
 private bool _analyzingLogs = false;
 private string _selectedModel = "claude-sonnet-4-5";
+private CancellationTokenSource? _pullCts;
 
 // SignalR subscriptions
 private IDisposable? _workerRegisteredSub;
@@ -474,6 +476,7 @@ private async Task InitializeSignalR()
             // Subscribe to log pull response
             _logPullResponseSub = HubService.On<LogPullResponse>("LogPullResponse", async (response) =>
             {
+                _pullCts?.Cancel(); // Cancel timeout
                 _pulling = false;
 
                 if (response.Success)
@@ -569,6 +572,8 @@ private async Task InitializeSignalR()
 
         _pulling = true;
         _pullError = string.Empty;
+        _pulledLogs.Clear();
+        _pullCts = new CancellationTokenSource();
         StateHasChanged();
 
         try
@@ -587,8 +592,27 @@ private async Task InitializeSignalR()
                 _pulling = false;
                 _pullError = "Failed to send pull request";
                 Toast.ShowError(_pullError);
+                return;
             }
-            // Response will come through SignalR
+
+            // Set timeout - 30 seconds max wait
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(30000, _pullCts.Token);
+                    if (_pulling)
+                    {
+                        _pulling = false;
+                        _pullError = "Request timed out after 30 seconds";
+                        await InvokeAsync(StateHasChanged);
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    // Normal cancellation
+                }
+            });
         }
         catch (Exception ex)
         {
@@ -597,6 +621,14 @@ private async Task InitializeSignalR()
             Toast.ShowError($"Failed to pull logs: {ex.Message}");
         }
 
+        StateHasChanged();
+    }
+
+    private void CancelPullLogs()
+    {
+        _pullCts?.Cancel();
+        _pulling = false;
+        _pullError = "Request cancelled";
         StateHasChanged();
     }
 

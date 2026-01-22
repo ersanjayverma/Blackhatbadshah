@@ -708,6 +708,20 @@
                     await ScrollToBottom();
             });
 
+            // Handle LiveStreamStarted confirmation from server
+            HubService.On<object>("LiveStreamStarted", async (data) =>
+            {
+                _isStreaming = true;
+                await InvokeAsync(StateHasChanged);
+            });
+
+            // Handle LiveStreamStopped confirmation from server
+            HubService.On<object>("LiveStreamStopped", async (data) =>
+            {
+                _isStreaming = false;
+                await InvokeAsync(StateHasChanged);
+            });
+
             // ✅ FIX: LiveLogUpdate is what backend is actually broadcasting
             _logUpdateSub = HubService.On<object>("LiveLogUpdate", async (update) =>
             {

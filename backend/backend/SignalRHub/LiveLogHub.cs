@@ -470,10 +470,6 @@ public class LiveLogHub : Hub
 
         await _hubNotification.NotifyWorkerRegisteredAsync(workerId);
 
-        _logger.LogInformation(
-            "LiveLogHub: Connected session={SessionId}, workerId={WorkerId}, isWorker={IsWorker}",
-            sessionId, workerId, isWorker);
-
         await Clients.Caller.SendAsync("Connected", new { SessionId = sessionId, WorkerId = workerId });
 
         // only notify "worker session connected" when real worker connects
@@ -507,7 +503,6 @@ public class LiveLogHub : Hub
         _chunkCounters.TryRemove(sessionId, out _);
         _logCounters.TryRemove(sessionId, out _);
 
-        _logger.LogInformation("LiveLogHub: Disconnected session {SessionId}", sessionId);
         await base.OnDisconnectedAsync(exception);
     }
 }

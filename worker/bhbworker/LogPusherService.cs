@@ -153,12 +153,11 @@ public class LogPusherService : BackgroundService
     {
         conn.On<object>("Connected", async data =>
         {
-            _logger.LogInformation("[Hub] Connected event received: {Data}", data);
-
             try
             {
                 // If server returns canonical worker id, persist it
                 TryAdoptWorkerIdFromServer(data);
+                _logger.LogInformation("Connected to hub. WorkerId: {WorkerId}", _workerId);
 
                 // Register + Push metrics immediately
                 await RegisterWorkerAsync();
@@ -170,20 +169,18 @@ public class LogPusherService : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "[Hub] Connected handler failed");
+                _logger.LogError(ex, "Connected handler failed");
             }
         });
 
         conn.On("RequestMetrics", async () =>
         {
-            _logger.LogInformation("[Metrics] RequestMetrics received");
             await PushMetrics();
             await PingOnline();
         });
 
         conn.On("RequestSystemMonitorData", async () =>
         {
-            _logger.LogInformation("[SystemMonitor] RequestSystemMonitorData received");
             await PushSystemMonitorData();
         });
 
@@ -199,36 +196,36 @@ public class LogPusherService : BackgroundService
 
         conn.On<string, int, bool>("PullLogs", async (logPath, lines, fromEnd) =>
         {
-            _logger.LogInformation("[LogPull] PullLogs request: Path={Path}, Lines={Lines}, FromEnd={FromEnd}", logPath, lines, fromEnd);
+            _logger.LogInformation("[LogPull] Request: {Path}, {Lines} lines", logPath, lines);
             await PullLogsAsync(logPath, lines, fromEnd);
         });
 
         conn.On<string>("StartLiveLog", async (logPath) =>
         {
-            _logger.LogInformation("[LiveLog] StartLiveLog: {Path}", logPath);
+            _logger.LogInformation("[LiveLog] Start: {Path}", logPath);
             await StartLiveLogStreamingAsync(logPath);
         });
 
         conn.On<string>("StopLiveLog", (logPath) =>
         {
-            _logger.LogInformation("[LiveLog] StopLiveLog: {Path}", logPath);
+            _logger.LogInformation("[LiveLog] Stop: {Path}", logPath);
             StopLiveLogStreaming(logPath);
         });
 
         conn.On<object>("Registered", data =>
         {
-            _logger.LogInformation("[Registration] Registered successfully: {Data}", data);
+            // Registration confirmed silently
         });
 
         conn.Reconnecting += async ex =>
         {
-            _logger.LogWarning(ex, "[Hub] Reconnecting...");
+            _logger.LogWarning("Reconnecting to hub...");
             await StopMetricsAndMonitorAsync();
         };
 
         conn.Reconnected += async connectionId =>
         {
-            _logger.LogInformation("[Hub] Reconnected: {ConnectionId}", connectionId);
+            _logger.LogInformation("Reconnected to hub");
 
             try
             {
@@ -240,13 +237,13 @@ public class LogPusherService : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "[Hub] Reconnected post-init failed");
+                _logger.LogWarning(ex, "Reconnected post-init failed");
             }
         };
 
         conn.Closed += async ex =>
         {
-            _logger.LogWarning(ex, "[Hub] Closed");
+            _logger.LogWarning("Hub connection closed");
             await StopMetricsAndMonitorAsync();
         };
     }
@@ -328,8 +325,6 @@ public class LogPusherService : BackgroundService
 
     private async Task RunMetricsLoop(CancellationToken ct)
     {
-        _logger.LogInformation("[Metrics] started every {Sec}s", _metricsInterval.TotalSeconds);
-
         while (!ct.IsCancellationRequested)
         {
             try
@@ -340,7 +335,7 @@ public class LogPusherService : BackgroundService
                     continue;
 
                 await PushMetrics();
-                await PingOnline(); // this keeps UI online
+                await PingOnline();
             }
             catch (OperationCanceledException)
             {
@@ -348,15 +343,13 @@ public class LogPusherService : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "[Metrics] loop error");
+                _logger.LogWarning(ex, "[Metrics] loop error");
             }
         }
     }
 
     private async Task RunSystemMonitorLoop(CancellationToken ct)
     {
-        _logger.LogInformation("[SystemMonitor] started every {Sec}s", _systemMonitorInterval.TotalSeconds);
-
         while (!ct.IsCancellationRequested)
         {
             try
@@ -374,7 +367,7 @@ public class LogPusherService : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "[SystemMonitor] loop error");
+                _logger.LogWarning(ex, "[SystemMonitor] loop error");
             }
         }
     }

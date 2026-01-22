@@ -1,0 +1,1211 @@
+@page "/log-center"
+@page "/logs"
+@page "/livelogs"
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.WebAssembly.Authentication
+@using Microsoft.AspNetCore.SignalR.Client
+@using shared.Dto
+@using Markdig
+@using frontend.Services
+@using Blazored.LocalStorage
+@inject LogService LogsApi
+@inject LiveLogService LiveLogApi
+@inject WorkerService WorkerApi
+@inject HubConnectionService HubService
+@inject IAccessTokenProvider TokenProvider
+@inject ILocalStorageService LocalStorage
+@inject IJSRuntime JS
+@inject ToastService Toast
+@inject NavigationManager Navigation
+@implements IAsyncDisposable
+
+<AuthorizeView>
+    <Authorized>
+        <div class="container-fluid px-4 py-4">
+
+            <!-- HEADER -->
+            <div class="d-flex justify-content-between align-items-center flex-wrap mb-4">
+                <div>
+                    <h2 class="mb-1 fw-bold text-gradient">
+                        <i class="bi bi-file-earmark-text me-2"></i>Log Center
+                    </h2>
+                    <p class="mb-0">Upload, manage, and stream logs for AI analysis</p>
+                </div>
+                <div class="d-flex gap-2">
+                    @if (_activeTab == "upload" && _logs.Count > 0)
+                    {
+                        <button class="btn btn-danger" @onclick="ConfirmDeleteAllLogs">
+                            <i class="bi bi-trash me-2"></i>Clear All Logs
+                        </button>
+                    }
+                    @if (_activeTab == "live")
+                    {
+                        <button class="btn btn-outline-danger" @onclick="ClearLiveLogs" disabled="@(_liveLogs.Count == 0)">
+                            <i class="bi bi-trash me-1"></i>Clear
+                        </button>
+                    }
+                </div>
+            </div>
+
+            <!-- TAB NAVIGATION -->
+            <ul class="nav nav-tabs mb-4" role="tablist">
+                <li class="nav-item">
+                    <button class="nav-link @(_activeTab == "upload" ? "active" : "")" 
+                            @onclick="@(() => SetActiveTab("upload"))">
+                        <i class="bi bi-cloud-upload me-1"></i>Upload & Analyze
+                    </button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link @(_activeTab == "live" ? "active" : "")" 
+                            @onclick="@(() => SetActiveTab("live"))">
+                        <i class="bi bi-broadcast me-1"></i>Live Streaming
+                        @if (_isStreaming)
+                        {
+                            <span class="badge bg-success ms-1">Live</span>
+                        }
+                    </button>
+                </li>
+            </ul>
+
+            <!-- UPLOAD TAB -->
+            @if (_activeTab == "upload")
+            {
+                <!-- UPLOAD SECTION -->
+                <div class="card modern-card shadow-lg mb-4">
+                    <div class="card-header gradient-header">
+                        <h5 class="mb-0"><i class="bi bi-cloud-upload me-2"></i>Upload Logs</h5>
+                    </div>
+                    <div class="card-body p-4">
+                        <!-- MODEL SELECTOR -->
+                        <div class="mb-4">
+                            <label class="form-label fw-bold text-dark mb-3">
+                                <i class="bi bi-cpu me-2"></i>AI Model for Analysis
+                            </label>
+                            <div class="model-selector-wrapper">
+                                <select class="form-select form-select-lg model-selector-log" @bind="_selectedModel">
+                                    <optgroup label="Claude (Anthropic)">
+                                        <option value="claude-sonnet-4-5">Claude Sonnet 4.5 (Recommended)</option>
+                                        <option value="claude-opus-4-5">Claude Opus 4.5 (Most Powerful)</option>
+                                        <option value="claude-sonnet-3-5">Claude Sonnet 3.5</option>
+                                    </optgroup>
+                                    <optgroup label="GPT (OpenAI)">
+                                        <option value="gpt-4o">GPT-4o</option>
+                                        <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                                        <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                                    </optgroup>
+                                    <optgroup label="Open Source (TogetherAI)">
+                                        <option value="gpt-oss-120b">openai/gpt-oss-120b</option>
+                                        <option value="together-llama-3.1-405b">Llama 3.1 405B</option>
+                                        <option value="together-mixtral-8x7b">Mixtral 8x7B</option>
+                                        <option value="together-qwen">Qwen</option>
+                                    </optgroup>
+                                </select>
+                                <small class="d-block mt-2">
+                                    <i class="bi bi-info-circle me-1"></i>Selected model will be used for all log analyses
+                                </small>
+                            </div>
+                        </div>
+
+                        <div class="mb-4">
+                            <label class="form-label fw-bold text-dark mb-3">
+                                <i class="bi bi-file-earmark-arrow-up me-2"></i>Upload Log File
+                            </label>
+                            <div class="upload-box">
+                                <InputFile OnChange="OnFileSelected" accept=".txt,.log,.json,.xml,.csv,.png,.jpg,.jpeg,.tiff,.pdf"
+                                           class="form-control form-control-lg" />
+                                <small class="d-block mt-3 text-center">
+                                    <i class="bi bi-info-circle me-1"></i>
+                                    Max size: <strong>2 MB</strong> — Supported: .txt .log .json .xml .csv .pdf + images
+                                </small>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="form-label fw-bold text-dark mb-3">
+                                <i class="bi bi-clipboard me-2"></i>Paste Logs Directly
+                            </label>
+                            <textarea class="form-control form-control-lg monospace-textarea mb-3" rows="6"
+                                      placeholder="Paste your log content here..." @bind="_pastedLogs"></textarea>
+                            <button class="btn btn-primary btn-lg w-100 shadow-sm" disabled="@string.IsNullOrWhiteSpace(_pastedLogs)"
+                                    @onclick="UploadPastedLogs">
+                                <i class="bi bi-upload me-2"></i>Upload Pasted Logs
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- LOGS LIST -->
+                <div class="card modern-card shadow-lg">
+                    <div class="card-header gradient-header-dark d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="bi bi-list-ul me-2"></i>Your Logs</h5>
+                        <span class="badge bg-light text-dark px-3 py-2 rounded-pill">@_logs.Count Total</span>
+                    </div>
+                    <div class="card-body p-0">
+                        @if (_loadingLogs)
+                        {
+                            <div class="text-center py-5">
+                                <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;"></div>
+                                <p class="fw-semibold">Loading logs...</p>
+                            </div>
+                        }
+                        else if (_logs.Count == 0)
+                        {
+                            <div class="empty-state-box">
+                                <i class="bi bi-inbox display-1 mb-3"></i>
+                                <h5 class="fw-bold">No logs uploaded yet</h5>
+                                <p>Upload your first log file to get started</p>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="table-responsive">
+                                <table class="table table-hover mb-0 modern-table">
+                                    <thead>
+                                        <tr>
+                                            <th><i class="bi bi-file-earmark me-2"></i>File</th>
+                                            <th><i class="bi bi-hdd me-2"></i>Size</th>
+                                            <th><i class="bi bi-calendar me-2"></i>Created</th>
+                                            <th class="text-center"><i class="bi bi-gear me-2"></i>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var log in _logs)
+                                        {
+                                            <tr class="table-row-hover">
+                                                <td class="fw-semibold">@log.FileName</td>
+                                                <td><span class="badge badge-custom">@FormatFileSize(log.SizeBytes)</span></td>
+                                                <td>@log.CreatedAt.ToLocalTime().ToString("g")</td>
+                                                <td class="text-center">
+                                                    <div class="btn-group shadow-sm" role="group">
+                                                        <button class="btn btn-sm btn-success" @onclick="() => Analyze(log.Id)" title="Analyze">
+                                                            <i class="bi bi-cpu me-1"></i>Analyze
+                                                        </button>
+                                                        <button class="btn btn-sm btn-info" @onclick="() => ViewLog(log)" title="View">
+                                                            <i class="bi bi-eye me-1"></i>View
+                                                        </button>
+                                                        <button class="btn btn-sm btn-danger" @onclick="() => ConfirmDeleteLog(log.Id, log.FileName)" title="Delete">
+                                                            <i class="bi bi-trash"></i>
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+
+            <!-- LIVE STREAMING TAB -->
+            @if (_activeTab == "live")
+            {
+                <!-- WORKER SELECTION -->
+                <div class="card modern-card shadow-sm mb-4">
+                    <div class="card-body">
+                        <div class="row g-3 align-items-end">
+                            <!-- Worker -->
+                            <div class="col-md-5">
+                                <label class="form-label fw-bold"><i class="bi bi-hdd-network me-2"></i>Select Worker</label>
+                                <div class="input-group">
+                                    <select class="form-select" @bind="_workerIdInput" disabled="@_isSubscribed">
+                                        <option value="">-- Select a worker --</option>
+                                        @foreach (var worker in _availableWorkers)
+                                        {
+                                            <option value="@worker.WorkerId">
+                                                @worker.Hostname (@worker.WorkerId) - @(worker.IsOnline ? "Online" : "Offline")
+                                            </option>
+                                        }
+                                    </select>
+                                    <button class="btn btn-outline-secondary" @onclick="RefreshWorkers" disabled="@_loadingWorkers" title="Refresh workers">
+                                        @if (_loadingWorkers)
+                                        { <span class="spinner-border spinner-border-sm"></span> }
+                                        else
+                                        { <i class="bi bi-arrow-clockwise"></i> }
+                                    </button>
+                                    @if (_isSubscribed)
+                                    {
+                                        <button class="btn btn-outline-danger" @onclick="Unsubscribe">
+                                            <i class="bi bi-x-circle me-1"></i>Disconnect
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <button class="btn btn-primary" @onclick="Subscribe" disabled="@string.IsNullOrWhiteSpace(_workerIdInput)">
+                                            <i class="bi bi-link-45deg me-1"></i>Connect
+                                        </button>
+                                    }
+                                </div>
+                                <div class="mt-2 d-flex gap-2 align-items-center">
+                                    <span class="badge bg-success">@_availableWorkers.Count(w => w.IsOnline) Online</span>
+                                    <span class="badge bg-secondary">@_availableWorkers.Count Total</span>
+                                </div>
+                            </div>
+
+                            <!-- Log path -->
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold"><i class="bi bi-file-earmark-text me-2"></i>Select Log to Stream</label>
+                                <select class="form-select" @bind="_selectedLogPath" disabled="@(!_isSubscribed || !_isConnected || _isStreaming)">
+                                    <option value="">-- Select log path --</option>
+                                    @foreach (var p in _selectedWorkerLogPaths)
+                                    {
+                                        <option value="@p">@p</option>
+                                    }
+                                </select>
+                                <div class="small text-secondary mt-1">
+                                    @if (!_isSubscribed)
+                                    { <span>Connect worker first.</span> }
+                                    else if (_selectedWorkerLogPaths.Count == 0)
+                                    { <span>No log paths received from worker yet.</span> }
+                                    else
+                                    { <span>@_selectedWorkerLogPaths.Count paths available</span> }
+                                </div>
+                            </div>
+
+                            <!-- Start/Stop stream -->
+                            <div class="col-md-3 text-end">
+                                <label class="form-label fw-bold d-block">&nbsp;</label>
+                                <div class="btn-group w-100">
+                                    <button class="btn btn-success" @onclick="StartStream"
+                                            disabled="@(!_isSubscribed || !_isConnected || _isStreaming || string.IsNullOrWhiteSpace(_selectedLogPath))">
+                                        <i class="bi bi-play-fill me-1"></i>Start Stream
+                                    </button>
+                                    <button class="btn btn-outline-danger" @onclick="StopStream" disabled="@(!_isStreaming)">
+                                        <i class="bi bi-stop-fill me-1"></i>Stop
+                                    </button>
+                                </div>
+                                @if (_isStreaming)
+                                {
+                                    <div class="small mt-2 text-success">
+                                        <i class="bi bi-broadcast me-1"></i>Streaming: @_selectedLogPath
+                                    </div>
+                                }
+                            </div>
+
+                            <!-- Selected worker info -->
+                            <div class="col-12">
+                                @if (_isSubscribed)
+                                {
+                                    var selectedWorker = _availableWorkers.FirstOrDefault(w => w.WorkerId == _subscribedWorkerId);
+                                    <div class="alert alert-success mb-0 py-2">
+                                        <div class="d-flex align-items-center">
+                                            <i class="bi bi-check-circle me-2 fs-5"></i>
+                                            <div>
+                                                <strong>Connected to: @(selectedWorker?.Hostname ?? _subscribedWorkerId)</strong>
+                                                <div class="small">Worker ID: @_subscribedWorkerId</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="alert alert-info mb-0 py-2">
+                                        <i class="bi bi-info-circle me-2"></i>Select a worker and click Connect.
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- STATS ROW -->
+                <div class="row g-3 mb-4">
+                    <div class="col-md-2 col-sm-4 col-6">
+                        <div class="card modern-card shadow-sm text-center py-3">
+                            <div class="fw-bold fs-4">@_liveLogs.Count</div>
+                            <small class="fw-bold">Total Logs</small>
+                        </div>
+                    </div>
+                    <div class="col-md-2 col-sm-4 col-6">
+                        <div class="card modern-card shadow-sm text-center py-3">
+                            <div class="fw-bold fs-4 text-danger">@_liveStats.ErrorCount</div>
+                            <small class="fw-bold">Errors</small>
+                        </div>
+                    </div>
+                    <div class="col-md-2 col-sm-4 col-6">
+                        <div class="card modern-card shadow-sm text-center py-3">
+                            <div class="fw-bold fs-4 text-warning">@_liveStats.WarningCount</div>
+                            <small class="fw-bold">Warnings</small>
+                        </div>
+                    </div>
+                    <div class="col-md-2 col-sm-4 col-6">
+                        <div class="card modern-card shadow-sm text-center py-3">
+                            <div class="fw-bold fs-4 text-info">@_liveStats.InfoCount</div>
+                            <small class="fw-bold">Info</small>
+                        </div>
+                    </div>
+                    <div class="col-md-2 col-sm-4 col-6">
+                        <div class="card modern-card shadow-sm text-center py-3">
+                            <div class="fw-bold fs-4 text-secondary">@_liveStats.DebugCount</div>
+                            <small class="fw-bold">Debug</small>
+                        </div>
+                    </div>
+                    <div class="col-md-2 col-sm-4 col-6">
+                        <div class="card modern-card shadow-sm text-center py-3">
+                            <div class="fw-bold fs-4">@_liveStats.BySource.Count</div>
+                            <small class="fw-bold">Sources</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- MODEL SELECTOR & FILTERS -->
+                <div class="card modern-card shadow-sm mb-4">
+                    <div class="card-body">
+                        <div class="row g-3 align-items-end">
+                            <div class="col-md-3">
+                                <label class="form-label fw-bold"><i class="bi bi-cpu me-2"></i>AI Model</label>
+                                <select class="form-select" @bind="_selectedModel">
+                                    <optgroup label="Claude (Anthropic)">
+                                        <option value="claude-sonnet-4-5">Claude Sonnet 4.5</option>
+                                        <option value="claude-opus-4-5">Claude Opus 4.5</option>
+                                        <option value="claude-sonnet-3-5">Claude Sonnet 3.5</option>
+                                    </optgroup>
+                                    <optgroup label="GPT (OpenAI)">
+                                        <option value="gpt-4o">GPT-4o</option>
+                                        <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                                        <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                                    </optgroup>
+                                    <optgroup label="Open Source">
+                                        <option value="together-llama-3.1-405b">Llama 3.1 405B</option>
+                                        <option value="together-mixtral-8x7b">Mixtral 8x7B</option>
+                                    </optgroup>
+                                </select>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label small fw-bold">Level</label>
+                                <select class="form-select" @bind="_filterLevel">
+                                    <option value="">All Levels</option>
+                                    <option value="ERROR">Error</option>
+                                    <option value="WARN">Warning</option>
+                                    <option value="INFO">Info</option>
+                                    <option value="DEBUG">Debug</option>
+                                </select>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label small fw-bold">Source</label>
+                                <select class="form-select" @bind="_filterSource">
+                                    <option value="">All Sources</option>
+                                    @foreach (var source in _liveStats.BySource.Keys.OrderBy(s => s))
+                                    {
+                                        <option value="@source">@source (@_liveStats.BySource[source])</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label small fw-bold">Search</label>
+                                <input type="text" class="form-control" placeholder="Search..." @bind="_searchText" @bind:event="oninput" />
+                            </div>
+                            <div class="col-md-1">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="autoScroll" @bind="_autoScroll" />
+                                    <label class="form-check-label" for="autoScroll">Auto-scroll</label>
+                                </div>
+                            </div>
+                            <div class="col-md-2 text-end">
+                                <div class="btn-group">
+                                    <button class="btn btn-primary" @onclick="AnalyzeSelected" disabled="@(_selectedLiveLogs.Count == 0 || _analyzing)">
+                                        @if (_analyzing)
+                                        { <span class="spinner-border spinner-border-sm me-1"></span> }
+                                        else
+                                        { <i class="bi bi-cpu me-1"></i> }
+                                        Analyze (@_selectedLiveLogs.Count)
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- LIVE LOG STREAM -->
+                <div class="card modern-card shadow-lg">
+                    <div class="card-header gradient-header-dark d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="bi bi-terminal me-2"></i>Log Stream</h5>
+                        <span class="badge bg-light text-dark px-3 py-2">@FilteredLiveLogs.Count / @_liveLogs.Count</span>
+                    </div>
+                    <div class="card-body p-0">
+                        @if (_liveLogs.Count == 0)
+                        {
+                            <div class="empty-state-box">
+                                <i class="bi bi-broadcast display-1 mb-3"></i>
+                                <h5 class="fw-bold">Waiting for logs...</h5>
+                                <p>Click <b>Start Stream</b> after selecting a log file.</p>
+                                <small><i class="bi bi-info-circle me-1"></i>Worker must be online and subscribed.</small>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="log-stream-container" @ref="_logContainer">
+                                <table class="table table-sm table-hover mb-0 log-table">
+                                    <thead class="sticky-top bg-dark text-light">
+                                        <tr>
+                                            <th style="width: 40px;">
+                                                <input type="checkbox" class="form-check-input" @bind="_selectAll" @bind:after="OnSelectAllChanged" />
+                                            </th>
+                                            <th style="width: 80px;">Level</th>
+                                            <th style="width: 120px;">Source</th>
+                                            <th style="width: 150px;">Time</th>
+                                            <th>Message</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var log in FilteredLiveLogs)
+                                        {
+                                            <tr class="@GetRowClass(log.Level)" @onclick="() => ToggleLiveLogSelection(log.Id)">
+                                                <td>
+                                                    <input type="checkbox" class="form-check-input" checked="@_selectedLiveLogs.Contains(log.Id)"
+                                                           @onclick:stopPropagation="true" @onchange="() => ToggleLiveLogSelection(log.Id)" />
+                                                </td>
+                                                <td><span class="badge @GetLevelBadgeClass(log.Level)">@log.Level</span></td>
+                                                <td class="text-truncate" style="max-width: 120px;" title="@log.Source">@log.Source</td>
+                                                <td class="small">@log.Timestamp.ToLocalTime().ToString("HH:mm:ss.fff")</td>
+                                                <td class="log-message" title="@log.RawLine">@log.Message</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+
+        <!-- LOG VIEWER MODAL -->
+        @if (_showLogViewer)
+        {
+            <div class="custom-modal-backdrop" @onclick="CloseLogViewer"></div>
+            <div class="custom-modal">
+                <div class="custom-modal-dialog">
+                    <div class="custom-modal-content">
+                        <div class="custom-modal-header">
+                            <h5 class="custom-modal-title"><i class="bi bi-file-earmark-text me-2"></i>@_activeLogName</h5>
+                            <button class="custom-modal-close" @onclick="CloseLogViewer"><i class="bi bi-x-lg"></i></button>
+                        </div>
+                        <div class="custom-modal-body">@_logContent</div>
+                        <div class="custom-modal-footer">
+                            <button class="btn btn-secondary" @onclick="CloseLogViewer"><i class="bi bi-x-lg me-2"></i>Close</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <!-- DELETE LOG CONFIRMATION -->
+        @if (_showDeleteLogConfirm)
+        {
+            <div class="custom-modal-backdrop" @onclick="CancelDeleteLog"></div>
+            <div class="custom-modal">
+                <div class="custom-modal-dialog custom-modal-dialog-sm">
+                    <div class="custom-modal-content">
+                        <div class="custom-modal-header bg-danger">
+                            <h5 class="custom-modal-title"><i class="bi bi-exclamation-triangle-fill me-2"></i>Confirm Deletion</h5>
+                            <button class="custom-modal-close" @onclick="CancelDeleteLog"><i class="bi bi-x-lg"></i></button>
+                        </div>
+                        <div class="custom-modal-body">
+                            <div class="text-center mb-3"><i class="bi bi-trash text-danger" style="font-size: 3rem;"></i></div>
+                            <p class="mb-2">Are you sure you want to delete this log?</p>
+                            <div class="alert alert-light border"><i class="bi bi-file-earmark-text me-2"></i><strong>@_logToDeleteName</strong></div>
+                            <p class="small mb-0"><i class="bi bi-info-circle me-1"></i>This action cannot be undone.</p>
+                        </div>
+                        <div class="custom-modal-footer">
+                            <button class="btn btn-light" @onclick="CancelDeleteLog"><i class="bi bi-x-lg me-2"></i>Cancel</button>
+                            <button class="btn btn-danger" @onclick="DeleteLog"><i class="bi bi-trash me-2"></i>Delete</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <!-- DELETE ALL LOGS CONFIRMATION -->
+        @if (_showDeleteAllLogsConfirm)
+        {
+            <div class="custom-modal-backdrop" @onclick="CancelDeleteAllLogs"></div>
+            <div class="custom-modal">
+                <div class="custom-modal-dialog custom-modal-dialog-sm">
+                    <div class="custom-modal-content">
+                        <div class="custom-modal-header bg-danger">
+                            <h5 class="custom-modal-title"><i class="bi bi-exclamation-triangle-fill me-2"></i>Clear All Logs</h5>
+                            <button class="custom-modal-close" @onclick="CancelDeleteAllLogs"><i class="bi bi-x-lg"></i></button>
+                        </div>
+                        <div class="custom-modal-body">
+                            <div class="text-center mb-3"><i class="bi bi-exclamation-octagon text-danger" style="font-size: 3rem;"></i></div>
+                            <p class="mb-2">Are you sure you want to delete <strong class="text-danger">all @_logs.Count logs</strong>?</p>
+                            <div class="alert alert-danger border-danger">
+                                <i class="bi bi-shield-exclamation me-2"></i><strong>Warning:</strong> This will permanently delete all your log files.
+                            </div>
+                            <p class="small mb-0"><i class="bi bi-info-circle me-1"></i>This action cannot be undone.</p>
+                        </div>
+                        <div class="custom-modal-footer">
+                            <button class="btn btn-light" @onclick="CancelDeleteAllLogs"><i class="bi bi-x-lg me-2"></i>Cancel</button>
+                            <button class="btn btn-danger" @onclick="DeleteAllLogs"><i class="bi bi-trash me-2"></i>Delete All</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+    </Authorized>
+    <NotAuthorized>
+        <div class="container mt-5">
+            <div class="alert alert-warning shadow-sm">
+                <i class="bi bi-lock me-2"></i>You must be logged in to access the Log Center.
+            </div>
+        </div>
+    </NotAuthorized>
+</AuthorizeView>
+
+<style>
+    .log-stream-container { max-height: 500px; overflow-y: auto; font-family: 'Consolas', 'Monaco', monospace; font-size: 0.85rem; }
+    .log-table { table-layout: fixed; }
+    .log-table tbody tr { cursor: pointer; }
+    .log-table tbody tr:hover { background-color: rgba(var(--bs-primary-rgb), 0.1) !important; }
+    .log-message { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .log-row-error { background-color: rgba(220, 53, 69, 0.1); border-left: 3px solid #dc3545; }
+    .log-row-warn { background-color: rgba(255, 193, 7, 0.1); border-left: 3px solid #ffc107; }
+    .log-row-info { border-left: 3px solid #0dcaf0; }
+    .log-row-debug { border-left: 3px solid #6c757d; opacity: 0.8; }
+</style>
+
+@code {
+    // State
+    private string _activeTab = "upload";
+    private string _selectedModel = "claude-sonnet-4-5";
+
+    // Upload Tab State
+    private List<LogDto> _logs = new();
+    private bool _loadingLogs = true;
+    private string _pastedLogs = "";
+    private bool _showLogViewer = false;
+    private MarkupString _logContent = new("");
+    private string _activeLogName = "";
+    private bool _showDeleteLogConfirm = false;
+    private bool _showDeleteAllLogsConfirm = false;
+    private Guid _logToDeleteId = Guid.Empty;
+    private string _logToDeleteName = "";
+
+    // Live Streaming State
+    private List<LiveLogEntry> _liveLogs = new();
+    private HashSet<string> _selectedLiveLogs = new();
+    private LiveLogStats _liveStats = new();
+    private ElementReference _logContainer;
+    private bool _isConnected = false;
+    private bool _isSubscribed = false;
+    private bool _isStreaming = false;
+    private bool _autoScroll = true;
+    private bool _selectAll = false;
+    private bool _analyzing = false;
+    private string _sessionId = "";
+    private string _workerIdInput = "";
+    private string _subscribedWorkerId = "";
+    private string _filterLevel = "";
+    private string _filterSource = "";
+    private string _searchText = "";
+    private List<WorkerRegistration> _availableWorkers = new();
+    private bool _loadingWorkers;
+    private string _selectedLogPath = "";
+    private List<string> _selectedWorkerLogPaths = new();
+
+    private const string WorkerIdStorageKey = "bhb_livelog_worker_id";
+    private const string LogPathStorageKey = "bhb_livelog_log_path";
+
+    // SignalR Subscriptions
+    private IDisposable? _logCreatedSub;
+    private IDisposable? _logDeletedSub;
+    private IDisposable? _allLogsDeletedSub;
+    private IDisposable? _liveLogReceivedSub;
+    private IDisposable? _liveLogBatchSub;
+    private IDisposable? _liveLogUpdateSub;
+    private IDisposable? _sessionConnectedSub;
+    private IDisposable? _sessionDisconnectedSub;
+
+    private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".txt", ".log", ".json", ".xml", ".csv", ".png", ".jpg", ".jpeg", ".tiff", ".pdf"
+    };
+
+    private List<LiveLogEntry> FilteredLiveLogs => _liveLogs
+        .Where(l => string.IsNullOrEmpty(_filterLevel) || l.Level == _filterLevel)
+        .Where(l => string.IsNullOrEmpty(_filterSource) || l.Source == _filterSource)
+        .Where(l => string.IsNullOrEmpty(_searchText) ||
+                    l.Message.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ||
+                    l.RawLine.Contains(_searchText, StringComparison.OrdinalIgnoreCase))
+        .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadLogs();
+        await InitializeSignalR();
+        await RefreshWorkers();
+        await LoadSavedWorkerIdAndLogPath();
+    }
+
+    private void SetActiveTab(string tab)
+    {
+        _activeTab = tab;
+        StateHasChanged();
+    }
+
+    // ==================== UPLOAD TAB METHODS ====================
+
+    private async Task LoadLogs()
+    {
+        try
+        {
+            _loadingLogs = true;
+            _logs = await LogsApi.ListAsync();
+        }
+        finally
+        {
+            _loadingLogs = false;
+        }
+    }
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file == null) return;
+
+        const long maxSize = 2 * 1024 * 1024;
+        if (file.Size == 0 || file.Size > maxSize)
+        {
+            Toast.ShowError("Invalid file size. Maximum allowed is 2 MB.");
+            return;
+        }
+
+        var extension = Path.GetExtension(file.Name);
+        if (string.IsNullOrWhiteSpace(extension) || !AllowedExtensions.Contains(extension))
+        {
+            Toast.ShowError("Unsupported file type. Please upload a valid log file.");
+            return;
+        }
+
+        try
+        {
+            await using var stream = file.OpenReadStream(maxAllowedSize: maxSize);
+            await LogsApi.UploadAsync(stream, file.Name, file.ContentType);
+            await LoadLogs();
+            Toast.ShowSuccess("Log file uploaded successfully!");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Upload failed: {ex.Message}");
+        }
+    }
+
+    private async Task UploadPastedLogs()
+    {
+        try
+        {
+            var bytes = System.Text.Encoding.UTF8.GetBytes(_pastedLogs);
+            await using var stream = new MemoryStream(bytes);
+            var fileName = $"pasted-log-{DateTime.UtcNow:yyyyMMdd-HHmmss}.log";
+            await LogsApi.UploadAsync(stream, fileName, "text/plain");
+            _pastedLogs = "";
+            await LoadLogs();
+            Toast.ShowSuccess("Pasted logs uploaded successfully!");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Upload failed: {ex.Message}");
+        }
+    }
+
+    private async Task ViewLog(LogDto log)
+    {
+        if (log.SizeBytes > 200 * 1024)
+        {
+            Toast.ShowWarning("Log is too large to view inline.");
+            return;
+        }
+
+        try
+        {
+            _activeLogName = log.FileName;
+            var content = await LogsApi.GetContentAsync(log.Id);
+            _logContent = new MarkupString(ConvertToHtml(content));
+            _showLogViewer = true;
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to load log: {ex.Message}");
+        }
+    }
+
+    private void CloseLogViewer()
+    {
+        _showLogViewer = false;
+        _logContent = new("");
+        _activeLogName = "";
+    }
+
+    private async Task Analyze(Guid id)
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm",
+            $"Send this log for AI analysis using {GetModelDisplayName(_selectedModel)}?\n\nThe report will be available in the Analysis Dashboard soon.");
+        if (!confirmed) return;
+
+        try
+        {
+            await LogsApi.QueueAnalysisAsync(id, _selectedModel);
+            Toast.ShowSuccess($"Analysis job queued! Check Analysis Dashboard soon.");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to queue analysis: {ex.Message}");
+        }
+    }
+
+    private void ConfirmDeleteLog(Guid id, string fileName)
+    {
+        _logToDeleteId = id;
+        _logToDeleteName = fileName;
+        _showDeleteLogConfirm = true;
+    }
+
+    private void CancelDeleteLog()
+    {
+        _logToDeleteId = Guid.Empty;
+        _logToDeleteName = "";
+        _showDeleteLogConfirm = false;
+    }
+
+    private async Task DeleteLog()
+    {
+        try
+        {
+            await LogsApi.DeleteAsync(_logToDeleteId);
+            await LoadLogs();
+            CancelDeleteLog();
+            Toast.ShowSuccess("Log deleted successfully!");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Delete failed: {ex.Message}");
+        }
+    }
+
+    private void ConfirmDeleteAllLogs() => _showDeleteAllLogsConfirm = true;
+    private void CancelDeleteAllLogs() => _showDeleteAllLogsConfirm = false;
+
+    private async Task DeleteAllLogs()
+    {
+        try
+        {
+            await LogsApi.DeleteAllAsync();
+            _logs.Clear();
+            _showDeleteAllLogsConfirm = false;
+            Toast.ShowSuccess("All logs deleted successfully!");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Delete all failed: {ex.Message}");
+        }
+    }
+
+    // ==================== LIVE STREAMING METHODS ====================
+
+    private async Task RefreshWorkers()
+    {
+        _loadingWorkers = true;
+        StateHasChanged();
+        try
+        {
+            var response = await WorkerApi.GetWorkersAsync();
+            _availableWorkers = response.Workers;
+            if (_isSubscribed) LoadSelectedWorkerPaths();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to load workers: {ex.Message}");
+        }
+        finally
+        {
+            _loadingWorkers = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadSavedWorkerIdAndLogPath()
+    {
+        try
+        {
+            var savedWorkerId = await LocalStorage.GetItemAsync<string>(WorkerIdStorageKey);
+            var savedLogPath = await LocalStorage.GetItemAsync<string>(LogPathStorageKey);
+            if (!string.IsNullOrEmpty(savedWorkerId))
+            {
+                _workerIdInput = savedWorkerId;
+                await Subscribe();
+            }
+            if (!string.IsNullOrEmpty(savedLogPath))
+            {
+                _selectedLogPath = savedLogPath;
+            }
+        }
+        catch { }
+    }
+
+    private void LoadSelectedWorkerPaths()
+    {
+        var selected = _availableWorkers.FirstOrDefault(w => w.WorkerId == _subscribedWorkerId);
+        _selectedWorkerLogPaths = selected?.AvailableLogPaths?.ToList() ?? new List<string>();
+        if (!string.IsNullOrWhiteSpace(_selectedLogPath) && !_selectedWorkerLogPaths.Contains(_selectedLogPath))
+            _selectedLogPath = "";
+    }
+
+    private async Task Subscribe()
+    {
+        if (string.IsNullOrWhiteSpace(_workerIdInput)) return;
+        try
+        {
+            if (_isSubscribed && !string.IsNullOrEmpty(_subscribedWorkerId))
+            {
+                await SafeStopStream();
+                await HubService.Connection.SendAsync("UnsubscribeFromWorker", _subscribedWorkerId);
+            }
+            await HubService.Connection.SendAsync("SubscribeToWorker", _workerIdInput.Trim());
+            _subscribedWorkerId = _workerIdInput.Trim();
+            _isSubscribed = true;
+            _isConnected = true;
+            _isStreaming = false;
+            await LocalStorage.SetItemAsync(WorkerIdStorageKey, _subscribedWorkerId);
+            LoadSelectedWorkerPaths();
+            Toast.ShowSuccess($"Subscribed to worker: {_subscribedWorkerId}");
+            ClearLiveLogs();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to subscribe: {ex.Message}");
+        }
+    }
+
+    private async Task Unsubscribe()
+    {
+        if (!_isSubscribed || string.IsNullOrEmpty(_subscribedWorkerId)) return;
+        try
+        {
+            await SafeStopStream();
+            await HubService.Connection.SendAsync("UnsubscribeFromWorker", _subscribedWorkerId);
+            _isSubscribed = false;
+            _isConnected = false;
+            _isStreaming = false;
+            _subscribedWorkerId = "";
+            _selectedWorkerLogPaths.Clear();
+            _selectedLogPath = "";
+            await LocalStorage.RemoveItemAsync(WorkerIdStorageKey);
+            await LocalStorage.RemoveItemAsync(LogPathStorageKey);
+            Toast.ShowSuccess("Unsubscribed from worker");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to unsubscribe: {ex.Message}");
+        }
+    }
+
+    private async Task StartStream()
+    {
+        if (!_isSubscribed || !_isConnected)
+        {
+            Toast.ShowWarning("Worker not connected yet.");
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_selectedLogPath))
+        {
+            Toast.ShowWarning("Select a log path first.");
+            return;
+        }
+        try
+        {
+            await SafeStopStream();
+            await LocalStorage.SetItemAsync(LogPathStorageKey, _selectedLogPath);
+            await HubService.Connection.SendAsync("StartLiveLog", _subscribedWorkerId, _selectedLogPath);
+            _isStreaming = true;
+            ClearLiveLogs();
+            Toast.ShowSuccess("Live streaming started.");
+        }
+        catch (Exception ex)
+        {
+            _isStreaming = false;
+            Toast.ShowError($"Failed to start stream: {ex.Message}");
+        }
+    }
+
+    private async Task StopStream()
+    {
+        await SafeStopStream();
+        Toast.ShowInfo("Streaming stopped.");
+    }
+
+    private async Task SafeStopStream()
+    {
+        if (!_isStreaming) return;
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(_subscribedWorkerId) && !string.IsNullOrWhiteSpace(_selectedLogPath))
+                await HubService.Connection.SendAsync("StopLiveLog", _subscribedWorkerId, _selectedLogPath);
+        }
+        catch { }
+        finally
+        {
+            _isStreaming = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void AddLiveLog(LiveLogEntry entry)
+    {
+        if (_liveLogs.Count >= 1000)
+        {
+            var toRemove = _liveLogs[0];
+            _selectedLiveLogs.Remove(toRemove.Id);
+            _liveLogs.RemoveAt(0);
+        }
+        _liveLogs.Add(entry);
+        UpdateLiveStats(entry);
+    }
+
+    private void UpdateLiveStats(LiveLogEntry entry)
+    {
+        _liveStats.TotalLogs++;
+        switch ((entry.Level ?? "INFO").ToUpperInvariant())
+        {
+            case "ERROR": case "FATAL": case "CRITICAL": _liveStats.ErrorCount++; break;
+            case "WARN": case "WARNING": _liveStats.WarningCount++; break;
+            case "INFO": case "NOTICE": _liveStats.InfoCount++; break;
+            case "DEBUG": case "TRACE": _liveStats.DebugCount++; break;
+        }
+        if (!string.IsNullOrEmpty(entry.Source))
+        {
+            if (_liveStats.BySource.ContainsKey(entry.Source)) _liveStats.BySource[entry.Source]++;
+            else _liveStats.BySource[entry.Source] = 1;
+        }
+    }
+
+    private void ToggleLiveLogSelection(string logId)
+    {
+        if (_selectedLiveLogs.Contains(logId)) _selectedLiveLogs.Remove(logId);
+        else _selectedLiveLogs.Add(logId);
+        _selectAll = _selectedLiveLogs.Count == FilteredLiveLogs.Count && FilteredLiveLogs.Count > 0;
+    }
+
+    private void OnSelectAllChanged()
+    {
+        if (_selectAll) foreach (var log in FilteredLiveLogs) _selectedLiveLogs.Add(log.Id);
+        else _selectedLiveLogs.Clear();
+    }
+
+    private async Task AnalyzeSelected()
+    {
+        if (_selectedLiveLogs.Count == 0)
+        {
+            Toast.ShowWarning("Please select logs to analyze.");
+            return;
+        }
+        _analyzing = true;
+        StateHasChanged();
+        try
+        {
+            var selectedEntries = _liveLogs.Where(l => _selectedLiveLogs.Contains(l.Id)).ToList();
+            var content = string.Join("\n", selectedEntries.Select(e => e.RawLine));
+            await LiveLogApi.AnalyzeContentAsync(content, _sessionId, _subscribedWorkerId, _selectedModel);
+            Toast.ShowSuccess($"Analysis queued for {_selectedLiveLogs.Count} logs!");
+            _selectedLiveLogs.Clear();
+            _selectAll = false;
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to queue analysis: {ex.Message}");
+        }
+        finally
+        {
+            _analyzing = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ClearLiveLogs()
+    {
+        _liveLogs.Clear();
+        _selectedLiveLogs.Clear();
+        _liveStats = new LiveLogStats();
+        _selectAll = false;
+    }
+
+    private async Task ScrollToBottom()
+    {
+        try { await JS.InvokeVoidAsync("scrollToBottom", _logContainer); } catch { }
+    }
+
+    // ==================== SIGNALR ====================
+
+    private async Task InitializeSignalR()
+    {
+        try
+        {
+            await HubService.InitializeAsync(async () =>
+            {
+                var tokenResult = await TokenProvider.RequestAccessToken();
+                if (tokenResult.TryGetToken(out var token)) return token.Value;
+                return null;
+            });
+            await HubService.StartAsync();
+
+            // Upload tab subscriptions
+            _logCreatedSub = HubService.On<LogDto>("LogCreated", async (log) =>
+            {
+                _logs.Insert(0, log);
+                await InvokeAsync(StateHasChanged);
+            });
+            _logDeletedSub = HubService.On<Guid>("LogDeleted", async (logId) =>
+            {
+                _logs.RemoveAll(l => l.Id == logId);
+                await InvokeAsync(StateHasChanged);
+            });
+            _allLogsDeletedSub = HubService.On("AllLogsDeleted", async () =>
+            {
+                _logs.Clear();
+                await InvokeAsync(StateHasChanged);
+            });
+
+            // Live streaming subscriptions
+            _liveLogReceivedSub = HubService.On<LiveLogEntry>("LiveLogReceived", async (entry) =>
+            {
+                _isConnected = true;
+                AddLiveLog(entry);
+                await InvokeAsync(StateHasChanged);
+                if (_autoScroll) await ScrollToBottom();
+            });
+            _liveLogBatchSub = HubService.On<LiveLogBatch>("LiveLogBatch", async (batch) =>
+            {
+                _isConnected = true;
+                _sessionId = batch.SessionId;
+                foreach (var entry in batch.Entries) AddLiveLog(entry);
+                await InvokeAsync(StateHasChanged);
+                if (_autoScroll) await ScrollToBottom();
+            });
+            _liveLogUpdateSub = HubService.On<LiveLogUpdate>("LiveLogUpdate", async (update) =>
+            {
+                try
+                {
+                    _isConnected = true;
+                    if (string.IsNullOrWhiteSpace(update?.Line)) return;
+                    if (!string.IsNullOrWhiteSpace(update.WorkerId) &&
+                        !string.Equals(update.WorkerId, _subscribedWorkerId, StringComparison.OrdinalIgnoreCase)) return;
+                    if (_isStreaming && !string.IsNullOrWhiteSpace(_selectedLogPath) &&
+                        !string.IsNullOrWhiteSpace(update.LogPath) &&
+                        !string.Equals(update.LogPath, _selectedLogPath, StringComparison.OrdinalIgnoreCase)) return;
+
+                    var entry = new LiveLogEntry
+                    {
+                        Id = Guid.NewGuid().ToString("N"),
+                        WorkerId = update.WorkerId ?? _subscribedWorkerId,
+                        SessionId = _sessionId,
+                        RawLine = update.Line,
+                        Message = update.Line,
+                        Source = update.LogPath ?? "LiveLog",
+                        Level = "INFO",
+                        Timestamp = update.Timestamp
+                    };
+                    AddLiveLog(entry);
+                    await InvokeAsync(StateHasChanged);
+                    if (_autoScroll) await ScrollToBottom();
+                }
+                catch { }
+            });
+            HubService.On<object>("LiveStreamStarted", async (data) =>
+            {
+                _isStreaming = true;
+                await InvokeAsync(StateHasChanged);
+            });
+            HubService.On<object>("LiveStreamStopped", async (data) =>
+            {
+                _isStreaming = false;
+                await InvokeAsync(StateHasChanged);
+            });
+            _sessionConnectedSub = HubService.On<object>("LiveLogSessionConnected", async (data) =>
+            {
+                _isConnected = true;
+                await RefreshWorkers();
+                LoadSelectedWorkerPaths();
+                await InvokeAsync(StateHasChanged);
+                Toast.ShowSuccess("Worker connected!");
+            });
+            _sessionDisconnectedSub = HubService.On<object>("LiveLogSessionDisconnected", async (data) =>
+            {
+                _isConnected = false;
+                _isStreaming = false;
+                await InvokeAsync(StateHasChanged);
+                Toast.ShowWarning("Worker disconnected.");
+            });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"SignalR connection failed: {ex.Message}");
+        }
+    }
+
+    // ==================== HELPERS ====================
+
+    private string GetRowClass(string level) => (level ?? "INFO").ToUpperInvariant() switch
+    {
+        "ERROR" or "FATAL" or "CRITICAL" => "log-row-error",
+        "WARN" or "WARNING" => "log-row-warn",
+        "INFO" or "NOTICE" => "log-row-info",
+        "DEBUG" or "TRACE" => "log-row-debug",
+        _ => ""
+    };
+
+    private string GetLevelBadgeClass(string level) => (level ?? "INFO").ToUpperInvariant() switch
+    {
+        "ERROR" or "FATAL" or "CRITICAL" => "bg-danger",
+        "WARN" or "WARNING" => "bg-warning text-dark",
+        "INFO" or "NOTICE" => "bg-info",
+        "DEBUG" or "TRACE" => "bg-secondary",
+        _ => "bg-light text-dark"
+    };
+
+    private string GetModelDisplayName(string modelValue) => modelValue switch
+    {
+        "claude-sonnet-4-5" => "Claude Sonnet 4.5",
+        "claude-opus-4-5" => "Claude Opus 4.5",
+        "claude-sonnet-3-5" => "Claude Sonnet 3.5",
+        "gpt-4o" => "GPT-4o",
+        "gpt-4-turbo" => "GPT-4 Turbo",
+        "gpt-3.5-turbo" => "GPT-3.5 Turbo",
+        "together-llama-3.1-405b" => "Llama 3.1 405B",
+        "together-mixtral-8x7b" => "Mixtral 8x7B",
+        _ => modelValue
+    };
+
+    private string FormatFileSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024:F1} KB";
+        return $"{bytes / (1024 * 1024):F1} MB";
+    }
+
+    private string ConvertToHtml(string markdown)
+    {
+        if (string.IsNullOrWhiteSpace(markdown)) return string.Empty;
+        var pipeline = new MarkdownPipelineBuilder().UseAdvancedExtensions().DisableHtml().Build();
+        return Markdown.ToHtml(markdown, pipeline);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _logCreatedSub?.Dispose();
+        _logDeletedSub?.Dispose();
+        _allLogsDeletedSub?.Dispose();
+        _liveLogReceivedSub?.Dispose();
+        _liveLogBatchSub?.Dispose();
+        _liveLogUpdateSub?.Dispose();
+        _sessionConnectedSub?.Dispose();
+        _sessionDisconnectedSub?.Dispose();
+
+        await SafeStopStream();
+        if (_isSubscribed && !string.IsNullOrEmpty(_subscribedWorkerId))
+        {
+            try { await HubService.Connection.SendAsync("UnsubscribeFromWorker", _subscribedWorkerId); } catch { }
+        }
+    }
+}

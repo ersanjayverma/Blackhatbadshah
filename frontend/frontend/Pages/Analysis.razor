@@ -1,0 +1,1199 @@
+@page "/analysis"
+@page "/analysis/{ReportId:guid}"
+@page "/dashboard"
+@page "/reports"
+@page "/reports/{ReportId:guid}"
+@page "/analysis-dashboard"
+@using Microsoft.AspNetCore.Components.WebAssembly.Authentication
+@using frontend.Services
+@using frontend.Services.Interfaces
+@using shared.Dto
+@using Markdig
+@inject DashboardService DashboardService
+@inject IReportService ReportService
+@inject ReportService ReportServiceImpl
+@inject HubConnectionService HubService
+@inject IAccessTokenProvider TokenProvider
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject ToastService Toast
+@implements IAsyncDisposable
+
+<AuthorizeView>
+    <Authorized>
+        <div class="container-fluid px-4 py-4">
+
+            <!-- HEADER -->
+            <div class="d-flex justify-content-between align-items-center flex-wrap mb-4">
+                <div>
+                    <h2 class="mb-1 fw-bold text-gradient">
+                        <i class="bi bi-graph-up-arrow me-2"></i>Analysis Dashboard
+                    </h2>
+                    <p class="mb-0">Complete overview of your log analyses, statistics, and reports</p>
+                </div>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-outline-primary" @onclick="RefreshAll" disabled="@_loading">
+                        <i class="bi bi-arrow-clockwise me-2"></i>Refresh
+                    </button>
+                    <a href="/log-center" class="btn btn-primary">
+                        <i class="bi bi-upload me-2"></i>New Analysis
+                    </a>
+                </div>
+            </div>
+
+            <!-- TAB NAVIGATION -->
+            <ul class="nav nav-tabs mb-4" role="tablist">
+                <li class="nav-item">
+                    <button class="nav-link @(_activeTab == "overview" ? "active" : "")" 
+                            @onclick="@(() => SetActiveTab("overview"))">
+                        <i class="bi bi-speedometer2 me-1"></i>Overview
+                    </button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link @(_activeTab == "analytics" ? "active" : "")" 
+                            @onclick="@(() => SetActiveTab("analytics"))">
+                        <i class="bi bi-bar-chart me-1"></i>Analytics
+                    </button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link @(_activeTab == "reports" ? "active" : "")" 
+                            @onclick="@(() => SetActiveTab("reports"))">
+                        <i class="bi bi-file-earmark-bar-graph me-1"></i>Reports (@_reports.Count)
+                    </button>
+                </li>
+            </ul>
+
+            @if (_loading)
+            {
+                <div class="text-center py-5">
+                    <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;"></div>
+                    <p class="fw-semibold">Loading analysis data...</p>
+                </div>
+            }
+            else
+            {
+                <!-- OVERVIEW TAB -->
+                @if (_activeTab == "overview")
+                {
+                    <!-- STATISTICS CARDS - ROW 1 -->
+                    <div class="row g-4 mb-4">
+                        <div class="col-md-3 col-sm-6">
+                            <div class="card modern-card shadow-sm stat-card clickable" @onclick="@(() => ShowFilteredReports("all"))">
+                                <div class="card-body text-center">
+                                    <i class="bi bi-file-earmark-text stat-icon text-primary"></i>
+                                    <h3 class="stat-value">@(_stats?.TotalLogsAnalyzed ?? 0)</h3>
+                                    <p class="stat-label">Logs Analyzed</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3 col-sm-6">
+                            <div class="card modern-card shadow-sm stat-card clickable" @onclick="@(() => ShowFilteredReports("completed"))">
+                                <div class="card-body text-center">
+                                    <i class="bi bi-check-circle stat-icon text-success"></i>
+                                    <h3 class="stat-value text-success">@(_stats?.SuccessfulAnalyses ?? 0)</h3>
+                                    <p class="stat-label">Successful</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3 col-sm-6">
+                            <div class="card modern-card shadow-sm stat-card clickable" @onclick="@(() => ShowFilteredReports("inprogress"))">
+                                <div class="card-body text-center">
+                                    <i class="bi bi-hourglass-split stat-icon text-warning"></i>
+                                    <h3 class="stat-value text-warning">@(_stats?.InProgressAnalyses ?? 0)</h3>
+                                    <p class="stat-label">In Progress</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3 col-sm-6">
+                            <div class="card modern-card shadow-sm stat-card clickable" @onclick="@(() => ShowFilteredReports("failed"))">
+                                <div class="card-body text-center">
+                                    <i class="bi bi-x-circle stat-icon text-danger"></i>
+                                    <h3 class="stat-value text-danger">@(_stats?.FailedAnalyses ?? 0)</h3>
+                                    <p class="stat-label">Failed</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- STATISTICS CARDS - ROW 2 -->
+                    <div class="row g-4 mb-4">
+                        <div class="col-md-3 col-sm-6">
+                            <div class="card modern-card shadow-sm stat-card">
+                                <div class="card-body text-center">
+                                    <i class="bi bi-percent stat-icon" style="color: var(--claude-accent);"></i>
+                                    <h3 class="stat-value" style="color: var(--claude-accent);">@(_stats?.SuccessRate ?? 0)%</h3>
+                                    <p class="stat-label">Success Rate</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3 col-sm-6">
+                            <div class="card modern-card shadow-sm stat-card">
+                                <div class="card-body text-center">
+                                    <i class="bi bi-hdd stat-icon text-secondary"></i>
+                                    <h3 class="stat-value text-secondary">@FormatBytes(_stats?.TotalBytesProcessed ?? 0)</h3>
+                                    <p class="stat-label">Data Processed</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3 col-sm-6">
+                            <div class="card modern-card shadow-sm stat-card">
+                                <div class="card-body text-center">
+                                    <i class="bi bi-file-earmark-bar-graph stat-icon text-info"></i>
+                                    <h3 class="stat-value text-info">@(_stats?.TotalReports ?? 0)</h3>
+                                    <p class="stat-label">Total Reports</p>
+                                </div>
+                            </div>
+                        </div>
+                        @if (_stats?.ModelUsageBreakdown?.Count > 0)
+                        {
+                            <div class="col-md-3 col-sm-6">
+                                <div class="card modern-card shadow-sm stat-card">
+                                    <div class="card-body text-center">
+                                        <i class="bi bi-cpu stat-icon text-primary"></i>
+                                        <h3 class="stat-value text-primary">@(_stats.ModelUsageBreakdown.Sum(m => m.UsageCount))</h3>
+                                        <p class="stat-label">Model Calls (Month)</p>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+
+                    <!-- MODEL USAGE BREAKDOWN -->
+                    @if (_stats?.ModelUsageBreakdown?.Count > 0)
+                    {
+                        <div class="row g-4 mb-4">
+                            <div class="col-12">
+                                <div class="card modern-card shadow-sm">
+                                    <div class="card-header gradient-header-dark">
+                                        <h5 class="mb-0"><i class="bi bi-bar-chart me-2"></i>Model Usage (This Month)</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="row">
+                                            @foreach (var model in _stats.ModelUsageBreakdown)
+                                            {
+                                                <div class="col-md-6 mb-3">
+                                                    <div class="d-flex justify-content-between align-items-center mb-1">
+                                                        <span class="fw-semibold">@model.ModelName</span>
+                                                        <span class="badge bg-primary">@model.UsageCount calls</span>
+                                                    </div>
+                                                    @{
+                                                        var total = _stats.ModelUsageBreakdown.Sum(m => m.UsageCount);
+                                                        var percent = total > 0 ? (double)model.UsageCount / total * 100 : 0;
+                                                    }
+                                                    <div class="progress" style="height: 8px;">
+                                                        <div class="progress-bar" role="progressbar"
+                                                             style="width: @percent%; background: linear-gradient(90deg, var(--claude-accent), #f59e0b);"
+                                                             aria-valuenow="@percent" aria-valuemin="0" aria-valuemax="100"></div>
+                                                    </div>
+                                                </div>
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+
+                    <!-- CHARTS ROW -->
+                    <div class="row g-4 mb-4">
+                        <div class="col-lg-8">
+                            <div class="card modern-card shadow-lg">
+                                <div class="card-header gradient-header-dark">
+                                    <h5 class="mb-0"><i class="bi bi-graph-up me-2"></i>Activity Trend (Last 7 Days)</h5>
+                                </div>
+                                <div class="card-body">
+                                    <div class="chart-container" style="height: 300px;">
+                                        <canvas id="trendChart"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-lg-4">
+                            <div class="card modern-card shadow-lg">
+                                <div class="card-header gradient-header-dark">
+                                    <h5 class="mb-0"><i class="bi bi-pie-chart me-2"></i>Status Distribution</h5>
+                                </div>
+                                <div class="card-body">
+                                    <div class="chart-container" style="height: 300px;">
+                                        <canvas id="statusChart"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- RECENT ANALYSES -->
+                    <div class="card modern-card shadow-lg">
+                        <div class="card-header gradient-header-dark d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0"><i class="bi bi-clock-history me-2"></i>Recent Analyses</h5>
+                            <button class="btn btn-sm btn-outline-light" @onclick="@(() => SetActiveTab("reports"))">
+                                View All <i class="bi bi-arrow-right ms-1"></i>
+                            </button>
+                        </div>
+                        <div class="card-body p-0">
+                            @if (_recentAnalyses.Count == 0)
+                            {
+                                <div class="empty-state-box">
+                                    <i class="bi bi-inbox display-1 mb-3"></i>
+                                    <h5 class="fw-bold">No analyses yet</h5>
+                                    <p>Upload and analyze logs to see results here</p>
+                                    <a href="/log-center" class="btn btn-primary"><i class="bi bi-upload me-2"></i>Upload Logs</a>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="table-responsive">
+                                    <table class="table table-hover mb-0 modern-table">
+                                        <thead>
+                                            <tr>
+                                                <th><i class="bi bi-file-text me-2"></i>Report</th>
+                                                <th><i class="bi bi-activity me-2"></i>Status</th>
+                                                <th><i class="bi bi-calendar me-2"></i>Completed</th>
+                                                <th><i class="bi bi-lightbulb me-2"></i>Key Findings</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var analysis in _recentAnalyses)
+                                            {
+                                                <tr class="table-row-hover" @onclick="() => OpenReportModal(analysis.ReportId)" style="cursor: pointer;">
+                                                    <td class="fw-semibold">@analysis.Title</td>
+                                                    <td>@RenderStatusBadge(analysis.Status)</td>
+                                                    <td>@analysis.CompletedAt.ToLocalTime().ToString("g")</td>
+                                                    <td class="small" style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                                        @analysis.KeyFindings
+                                                    </td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+
+                <!-- ANALYTICS TAB -->
+                @if (_activeTab == "analytics")
+                {
+                    <!-- DATE RANGE FILTER -->
+                    <div class="card modern-card shadow-sm mb-4">
+                        <div class="card-body">
+                            <div class="row g-3 align-items-end">
+                                <div class="col-md-4">
+                                    <label class="form-label fw-bold">From Date</label>
+                                    <input type="date" class="form-control" @bind="_fromDate" @bind:after="FilterAnalyses" />
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label fw-bold">To Date</label>
+                                    <input type="date" class="form-control" @bind="_toDate" @bind:after="FilterAnalyses" />
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label fw-bold">Status</label>
+                                    <select class="form-select" @bind="_statusFilter" @bind:after="FilterAnalyses">
+                                        <option value="">All Statuses</option>
+                                        <option value="Completed">Completed</option>
+                                        <option value="InProgress">In Progress</option>
+                                        <option value="Failed">Failed</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- SUMMARY CARDS -->
+                    <div class="row g-4 mb-4">
+                        <div class="col-md-3 col-sm-6">
+                            <div class="card modern-card shadow-sm stat-card">
+                                <div class="card-body text-center">
+                                    <i class="bi bi-file-earmark-text stat-icon text-primary"></i>
+                                    <h3 class="stat-value">@_filteredAnalyses.Count</h3>
+                                    <p class="stat-label">Filtered Analyses</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3 col-sm-6">
+                            <div class="card modern-card shadow-sm stat-card">
+                                <div class="card-body text-center">
+                                    <i class="bi bi-check-circle stat-icon text-success"></i>
+                                    <h3 class="stat-value text-success">@_filteredAnalyses.Count(a => a.Status == ReportStatus.Completed)</h3>
+                                    <p class="stat-label">Completed</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3 col-sm-6">
+                            <div class="card modern-card shadow-sm stat-card">
+                                <div class="card-body text-center">
+                                    <i class="bi bi-hourglass-split stat-icon text-warning"></i>
+                                    <h3 class="stat-value text-warning">@_filteredAnalyses.Count(a => a.Status == ReportStatus.InProgress)</h3>
+                                    <p class="stat-label">In Progress</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3 col-sm-6">
+                            <div class="card modern-card shadow-sm stat-card">
+                                <div class="card-body text-center">
+                                    <i class="bi bi-x-circle stat-icon text-danger"></i>
+                                    <h3 class="stat-value text-danger">@_filteredAnalyses.Count(a => a.Status == ReportStatus.Failed)</h3>
+                                    <p class="stat-label">Failed</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- DAILY ANALYSIS CHART -->
+                    <div class="card modern-card shadow-lg mb-4">
+                        <div class="card-header gradient-header-dark">
+                            <h5 class="mb-0"><i class="bi bi-calendar3 me-2"></i>Daily Analysis Trend</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="chart-container" style="height: 350px;">
+                                <canvas id="dailyAnalysisChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- HOURLY DISTRIBUTION CHART -->
+                    <div class="row g-4 mb-4">
+                        <div class="col-lg-6">
+                            <div class="card modern-card shadow-lg">
+                                <div class="card-header gradient-header-dark">
+                                    <h5 class="mb-0"><i class="bi bi-clock me-2"></i>Hourly Distribution</h5>
+                                </div>
+                                <div class="card-body">
+                                    <div class="chart-container" style="height: 300px;">
+                                        <canvas id="hourlyChart"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-lg-6">
+                            <div class="card modern-card shadow-lg">
+                                <div class="card-header gradient-header-dark">
+                                    <h5 class="mb-0"><i class="bi bi-pie-chart me-2"></i>Status Distribution</h5>
+                                </div>
+                                <div class="card-body">
+                                    <div class="chart-container" style="height: 300px;">
+                                        <canvas id="statusPieChart"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ANALYSIS TIMELINE -->
+                    <div class="card modern-card shadow-lg">
+                        <div class="card-header gradient-header-dark d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0"><i class="bi bi-clock-history me-2"></i>Analysis Timeline</h5>
+                            <span class="badge bg-primary">@_filteredAnalyses.Count analyses</span>
+                        </div>
+                        <div class="card-body p-0">
+                            @if (_filteredAnalyses.Count == 0)
+                            {
+                                <div class="text-center py-5">
+                                    <i class="bi bi-inbox display-1 mb-3"></i>
+                                    <h5 class="fw-bold">No analyses found</h5>
+                                    <p>Try adjusting your date range or status filter</p>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="table-responsive">
+                                    <table class="table table-hover mb-0 modern-table">
+                                        <thead>
+                                            <tr>
+                                                <th><i class="bi bi-calendar me-1"></i>Date & Time</th>
+                                                <th><i class="bi bi-file-text me-1"></i>Title</th>
+                                                <th><i class="bi bi-activity me-1"></i>Status</th>
+                                                <th><i class="bi bi-file-text me-1"></i>File</th>
+                                                <th><i class="bi bi-gear me-1"></i>Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var analysis in _filteredAnalyses.OrderByDescending(a => a.CreatedAtUtc).Take(50))
+                                            {
+                                                <tr class="analysis-card" @onclick="() => OpenReportModal(analysis.Id)" style="cursor: pointer;">
+                                                    <td class="fw-semibold">@analysis.CreatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                                    <td>@analysis.Title</td>
+                                                    <td>@RenderStatusBadge(analysis.Status)</td>
+                                                    <td class="small" style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                                        @(string.IsNullOrEmpty(analysis.FileName) ? "-" : analysis.FileName)
+                                                    </td>
+                                                    <td>
+                                                        <button class="btn btn-sm btn-primary" @onclick:stopPropagation="true"
+                                                                @onclick="() => OpenReportModal(analysis.Id)">
+                                                            <i class="bi bi-eye"></i>
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+
+                <!-- REPORTS TAB -->
+                @if (_activeTab == "reports")
+                {
+                    <!-- REPORTS HEADER -->
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <div class="input-group" style="max-width: 400px;">
+                            <input type="text" class="form-control" placeholder="Search reports..." 
+                                   @bind="_reportSearchTerm" @bind:event="oninput" />
+                            @if (!string.IsNullOrEmpty(_reportSearchTerm))
+                            {
+                                <button class="btn btn-outline-secondary" @onclick="ClearReportSearch">
+                                    <i class="bi bi-x"></i>
+                                </button>
+                            }
+                        </div>
+                        @if (_reports.Count > 0)
+                        {
+                            <button class="btn btn-danger" @onclick="ConfirmDeleteAllReports">
+                                <i class="bi bi-trash me-2"></i>Clear All Reports
+                            </button>
+                        }
+                    </div>
+
+                    <!-- REPORTS LIST -->
+                    <div class="card modern-card shadow-lg">
+                        <div class="card-header gradient-header-dark d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0"><i class="bi bi-list-ul me-2"></i>Your Reports</h5>
+                            <span class="badge bg-light text-dark px-3 py-2 rounded-pill">@FilteredReports.Count Total</span>
+                        </div>
+                        <div class="card-body p-0">
+                            @if (_reports.Count == 0)
+                            {
+                                <div class="empty-state-box">
+                                    <i class="bi bi-file-earmark-bar-graph display-1 mb-3"></i>
+                                    <h5 class="fw-bold">No reports available</h5>
+                                    <p>Upload and analyze logs to generate reports</p>
+                                    <a href="/log-center" class="btn btn-primary"><i class="bi bi-upload me-2"></i>Upload Logs</a>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="table-responsive">
+                                    <table class="table table-hover mb-0 modern-table">
+                                        <thead>
+                                            <tr>
+                                                <th><i class="bi bi-file-text me-2"></i>Report</th>
+                                                <th><i class="bi bi-paperclip me-2"></i>Log File</th>
+                                                <th><i class="bi bi-activity me-2"></i>Status</th>
+                                                <th><i class="bi bi-calendar me-2"></i>Created</th>
+                                                <th class="text-center"><i class="bi bi-gear me-2"></i>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var report in FilteredReports)
+                                            {
+                                                <tr class="table-row-hover">
+                                                    <td class="fw-semibold">@(string.IsNullOrEmpty(report.Title) ? "Untitled Report" : report.Title)</td>
+                                                    <td>
+                                                        @if (string.IsNullOrEmpty(report.FileName) || report.FileName == "Log Deleted")
+                                                        {
+                                                            <span class="fst-italic">@(string.IsNullOrEmpty(report.FileName) ? "Unknown" : report.FileName)</span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span>@report.FileName</span>
+                                                        }
+                                                    </td>
+                                                    <td>@RenderStatusBadge(report.Status)</td>
+                                                    <td>@report.CreatedAtUtc.ToLocalTime().ToString("g")</td>
+                                                    <td class="text-center">
+                                                        <div class="btn-group shadow-sm" role="group">
+                                                            <button class="btn btn-sm btn-success" 
+                                                                    @onclick="() => OpenReportModal(report.Id)" 
+                                                                    disabled="@(report.Status != ReportStatus.Completed)"
+                                                                    title="View">
+                                                                <i class="bi bi-eye me-1"></i>View
+                                                            </button>
+                                                            <button class="btn btn-sm btn-info" @onclick="() => DownloadReport(report.Id)" 
+                                                                    disabled="@(_downloading || report.Status != ReportStatus.Completed)" title="Download PDF">
+                                                                <i class="bi bi-download"></i>
+                                                            </button>
+                                                            <button class="btn btn-sm btn-danger" @onclick="() => ConfirmDeleteReport(report.Id, report.Title)" title="Delete">
+                                                                <i class="bi bi-trash"></i>
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+
+        <!-- REPORT VIEWER MODAL -->
+        @if (_showReportModal)
+        {
+            <div class="custom-modal-backdrop" @onclick="CloseReportModal"></div>
+
+            <div class="custom-modal">
+                <div class="custom-modal-dialog">
+                    <div class="custom-modal-content">
+                        <div class="custom-modal-header">
+                            <h5 class="custom-modal-title">
+                                <i class="bi bi-file-earmark-bar-graph me-2"></i>@_activeReportTitle
+                            </h5>
+                            <button class="custom-modal-close" @onclick="CloseReportModal">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
+                        <div class="custom-modal-body">
+                            @_reportContent
+
+                            @if (_chartData != null)
+                            {
+                                <div class="mt-4">
+                                    <h6 class="fw-bold mb-3">
+                                        <i class="bi bi-bar-chart me-2"></i>Visualization
+                                    </h6>
+                                    <div class="chart-container">
+                                        <canvas id="reportChart"></canvas>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                        <div class="custom-modal-footer">
+                            <button class="btn btn-info me-2" @onclick="() => DownloadReport(_activeReportId)" disabled="@_downloading">
+                                @if (_downloading)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-2"></span>
+                                }
+                                <i class="bi bi-download me-2"></i>Download PDF
+                            </button>
+                            <button class="btn btn-secondary" @onclick="CloseReportModal">
+                                <i class="bi bi-x-lg me-2"></i>Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <!-- DELETE CONFIRMATION MODAL -->
+        @if (_showDeleteConfirm)
+        {
+            <div class="custom-modal-backdrop" @onclick="CancelDelete"></div>
+
+            <div class="custom-modal">
+                <div class="custom-modal-dialog custom-modal-dialog-sm">
+                    <div class="custom-modal-content">
+                        <div class="custom-modal-header bg-danger">
+                            <h5 class="custom-modal-title">
+                                <i class="bi bi-exclamation-triangle-fill me-2"></i>Confirm Deletion
+                            </h5>
+                            <button class="custom-modal-close" @onclick="CancelDelete">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
+                        <div class="custom-modal-body">
+                            <div class="text-center mb-3">
+                                <i class="bi bi-trash text-danger" style="font-size: 3rem;"></i>
+                            </div>
+                            <p class="mb-2">Are you sure you want to delete this report?</p>
+                            <div class="alert alert-success border">
+                                <i class="bi bi-file-earmark-bar-graph me-2"></i>
+                                <strong>@_reportToDeleteTitle</strong>
+                            </div>
+                            <p class="small mb-0">
+                                <i class="bi bi-info-circle me-1"></i>This action cannot be undone.
+                            </p>
+                        </div>
+                        <div class="custom-modal-footer">
+                            <button class="btn btn-success" @onclick="CancelDelete">
+                                <i class="bi bi-x-lg me-2"></i>Cancel
+                            </button>
+                            <button class="btn btn-danger" @onclick="DeleteReport">
+                                <i class="bi bi-trash me-2"></i>Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <!-- DELETE ALL CONFIRMATION MODAL -->
+        @if (_showDeleteAllConfirm)
+        {
+            <div class="custom-modal-backdrop" @onclick="CancelDeleteAll"></div>
+
+            <div class="custom-modal">
+                <div class="custom-modal-dialog custom-modal-dialog-sm">
+                    <div class="custom-modal-content">
+                        <div class="custom-modal-header bg-danger">
+                            <h5 class="custom-modal-title">
+                                <i class="bi bi-exclamation-triangle-fill me-2"></i>Clear All Reports
+                            </h5>
+                            <button class="custom-modal-close" @onclick="CancelDeleteAll">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
+                        <div class="custom-modal-body">
+                            <div class="text-center mb-3">
+                                <i class="bi bi-exclamation-octagon text-danger" style="font-size: 3rem;"></i>
+                            </div>
+                            <p class="mb-2">Are you sure you want to delete <strong class="text-danger">all @_reports.Count reports</strong>?</p>
+                            <div class="alert alert-danger border-danger">
+                                <i class="bi bi-shield-exclamation me-2"></i>
+                                <strong>Warning:</strong> This will permanently delete all your reports.
+                            </div>
+                            <p class="small mb-0">
+                                <i class="bi bi-info-circle me-1"></i>This action cannot be undone.
+                            </p>
+                        </div>
+                        <div class="custom-modal-footer">
+                            <button class="btn btn-success" @onclick="CancelDeleteAll">
+                                <i class="bi bi-x-lg me-2"></i>Cancel
+                            </button>
+                            <button class="btn btn-danger" @onclick="DeleteAllReports">
+                                <i class="bi bi-trash me-2"></i>Delete All
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+    </Authorized>
+
+    <NotAuthorized>
+        <div class="container mt-5">
+            <div class="alert alert-warning shadow-sm">
+                <i class="bi bi-lock me-2"></i>
+                You must be logged in to view the analysis dashboard.
+            </div>
+        </div>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    [Parameter] public Guid? ReportId { get; set; }
+
+    // State
+    private bool _loading = true;
+    private string _activeTab = "overview";
+
+    // Dashboard Stats
+    private DashboardStatistics? _stats;
+    private List<RecentAnalysisResult> _recentAnalyses = new();
+    private DashboardChartData? _trendChartData;
+    private DashboardChartData? _statusChartData;
+
+    // Analytics
+    private List<ReportListItem> _analyses = new();
+    private List<ReportListItem> _filteredAnalyses = new();
+    private DateTime _fromDate = DateTime.Now.AddDays(-30);
+    private DateTime _toDate = DateTime.Now;
+    private string _statusFilter = "";
+
+    // Reports
+    private List<ReportListItem> _reports = new();
+    private string _reportSearchTerm = "";
+
+    // Report Modal
+    private bool _showReportModal = false;
+    private Guid _activeReportId = Guid.Empty;
+    private string _activeReportTitle = "";
+    private MarkupString _reportContent = new("");
+    private ChartData? _chartData = null;
+    private bool _downloading = false;
+
+    // Delete Confirmation
+    private bool _showDeleteConfirm = false;
+    private bool _showDeleteAllConfirm = false;
+    private Guid _reportToDeleteId = Guid.Empty;
+    private string _reportToDeleteTitle = "";
+
+    // SignalR Subscriptions
+    private IDisposable? _dashboardUpdateSubscription;
+    private IDisposable? _reportCreatedSubscription;
+    private IDisposable? _reportStatusChangedSubscription;
+    private IDisposable? _reportDeletedSubscription;
+    private IDisposable? _allReportsDeletedSubscription;
+
+    private List<ReportListItem> FilteredReports => string.IsNullOrWhiteSpace(_reportSearchTerm) 
+        ? _reports 
+        : _reports.Where(r => 
+            (r.Title?.Contains(_reportSearchTerm, StringComparison.OrdinalIgnoreCase) ?? false) ||
+            (r.FileName?.Contains(_reportSearchTerm, StringComparison.OrdinalIgnoreCase) ?? false)
+        ).ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAllData();
+        await InitializeSignalR();
+
+        // If ReportId is provided via route, open the report modal
+        if (ReportId.HasValue && ReportId.Value != Guid.Empty)
+        {
+            _activeTab = "reports";
+            await OpenReportModal(ReportId.Value);
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Handle route parameter changes
+        if (ReportId.HasValue && ReportId.Value != Guid.Empty && _activeReportId != ReportId.Value)
+        {
+            await OpenReportModal(ReportId.Value);
+        }
+    }
+
+    private async Task InitializeSignalR()
+    {
+        try
+        {
+            await HubService.InitializeAsync(async () =>
+            {
+                var tokenResult = await TokenProvider.RequestAccessToken();
+                if (tokenResult.TryGetToken(out var token))
+                    return token.Value;
+                return null;
+            });
+            await HubService.StartAsync();
+
+            _dashboardUpdateSubscription = HubService.On("DashboardUpdated", async () =>
+            {
+                await LoadAllData();
+                await InvokeAsync(StateHasChanged);
+            });
+
+            _reportCreatedSubscription = HubService.On<ReportListItem>("ReportCreated", async (report) =>
+            {
+                if (report != null && report.Id != Guid.Empty)
+                {
+                    if (!_reports.Any(r => r.Id == report.Id))
+                    {
+                        _reports.Insert(0, report);
+                        _analyses.Insert(0, report);
+                        FilterAnalyses();
+                        await InvokeAsync(StateHasChanged);
+                    }
+                }
+            });
+
+            _reportStatusChangedSubscription = HubService.On<Guid, ReportStatus>("ReportStatusChanged", async (reportId, status) =>
+            {
+                if (reportId != Guid.Empty)
+                {
+                    var report = _reports.FirstOrDefault(r => r.Id == reportId);
+                    if (report != null) report.Status = status;
+
+                    var analysis = _analyses.FirstOrDefault(a => a.Id == reportId);
+                    if (analysis != null) analysis.Status = status;
+
+                    FilterAnalyses();
+                    await InvokeAsync(StateHasChanged);
+                }
+            });
+
+            _reportDeletedSubscription = HubService.On<Guid>("ReportDeleted", async (reportId) =>
+            {
+                if (reportId != Guid.Empty)
+                {
+                    _reports.RemoveAll(r => r.Id == reportId);
+                    _analyses.RemoveAll(a => a.Id == reportId);
+                    FilterAnalyses();
+                    await InvokeAsync(StateHasChanged);
+                }
+            });
+
+            _allReportsDeletedSubscription = HubService.On("AllReportsDeleted", async () =>
+            {
+                _reports.Clear();
+                _analyses.Clear();
+                _filteredAnalyses.Clear();
+                await InvokeAsync(StateHasChanged);
+            });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"SignalR connection failed: {ex.Message}");
+        }
+    }
+
+    private async Task LoadAllData()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+            // Load all data in parallel
+            var statsTask = DashboardService.GetStatisticsAsync();
+            var recentTask = DashboardService.GetRecentAnalysesAsync(5);
+            var trendTask = DashboardService.GetTrendChartAsync();
+            var statusTask = DashboardService.GetStatusChartAsync();
+            var reportsTask = ReportService.ListAsync();
+
+            await Task.WhenAll(statsTask, recentTask, trendTask, statusTask, reportsTask);
+
+            _stats = await statsTask;
+            _recentAnalyses = await recentTask;
+            _trendChartData = await trendTask;
+            _statusChartData = await statusTask;
+            _reports = await reportsTask ?? new();
+            _analyses = _reports.ToList();
+            FilterAnalyses();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to load data: {ex.Message}");
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+
+        // Render charts
+        await Task.Delay(100);
+        await RenderCharts();
+    }
+
+    private async Task RefreshAll()
+    {
+        await LoadAllData();
+    }
+
+    private void SetActiveTab(string tab)
+    {
+        _activeTab = tab;
+        StateHasChanged();
+
+        // Re-render charts when switching tabs
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(100);
+            await InvokeAsync(async () =>
+            {
+                if (tab == "overview") await RenderOverviewCharts();
+                else if (tab == "analytics") await RenderAnalyticsCharts();
+            });
+        });
+    }
+
+    private void FilterAnalyses()
+    {
+        _filteredAnalyses = _analyses
+            .Where(a =>
+            {
+                var date = a.CreatedAtUtc.Date;
+                if (date < _fromDate.Date || date > _toDate.Date)
+                    return false;
+
+                if (!string.IsNullOrEmpty(_statusFilter))
+                {
+                    var statusMatch = _statusFilter switch
+                    {
+                        "Completed" => a.Status == ReportStatus.Completed,
+                        "InProgress" => a.Status == ReportStatus.InProgress,
+                        "Failed" => a.Status == ReportStatus.Failed,
+                        _ => true
+                    };
+                    if (!statusMatch) return false;
+                }
+                return true;
+            })
+            .ToList();
+
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(100);
+            await InvokeAsync(RenderAnalyticsCharts);
+        });
+    }
+
+    private async Task RenderCharts()
+    {
+        await RenderOverviewCharts();
+    }
+
+    private async Task RenderOverviewCharts()
+    {
+        try
+        {
+            if (_trendChartData != null)
+                await JS.InvokeVoidAsync("renderDashboardChart", "trendChart", _trendChartData);
+            if (_statusChartData != null)
+                await JS.InvokeVoidAsync("renderDashboardChart", "statusChart", _statusChartData);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Overview chart render failed: {ex.Message}");
+        }
+    }
+
+    private async Task RenderAnalyticsCharts()
+    {
+        try
+        {
+            // Daily trend chart
+            var dailyData = _filteredAnalyses
+                .GroupBy(a => a.CreatedAtUtc.Date)
+                .OrderBy(g => g.Key)
+                .ToList();
+
+            var dailyChartData = new
+            {
+                chartType = "LineChart",
+                xAxis = new { labels = dailyData.Select(g => g.Key.ToString("MMM dd")).ToArray() },
+                series = new[] { new { name = "Analyses", values = dailyData.Select(g => g.Count()).ToArray() } }
+            };
+
+            await JS.InvokeVoidAsync("renderDashboardChart", "dailyAnalysisChart", dailyChartData);
+
+            // Hourly distribution
+            var hourlyData = Enumerable.Range(0, 24)
+                .Select(h => new { Hour = h, Count = _filteredAnalyses.Count(a => a.CreatedAtUtc.ToLocalTime().Hour == h) })
+                .ToList();
+
+            var hourlyChartData = new
+            {
+                chartType = "BarChart",
+                xAxis = new { labels = hourlyData.Select(h => $"{h.Hour:00}:00").ToArray() },
+                series = new[] { new { name = "Analyses", values = hourlyData.Select(h => h.Count).ToArray() } }
+            };
+
+            await JS.InvokeVoidAsync("renderDashboardChart", "hourlyChart", hourlyChartData);
+
+            // Status pie chart
+            var statusData = new[]
+            {
+                _filteredAnalyses.Count(a => a.Status == ReportStatus.Completed),
+                _filteredAnalyses.Count(a => a.Status == ReportStatus.InProgress),
+                _filteredAnalyses.Count(a => a.Status == ReportStatus.Failed)
+            };
+
+            var statusChartData = new
+            {
+                chartType = "PieChart",
+                xAxis = new { labels = new[] { "Completed", "In Progress", "Failed" } },
+                series = new[] { new { name = "Status", values = statusData } }
+            };
+
+            await JS.InvokeVoidAsync("renderDashboardChart", "statusPieChart", statusChartData);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Analytics chart render failed: {ex.Message}");
+        }
+    }
+
+    private void ShowFilteredReports(string filter)
+    {
+        _statusFilter = filter switch
+        {
+            "completed" => "Completed",
+            "inprogress" => "InProgress",
+            "failed" => "Failed",
+            _ => ""
+        };
+        SetActiveTab("reports");
+    }
+
+    private RenderFragment RenderStatusBadge(ReportStatus status) => status switch
+    {
+        ReportStatus.InProgress => @<span class="badge bg-warning text-dark px-3 py-2"><i class="bi bi-hourglass-split me-1"></i>In Progress</span>,
+        ReportStatus.Completed => @<span class="badge bg-success px-3 py-2"><i class="bi bi-check-circle me-1"></i>Completed</span>,
+        ReportStatus.Failed => @<span class="badge bg-danger px-3 py-2"><i class="bi bi-x-circle me-1"></i>Failed</span>,
+        _ => @<span class="badge bg-secondary px-3 py-2">Unknown</span>
+    };
+
+    // Report Modal Methods
+    private async Task OpenReportModal(Guid reportId)
+    {
+        var report = await ReportService.GetAsync(reportId);
+        if (report == null) return;
+
+        _activeReportId = reportId;
+        _activeReportTitle = report.Title;
+        _reportContent = new MarkupString(ConvertToHtml(report.Content));
+
+        // Parse chart data
+        if (!string.IsNullOrWhiteSpace(report.ChartData))
+        {
+            try
+            {
+                var options = new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                _chartData = System.Text.Json.JsonSerializer.Deserialize<ChartData>(report.ChartData, options);
+                if (_chartData?.ChartType == "None" || _chartData?.Series == null || _chartData.Series.Count == 0)
+                    _chartData = null;
+            }
+            catch { _chartData = null; }
+        }
+        else
+        {
+            _chartData = null;
+        }
+
+        _showReportModal = true;
+        StateHasChanged();
+
+        if (_chartData != null)
+        {
+            await Task.Delay(500);
+            await RenderReportChart();
+        }
+    }
+
+    private void CloseReportModal()
+    {
+        _showReportModal = false;
+        _reportContent = new("");
+        _activeReportTitle = "";
+        _activeReportId = Guid.Empty;
+        _chartData = null;
+    }
+
+    private async Task RenderReportChart()
+    {
+        if (_chartData == null) return;
+        try
+        {
+            await JS.InvokeVoidAsync("renderChart", _chartData);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Report chart render failed: {ex.Message}");
+        }
+    }
+
+    private async Task DownloadReport(Guid reportId)
+    {
+        if (_downloading) return;
+        _downloading = true;
+        StateHasChanged();
+
+        try
+        {
+            using var stream = await ReportServiceImpl.DownloadAsync(reportId);
+            using var memoryStream = new MemoryStream();
+            await stream.CopyToAsync(memoryStream);
+            var bytes = memoryStream.ToArray();
+            var fileName = $"BHB-ANALYSIS-REPORT-{reportId}.pdf";
+            var base64 = Convert.ToBase64String(bytes);
+            await JS.InvokeVoidAsync("downloadFileFromBase64", fileName, "application/pdf", base64);
+            Toast.ShowSuccess("Report downloaded successfully!");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Download failed: {ex.Message}");
+            Toast.ShowError($"Download failed: {ex.Message}");
+        }
+        finally
+        {
+            _downloading = false;
+            StateHasChanged();
+        }
+    }
+
+    // Delete Methods
+    private void ConfirmDeleteReport(Guid reportId, string title)
+    {
+        _reportToDeleteId = reportId;
+        _reportToDeleteTitle = title ?? "Untitled Report";
+        _showDeleteConfirm = true;
+    }
+
+    private void CancelDelete()
+    {
+        _reportToDeleteId = Guid.Empty;
+        _reportToDeleteTitle = "";
+        _showDeleteConfirm = false;
+    }
+
+    private async Task DeleteReport()
+    {
+        try
+        {
+            await ReportService.DeleteAsync(_reportToDeleteId);
+            _reports.RemoveAll(r => r.Id == _reportToDeleteId);
+            _analyses.RemoveAll(a => a.Id == _reportToDeleteId);
+            FilterAnalyses();
+            CancelDelete();
+            Toast.ShowSuccess("Report deleted successfully!");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Delete failed: {ex.Message}");
+            Toast.ShowError($"Delete failed: {ex.Message}");
+        }
+    }
+
+    private void ConfirmDeleteAllReports() => _showDeleteAllConfirm = true;
+    private void CancelDeleteAll() => _showDeleteAllConfirm = false;
+
+    private async Task DeleteAllReports()
+    {
+        try
+        {
+            await ReportService.DeleteAllAsync();
+            _reports.Clear();
+            _analyses.Clear();
+            _filteredAnalyses.Clear();
+            _showDeleteAllConfirm = false;
+            Toast.ShowSuccess("All reports deleted successfully!");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Delete all failed: {ex.Message}");
+            Toast.ShowError($"Delete all failed: {ex.Message}");
+        }
+    }
+
+    private void ClearReportSearch() => _reportSearchTerm = "";
+
+    // Helpers
+    private static string FormatBytes(long bytes)
+    {
+        string[] sizes = { "B", "KB", "MB", "GB", "TB" };
+        int order = 0;
+        double size = bytes;
+        while (size >= 1024 && order < sizes.Length - 1)
+        {
+            order++;
+            size /= 1024;
+        }
+        return $"{size:0.##} {sizes[order]}";
+    }
+
+    private string ConvertToHtml(string markdown)
+    {
+        if (string.IsNullOrWhiteSpace(markdown)) return string.Empty;
+        var pipeline = new MarkdownPipelineBuilder().UseAdvancedExtensions().DisableHtml().Build();
+        return Markdown.ToHtml(markdown, pipeline);
+    }
+
+    public class ChartData
+    {
+        public string ChartType { get; set; } = "None";
+        public string Title { get; set; } = "";
+        public XAxisData XAxis { get; set; } = new();
+        public List<SeriesData> Series { get; set; } = new();
+    }
+
+    public class XAxisData { public List<string> Labels { get; set; } = new(); }
+    public class SeriesData { public string Name { get; set; } = ""; public List<double> Values { get; set; } = new(); }
+
+    public async ValueTask DisposeAsync()
+    {
+        _dashboardUpdateSubscription?.Dispose();
+        _reportCreatedSubscription?.Dispose();
+        _reportStatusChangedSubscription?.Dispose();
+        _reportDeletedSubscription?.Dispose();
+        _allReportsDeletedSubscription?.Dispose();
+        await Task.CompletedTask;
+    }
+}

@@ -5,17 +5,37 @@ using Microsoft.Playwright;
 
 namespace backend.Services;
 
+/// <summary>
+/// PDF generation service using Playwright for high-quality rendering.
+/// Converts Markdown content with optional charts to professional PDF documents.
+/// </summary>
 public static class PdfGenerator
 {
+    private static readonly MarkdownPipeline MarkdownPipeline = new MarkdownPipelineBuilder()
+        .UseAdvancedExtensions()
+        .Build();
+
+    /// <summary>
+    /// Generates a PDF from markdown content with optional chart data.
+    /// </summary>
+    /// <param name="markdown">The markdown content to render</param>
+    /// <param name="chartJson">Optional JSON chart data for visualization</param>
+    /// <param name="logger">Optional logger for diagnostics</param>
+    /// <returns>PDF file as byte array</returns>
     public static async Task<byte[]> FromMarkdownAsync(
         string markdown,
-        string? chartJson
+        string? chartJson,
+        ILogger? logger = null
     )
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(markdown, nameof(markdown));
+        
+        logger?.LogDebug("Starting PDF generation. Markdown length: {Length}", markdown.Length);
+
         // --------------------------------------------------
         // 1. Markdown → HTML
         // --------------------------------------------------
-        var markdownHtml = Markdown.ToHtml(markdown);
+        var markdownHtml = Markdown.ToHtml(markdown, MarkdownPipeline);
 
         // --------------------------------------------------
         // 2. Validate chart JSON
@@ -28,10 +48,11 @@ public static class PdfGenerator
             {
                 using var _ = JsonDocument.Parse(chartJson);
                 hasValidChart = true;
+                logger?.LogDebug("Chart JSON validated successfully");
             }
-            catch (Exception ex)
+            catch (JsonException ex)
             {
-                Console.WriteLine($"Invalid chart JSON: {ex.Message}");
+                logger?.LogWarning("Invalid chart JSON provided: {Message}", ex.Message);
                 hasValidChart = false;
             }
         }
@@ -727,70 +748,134 @@ __CHART_SCRIPT__
             .Replace("__CHART_HTML__", chartHtml)
             .Replace("__CHART_SCRIPT__", chartScript);
             
-        Console.WriteLine("Chart JSON:");
-        Console.WriteLine(chartJson ?? "null");
+        logger?.LogDebug("HTML template prepared. Has chart: {HasChart}", hasValidChart);
         
         // --------------------------------------------------
-        // 7. Playwright render with optimizations
+        // 7. Playwright render with optimizations and retry
         // --------------------------------------------------
-        var browser = await PlaywrightHost.GetBrowserAsync();
-
-        await using var context = await browser.NewContextAsync();
-        var page = await context.NewPageAsync();
+        byte[]? pdf = null;
+        const int maxRetries = 2;
+        Exception? lastException = null;
         
-        // Enable console logging
-        page.Console += (_, msg) => Console.WriteLine($"Browser: {msg.Text}");
-        page.PageError += (_, error) => Console.WriteLine($"Page Error: {error}");
-
-        var tempFilePath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.html");
-
-        try
+        for (int attempt = 0; attempt <= maxRetries; attempt++)
         {
-            await File.WriteAllTextAsync(tempFilePath, html, Encoding.UTF8);
+            IBrowser? browser = null;
+            IPage? page = null;
+            IBrowserContext? context = null;
+            var tempFilePath = Path.Combine(Path.GetTempPath(), $"bhb-report-{Guid.NewGuid():N}.html");
 
-            await page.GotoAsync($"file://{tempFilePath}", new PageGotoOptions
+            try
             {
-                WaitUntil = WaitUntilState.NetworkIdle
-            });
-
-            if (hasValidChart)
-            {
-                try
+                logger?.LogDebug("PDF generation attempt {Attempt}/{MaxRetries}", attempt + 1, maxRetries + 1);
+                
+                browser = await PlaywrightHost.GetBrowserAsync();
+                
+                if (!browser.IsConnected)
                 {
-                    await page.WaitForFunctionAsync(
-                        "() => window.__chartRendered === true",
-                        new PageWaitForFunctionOptions { Timeout = 15000 }
-                    );
-                    Console.WriteLine("Chart rendered successfully");
-                    
-                    // Extra delay for chart painting
-                    await Task.Delay(1000);
+                    logger?.LogWarning("Browser not connected, resetting... (attempt {Attempt})", attempt + 1);
+                    await PlaywrightHost.ResetBrowserAsync();
+                    browser = await PlaywrightHost.GetBrowserAsync();
                 }
-                catch (TimeoutException)
+
+                context = await browser.NewContextAsync();
+                page = await context.NewPageAsync();
+                
+                // Enable console logging for debugging
+                if (logger != null)
                 {
-                    Console.WriteLine("Chart render timeout - proceeding anyway");
-                    await page.ScreenshotAsync(new PageScreenshotOptions 
-                    { 
-                        Path = Path.Combine(Path.GetTempPath(), "chart-debug.png") 
-                    });
+                    page.Console += (_, msg) => logger.LogDebug("Browser console: {Message}", msg.Text);
+                    page.PageError += (_, error) => logger.LogWarning("Browser page error: {Error}", error);
+                }
+
+                await File.WriteAllTextAsync(tempFilePath, html, Encoding.UTF8);
+
+                await page.GotoAsync($"file://{tempFilePath}", new PageGotoOptions
+                {
+                    WaitUntil = WaitUntilState.NetworkIdle,
+                    Timeout = 30000
+                });
+
+                if (hasValidChart)
+                {
+                    try
+                    {
+                        await page.WaitForFunctionAsync(
+                            "() => window.__chartRendered === true",
+                            new PageWaitForFunctionOptions { Timeout = 15000 }
+                        );
+                        logger?.LogDebug("Chart rendered successfully");
+                        
+                        // Extra delay for chart painting
+                        await Task.Delay(500);
+                    }
+                    catch (TimeoutException)
+                    {
+                        logger?.LogWarning("Chart render timeout - proceeding with PDF generation");
+                    }
+                }
+
+                pdf = await page.PdfAsync(new PagePdfOptions
+                {
+                    Format = "A4",
+                    PrintBackground = true,
+                    PreferCSSPageSize = false,
+                    DisplayHeaderFooter = false
+                });
+
+                logger?.LogInformation("PDF generated successfully. Size: {Size} bytes", pdf.Length);
+                
+                // Success - break out of retry loop
+                break;
+            }
+            catch (PlaywrightException ex) when (ex.Message.Contains("closed") || ex.Message.Contains("Target"))
+            {
+                lastException = ex;
+                logger?.LogWarning(ex, "Browser error on attempt {Attempt}", attempt + 1);
+                
+                // Reset browser for next attempt
+                await PlaywrightHost.ResetBrowserAsync();
+                
+                if (attempt == maxRetries)
+                {
+                    throw new InvalidOperationException(
+                        $"PDF generation failed after {maxRetries + 1} attempts", ex);
                 }
             }
-
-            var pdf = await page.PdfAsync(new PagePdfOptions
+            catch (Exception ex)
             {
-                Format = "A4",
-                PrintBackground = true,
-                PreferCSSPageSize = false,
-                DisplayHeaderFooter = false
-            });
+                lastException = ex;
+                logger?.LogError(ex, "Unexpected error during PDF generation on attempt {Attempt}", attempt + 1);
+                
+                if (attempt == maxRetries)
+                {
+                    throw new InvalidOperationException(
+                        $"PDF generation failed after {maxRetries + 1} attempts", ex);
+                }
+            }
+            finally
+            {
+                // Clean up resources in reverse order
+                if (page != null)
+                {
+                    try { await page.CloseAsync(); } catch { /* Ignore cleanup errors */ }
+                }
+                if (context != null)
+                {
+                    try { await context.CloseAsync(); } catch { /* Ignore cleanup errors */ }
+                }
+                if (File.Exists(tempFilePath))
+                {
+                    try { File.Delete(tempFilePath); } catch { /* Ignore cleanup errors */ }
+                }
+            }
+        }
 
-            return pdf;
-        }
-        finally
+        if (pdf == null)
         {
-            await page.CloseAsync();
-            if (File.Exists(tempFilePath))
-                File.Delete(tempFilePath);
+            throw new InvalidOperationException(
+                "PDF generation failed - no PDF was produced", lastException);
         }
+
+        return pdf;
     }
 }

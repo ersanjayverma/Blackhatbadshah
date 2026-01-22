@@ -67,19 +67,27 @@ public class LogPusherService : BackgroundService
         _logger.LogInformation("Hub URL: {Url}", hubUrl);
         _logger.LogInformation("========================================");
 
+        var consecutiveFailures = 0;
+        const int maxConsecutiveFailures = 10;
+
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                // Basic reachability check (avoid DNS down infinite errors)
-                if (!await IsHubHostReachableAsync(hubUrl, 3000, stoppingToken))
+                // Basic reachability check with exponential backoff
+                if (!await IsHubHostReachableAsync(hubUrl, 5000, stoppingToken))
                 {
-                    _logger.LogWarning("LiveLogHub host not reachable, retrying in 5s");
-                    await Task.Delay(5000, stoppingToken);
+                    consecutiveFailures++;
+                    var delay = Math.Min(5000 * consecutiveFailures, 60000); // Max 60s delay
+                    _logger.LogWarning(
+                        "LiveLogHub host not reachable (attempt {Attempt}), retrying in {Delay}ms",
+                        consecutiveFailures, delay);
+                    await Task.Delay(delay, stoppingToken);
                     continue;
                 }
 
                 await EnsureConnectedAsync(hubUrl, psk, apiKey, _workerId, stoppingToken);
+                consecutiveFailures = 0; // Reset on successful connection
 
                 // IMPORTANT:
                 // Do not run your own reconnect loop.
@@ -92,11 +100,26 @@ public class LogPusherService : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Fatal error in worker loop. Retrying in 5s...");
-                await Task.Delay(5000, stoppingToken);
+                consecutiveFailures++;
+                var delay = Math.Min(5000 * consecutiveFailures, 60000);
+                
+                if (consecutiveFailures >= maxConsecutiveFailures)
+                {
+                    _logger.LogError(ex, 
+                        "Too many consecutive failures ({Count}). Worker may need manual intervention.",
+                        consecutiveFailures);
+                }
+                else
+                {
+                    _logger.LogError(ex, "Error in worker loop (attempt {Attempt}). Retrying in {Delay}ms...",
+                        consecutiveFailures, delay);
+                }
+                
+                await Task.Delay(delay, stoppingToken);
             }
         }
     }
+
 
     private async Task EnsureConnectedAsync(string hubUrl, string psk, string apiKey, string workerId, CancellationToken stoppingToken)
     {

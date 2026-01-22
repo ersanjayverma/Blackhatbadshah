@@ -40,13 +40,14 @@ public sealed class SubscriptionController : ControllerBase
     // -------------------------------------------------
     // USER ID (KEYCLOAK CANONICAL)
     // -------------------------------------------------
-    private bool TryGetUserId(out string userId)
+    private bool TryGetUserId([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? userId)
     {
         // Keycloak user identifier (OIDC standard)
         userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
                      ?? User.FindFirstValue("sub");
         return !string.IsNullOrWhiteSpace(userId);
     }
+
 
     // -------------------------------------------------
     // PUBLIC

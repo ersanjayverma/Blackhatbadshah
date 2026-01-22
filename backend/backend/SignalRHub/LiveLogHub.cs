@@ -9,6 +9,10 @@ using System.Collections.Concurrent;
 
 namespace backend.Hubs;
 
+/// <summary>
+/// SignalR hub for real-time log streaming between workers and frontend clients.
+/// Handles worker registration, heartbeats, log pushing, and live streaming.
+/// </summary>
 public class LiveLogHub : Hub
 {
     private readonly ILiveLogBuffer _buffer;
@@ -19,15 +23,15 @@ public class LiveLogHub : Hub
     private readonly backend.Data.AppDbContext _db;
     private readonly ILogger<LiveLogHub> _logger;
 
+    // Thread-safe dictionaries for session tracking
     private static readonly ConcurrentDictionary<string, int> _chunkCounters = new();
     private static readonly ConcurrentDictionary<string, string> _sessionWorkerIds = new();
     private static readonly ConcurrentDictionary<string, int> _logCounters = new();
-
-    // Track which sessions are worker vs frontend
     private static readonly ConcurrentDictionary<string, bool> _isWorkerSession = new();
-
-    // frontend subscriptions: connectionId -> (workerId, logPath)
     private static readonly ConcurrentDictionary<string, (string workerId, string logPath)> _liveLogSubscriptions = new();
+    
+    // Rate limiting for error messages
+    private static readonly ConcurrentDictionary<string, DateTime> _lastErrorTime = new();
 
     // Common log level patterns
     private static readonly Regex LogLevelRegex = new(
@@ -182,58 +186,95 @@ public class LiveLogHub : Hub
     {
         if (!_sessionWorkerIds.TryGetValue(SessionId, out var workerId))
         {
-            await Clients.Caller.SendAsync("Error", "Session not authenticated");
+            await SendErrorWithRateLimit("Session not authenticated");
             return;
         }
 
-        var entry = ParseLogLine(logLine, SessionId);
-        entry.WorkerId = workerId;
+        if (string.IsNullOrWhiteSpace(logLine))
+            return;
 
-        _logCounters.AddOrUpdate(SessionId, 1, (_, v) => v + 1);
+        try
+        {
+            var entry = ParseLogLine(logLine, SessionId);
+            entry.WorkerId = workerId;
 
-        var (_, _, totalBytes) = _buffer.AppendLog(SessionId, logLine);
+            _logCounters.AddOrUpdate(SessionId, 1, (_, v) => v + 1);
 
-        await _hubNotification.NotifyLiveLogReceivedAsync(workerId, entry);
-        await Clients.Caller.SendAsync("BufferProgress", totalBytes, 10 * 1024);
+            var (_, _, totalBytes) = _buffer.AppendLog(SessionId, logLine);
+
+            await _hubNotification.NotifyLiveLogReceivedAsync(workerId, entry);
+            await Clients.Caller.SendAsync("BufferProgress", totalBytes, 10 * 1024);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error processing log line from worker {WorkerId}", workerId);
+        }
     }
 
     public async Task PushLogs(string[] logLines, string? model = null)
     {
         if (!_sessionWorkerIds.TryGetValue(SessionId, out var workerId))
         {
-            await Clients.Caller.SendAsync("Error", "Session not authenticated");
+            await SendErrorWithRateLimit("Session not authenticated");
             return;
         }
 
-        var entries = new List<LiveLogEntry>();
+        if (logLines == null || logLines.Length == 0)
+            return;
 
-        foreach (var line in logLines)
+        try
         {
-            if (string.IsNullOrWhiteSpace(line)) continue;
+            var entries = new List<LiveLogEntry>();
 
-            var entry = ParseLogLine(line, SessionId);
-            entry.WorkerId = workerId;
-            entries.Add(entry);
+            foreach (var line in logLines)
+            {
+                if (string.IsNullOrWhiteSpace(line)) continue;
 
-            _buffer.AppendLog(SessionId, line);
+                var entry = ParseLogLine(line, SessionId);
+                entry.WorkerId = workerId;
+                entries.Add(entry);
+
+                _buffer.AppendLog(SessionId, line);
+            }
+
+            _logCounters.AddOrUpdate(SessionId, entries.Count, (_, v) => v + entries.Count);
+
+            var totalBytes = _buffer.GetBufferSize(SessionId);
+            var chunkCount = _chunkCounters.TryGetValue(SessionId, out var count) ? count : 0;
+
+            var batch = new LiveLogBatch
+            {
+                SessionId = SessionId,
+                WorkerId = workerId,
+                Entries = entries,
+                TotalBufferBytes = totalBytes,
+                ChunkNumber = chunkCount
+            };
+
+            await _hubNotification.NotifyLiveLogBatchAsync(workerId, batch);
+            await Clients.Caller.SendAsync("BufferProgress", totalBytes, 10 * 1024);
         }
-
-        _logCounters.AddOrUpdate(SessionId, entries.Count, (_, v) => v + entries.Count);
-
-        var totalBytes = _buffer.GetBufferSize(SessionId);
-        var chunkCount = _chunkCounters.TryGetValue(SessionId, out var count) ? count : 0;
-
-        var batch = new LiveLogBatch
+        catch (Exception ex)
         {
-            SessionId = SessionId,
-            WorkerId = workerId,
-            Entries = entries,
-            TotalBufferBytes = totalBytes,
-            ChunkNumber = chunkCount
-        };
+            _logger.LogWarning(ex, "Error processing log batch from worker {WorkerId}", workerId);
+        }
+    }
 
-        await _hubNotification.NotifyLiveLogBatchAsync(workerId, batch);
-        await Clients.Caller.SendAsync("BufferProgress", totalBytes, 10 * 1024);
+    /// <summary>
+    /// Sends error message with rate limiting to prevent spam.
+    /// </summary>
+    private async Task SendErrorWithRateLimit(string errorMessage)
+    {
+        var now = DateTime.UtcNow;
+        var key = $"{SessionId}:{errorMessage}";
+        
+        if (_lastErrorTime.TryGetValue(key, out var lastTime) && (now - lastTime).TotalSeconds < 5)
+        {
+            return; // Rate limit: max 1 error message per 5 seconds per type
+        }
+        
+        _lastErrorTime[key] = now;
+        await Clients.Caller.SendAsync("Error", errorMessage);
     }
 
     public async Task PushMetrics(WorkerMetrics metrics)

@@ -135,10 +135,11 @@
                                 <i class="bi bi-bar-chart me-2"></i>Visualization
                             </h5>
                         </div>
-                        <div class="card-body">
-                            <div class="chart-container" style="height: 400px;">
-                                <canvas id="reportChart"></canvas>
-                            </div>
+                       <div class="card-body">
+                                <div class="chart-container" style="height: 400px;">
+                                    <!-- Chart will be rendered here -->
+                                    <canvas id="reportChart"></canvas>
+                                </div>
                         </div>
                     </div>
                 }
@@ -362,17 +363,63 @@
 
     private async Task RenderChart()
     {
-        if (_report?.ChartData == null) return;
+        var options = new System.Text.Json.JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                };
+        if(_report?.ChartData == null) return;
+        var _chartData = System.Text.Json.JsonSerializer.Deserialize<ChartData>(_report.ChartData, options);
+        if (_chartData == null) return;
 
-        try
+        const int maxRetries = 3;
+        for (int attempt = 1; attempt <= maxRetries; attempt++)
         {
-            await JS.InvokeVoidAsync("renderChart", "reportChart", _report.ChartData);
+            try
+            {
+                Console.WriteLine($"Chart render attempt {attempt}/{maxRetries}");
+
+                // Check if Chart.js is loaded
+                var chartJsLoaded = await JS.InvokeAsync<bool>("eval", "typeof Chart !== 'undefined'");
+                if (!chartJsLoaded)
+                {
+                    Console.WriteLine("Chart.js library not loaded yet");
+                    if (attempt < maxRetries)
+                    {
+                        await Task.Delay(200);
+                        continue;
+                    }
+                    return;
+                }
+
+                // Check if canvas element exists
+                var canvasExists = await JS.InvokeAsync<bool>("eval", "document.getElementById('reportChart') !== null");
+                if (!canvasExists)
+                {
+                    Console.WriteLine("Canvas element not found yet");
+                    if (attempt < maxRetries)
+                    {
+                        await Task.Delay(200);
+                        continue;
+                    }
+                    return;
+                }
+
+                await JS.InvokeVoidAsync("renderChart", _chartData);
+                Console.WriteLine("Chart render completed successfully");
+                return; // Success, exit the loop
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to render chart (attempt {attempt}): {ex.Message}");
+                if (attempt < maxRetries)
+                {
+                    await Task.Delay(300);
+                }
+            }
         }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Chart render failed: {ex.Message}");
-        }
+        Console.WriteLine("All chart render attempts failed");
     }
+
 
     private string GetModelDisplayName(string? model)
     {
@@ -440,5 +487,22 @@
         html = System.Text.RegularExpressions.Regex.Replace(html, @"<p>\s*</p>", "");
 
         return html;
+    }
+     public class ChartData
+    {
+        public string ChartType { get; set; } = "None";
+        public string Title { get; set; } = "";
+        public XAxisData XAxis { get; set; } = new();
+        public List<SeriesData> Series { get; set; } = new();
+    }
+     public class XAxisData
+    {
+        public List<string> Labels { get; set; } = new();
+    }
+
+    public class SeriesData
+    {
+        public string Name { get; set; } = "";
+        public List<double> Values { get; set; } = new();
     }
 }

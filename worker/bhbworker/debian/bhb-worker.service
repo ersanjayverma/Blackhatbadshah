@@ -5,7 +5,7 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=notify
+Type=simple
 ExecStart=/opt/bhb-worker/bhb-worker
 WorkingDirectory=/opt/bhb-worker
 Restart=always
@@ -20,6 +20,13 @@ Group=root
 # Environment
 Environment=DOTNET_ENVIRONMENT=Production
 Environment=HOME=/root
+
+# Allow child processes to be properly managed
+KillMode=mixed
+
+# Increase timeout for startup
+TimeoutStartSec=30
+TimeoutStopSec=30
 
 [Install]
 WantedBy=multi-user.target

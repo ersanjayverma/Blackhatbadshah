@@ -22,6 +22,10 @@ public class LogPusherService : BackgroundService
 
     private string _workerId = string.Empty;
     private const string WorkerIdFileName = ".bhb-worker-id";
+    
+    // Track registration state to prevent duplicates
+    private bool _isRegistered = false;
+    private string? _currentConnectionId = null;
 
     // Metrics tracking
     private DateTime _startTime;
@@ -187,10 +191,24 @@ public class LogPusherService : BackgroundService
             {
                 // If server returns canonical worker id, persist it
                 TryAdoptWorkerIdFromServer(data);
-                _logger.LogInformation("Connected to hub. WorkerId: {WorkerId}", _workerId);
+                
+                // Track this connection
+                var newConnectionId = conn.ConnectionId;
+                _logger.LogInformation("Connected to hub. WorkerId: {WorkerId}, ConnectionId: {ConnectionId}", _workerId, newConnectionId);
 
-                // Register + Push metrics immediately
-                await RegisterWorkerAsync();
+                // Only register if this is a new connection
+                if (_currentConnectionId != newConnectionId)
+                {
+                    _currentConnectionId = newConnectionId;
+                    _isRegistered = false;
+                }
+                
+                if (!_isRegistered)
+                {
+                    await RegisterWorkerAsync();
+                    _isRegistered = true;
+                }
+                
                 await PushMetrics();
                 await PingOnline();
 
@@ -407,12 +425,25 @@ public class LogPusherService : BackgroundService
 
         conn.Reconnected += async connectionId =>
         {
-            _logger.LogInformation("Reconnected to hub");
+            _logger.LogInformation("Reconnected to hub. ConnectionId: {ConnectionId}", connectionId);
 
             try
             {
-                // MUST re-register & restart heartbeats OR worker stays offline
-                await RegisterWorkerAsync();
+                // Check if this is a new connection (server sends Connected event separately)
+                if (_currentConnectionId != connectionId)
+                {
+                    _currentConnectionId = connectionId;
+                    _isRegistered = false;
+                }
+                
+                // Only re-register if not already registered on this connection
+                // The server's Connected event handler may have already done this
+                if (!_isRegistered)
+                {
+                    await RegisterWorkerAsync();
+                    _isRegistered = true;
+                }
+                
                 await PushMetrics();
                 await PingOnline();
                 StartMetricsAndMonitor(stoppingToken);
@@ -425,7 +456,9 @@ public class LogPusherService : BackgroundService
 
         conn.Closed += async ex =>
         {
-            _logger.LogWarning("Hub connection closed");
+            _logger.LogWarning("Hub connection closed. Exception: {Error}", ex?.Message ?? "none");
+            _isRegistered = false;
+            _currentConnectionId = null;
             await StopMetricsAndMonitorAsync();
         };
     }

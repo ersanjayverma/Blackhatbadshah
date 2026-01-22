@@ -94,6 +94,30 @@ public class DataHub : Hub
             .SendAsync("KillProcess", request.Pid, request.Force);
     }
 
+    // Start live log streaming from a worker
+    public async Task StartLiveLog(string workerId, string logPath)
+    {
+        if (string.IsNullOrEmpty(workerId) || string.IsNullOrEmpty(logPath)) return;
+
+        // Forward to the worker group (worker_{workerId}) in LiveLogHub
+        await _liveLogHub.Clients.Group($"worker_{workerId}").SendAsync("StartLiveLog", logPath);
+
+        // Confirm to caller
+        await Clients.Caller.SendAsync("LiveStreamStarted", new { workerId, logPath });
+    }
+
+    // Stop live log streaming from a worker
+    public async Task StopLiveLog(string workerId, string logPath)
+    {
+        if (string.IsNullOrEmpty(workerId) || string.IsNullOrEmpty(logPath)) return;
+
+        // Forward to the worker group (worker_{workerId}) in LiveLogHub
+        await _liveLogHub.Clients.Group($"worker_{workerId}").SendAsync("StopLiveLog", logPath);
+
+        // Confirm to caller
+        await Clients.Caller.SendAsync("LiveStreamStopped", new { workerId, logPath });
+    }
+
     public override async Task OnConnectedAsync()
     {
         // Automatically join user group on connection

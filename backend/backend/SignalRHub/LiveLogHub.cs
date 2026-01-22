@@ -362,6 +362,42 @@ public class LiveLogHub : Hub
         }
     }
 
+    /// <summary>
+    /// Called by worker to stream a single live log line.
+    /// This is the method the worker's LogPusherService calls.
+    /// </summary>
+    public async Task LiveLogLine(string workerId, string logPath, string line, DateTime timestamp)
+    {
+        // Validate the caller is authenticated as a worker
+        if (!_sessionWorkerIds.TryGetValue(SessionId, out var sessionWorkerId))
+        {
+            await Clients.Caller.SendAsync("Error", "Session not authenticated");
+            return;
+        }
+
+        // Use the session's worker ID (ignore passed workerId for security)
+        var update = new LiveLogUpdateDto
+        {
+            WorkerId = sessionWorkerId,
+            LogPath = logPath,
+            Line = line,
+            Timestamp = timestamp
+        };
+
+        // Send to all frontend clients subscribed to this worker+logPath
+        foreach (var kvp in _liveLogSubscriptions)
+        {
+            if (kvp.Value.workerId == sessionWorkerId &&
+                string.Equals(kvp.Value.logPath, logPath, StringComparison.OrdinalIgnoreCase))
+            {
+                await Clients.Client(kvp.Key).SendAsync("LiveLogUpdate", update);
+            }
+        }
+
+        // Also broadcast to the livelog group for dashboard listeners
+        await Clients.Group(LiveLogGroup(sessionWorkerId)).SendAsync("LiveLogUpdate", update);
+    }
+
     // ============================================================
     //  CONNECT / DISCONNECT
     // ============================================================

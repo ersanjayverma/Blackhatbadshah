@@ -36,6 +36,7 @@ public class LogPusherService : BackgroundService
     private Task? _systemMonitorTask;
 
     private SystemMonitorService? _systemMonitorService;
+    private LinuxSystemService? _linuxSystemService;
 
     public LogPusherService(IConfiguration config, ILogger<LogPusherService> logger)
     {
@@ -58,6 +59,10 @@ public class LogPusherService : BackgroundService
 
         _systemMonitorService = new SystemMonitorService(
             LoggerFactory.Create(b => b.AddConsole()).CreateLogger<SystemMonitorService>(),
+            _workerId);
+
+        _linuxSystemService = new LinuxSystemService(
+            LoggerFactory.Create(b => b.AddConsole()).CreateLogger<LinuxSystemService>(),
             _workerId);
 
         _logger.LogInformation("========================================");
@@ -234,6 +239,158 @@ public class LogPusherService : BackgroundService
             _logger.LogInformation("[LiveLog] Stop: {Path}", logPath);
             StopLiveLogStreaming(logPath);
         });
+
+        // ============================================================
+        // LINUX SYSTEM MANAGEMENT HANDLERS
+        // ============================================================
+
+        conn.On<string>("GetServices", async (requestId) =>
+        {
+            _logger.LogInformation("[Linux] GetServices request: {RequestId}", requestId);
+            if (_linuxSystemService != null)
+            {
+                var response = await _linuxSystemService.GetServicesAsync();
+                await conn.InvokeAsync("ServiceListResponse", requestId, response);
+            }
+        });
+
+        conn.On<string, string, string>("ControlService", async (requestId, serviceName, action) =>
+        {
+            _logger.LogInformation("[Linux] ControlService: {Service} {Action}", serviceName, action);
+            if (_linuxSystemService != null)
+            {
+                var request = new ServiceActionRequest
+                {
+                    WorkerId = _workerId,
+                    ServiceName = serviceName,
+                    Action = action
+                };
+                var response = await _linuxSystemService.ControlServiceAsync(request);
+                await conn.InvokeAsync("ServiceActionResponse", requestId, response);
+            }
+        });
+
+        conn.On<string, bool>("GetContainers", async (requestId, includeAll) =>
+        {
+            _logger.LogInformation("[Linux] GetContainers request: {RequestId}", requestId);
+            if (_linuxSystemService != null)
+            {
+                var response = await _linuxSystemService.GetContainersAsync(includeAll);
+                await conn.InvokeAsync("ContainerListResponse", requestId, response);
+            }
+        });
+
+        conn.On<string, string, string, int?>("ControlContainer", async (requestId, containerId, action, logLines) =>
+        {
+            _logger.LogInformation("[Linux] ControlContainer: {Container} {Action}", containerId, action);
+            if (_linuxSystemService != null)
+            {
+                var request = new ContainerActionRequest
+                {
+                    WorkerId = _workerId,
+                    ContainerId = containerId,
+                    Action = action,
+                    LogLines = logLines
+                };
+                var response = await _linuxSystemService.ControlContainerAsync(request);
+                await conn.InvokeAsync("ContainerActionResponse", requestId, response);
+            }
+        });
+
+        conn.On<string>("GetUsers", async (requestId) =>
+        {
+            _logger.LogInformation("[Linux] GetUsers request: {RequestId}", requestId);
+            if (_linuxSystemService != null)
+            {
+                var response = await _linuxSystemService.GetUsersAsync();
+                await conn.InvokeAsync("UserListResponse", requestId, response);
+            }
+        });
+
+        conn.On<string>("GetFirewallStatus", async (requestId) =>
+        {
+            _logger.LogInformation("[Linux] GetFirewallStatus request: {RequestId}", requestId);
+            if (_linuxSystemService != null)
+            {
+                var response = await _linuxSystemService.GetFirewallStatusAsync();
+                await conn.InvokeAsync("FirewallStatusResponse", requestId, response);
+            }
+        });
+
+        conn.On<string>("GetSshSessions", async (requestId) =>
+        {
+            _logger.LogInformation("[Linux] GetSshSessions request: {RequestId}", requestId);
+            if (_linuxSystemService != null)
+            {
+                var response = await _linuxSystemService.GetSshSessionsAsync();
+                await conn.InvokeAsync("SshSessionListResponse", requestId, response);
+            }
+        });
+
+        conn.On<string>("GetSecurityAudit", async (requestId) =>
+        {
+            _logger.LogInformation("[Linux] GetSecurityAudit request: {RequestId}", requestId);
+            if (_linuxSystemService != null)
+            {
+                var response = await _linuxSystemService.GetSecurityAuditAsync();
+                await conn.InvokeAsync("SecurityAuditResponse", requestId, response);
+            }
+        });
+
+        conn.On<string>("GetCronJobs", async (requestId) =>
+        {
+            _logger.LogInformation("[Linux] GetCronJobs request: {RequestId}", requestId);
+            if (_linuxSystemService != null)
+            {
+                var response = await _linuxSystemService.GetCronJobsAsync();
+                await conn.InvokeAsync("CronJobListResponse", requestId, response);
+            }
+        });
+
+        conn.On<string, string, bool>("ListDirectory", async (requestId, path, includeHidden) =>
+        {
+            _logger.LogInformation("[Linux] ListDirectory: {Path}", path);
+            if (_linuxSystemService != null)
+            {
+                var request = new DirectoryListRequest
+                {
+                    WorkerId = _workerId,
+                    Path = path,
+                    IncludeHidden = includeHidden
+                };
+                var response = await _linuxSystemService.ListDirectoryAsync(request);
+                await conn.InvokeAsync("DirectoryListResponse", requestId, response);
+            }
+        });
+
+        conn.On<string, string, int?, bool>("ReadFile", async (requestId, filePath, maxLines, fromEnd) =>
+        {
+            _logger.LogInformation("[Linux] ReadFile: {Path}", filePath);
+            if (_linuxSystemService != null)
+            {
+                var request = new FileContentRequest
+                {
+                    WorkerId = _workerId,
+                    FilePath = filePath,
+                    MaxLines = maxLines,
+                    FromEnd = fromEnd
+                };
+                var response = await _linuxSystemService.ReadFileAsync(request);
+                await conn.InvokeAsync("FileContentResponse", requestId, response);
+            }
+        });
+
+        conn.On<string, CommandExecutionRequest>("ExecuteCommand", async (requestId, request) =>
+        {
+            _logger.LogInformation("[Linux] ExecuteCommand: {Command}", request.Command);
+            if (_linuxSystemService != null)
+            {
+                var response = await _linuxSystemService.ExecuteRemoteCommandAsync(request);
+                await conn.InvokeAsync("CommandExecutionResponse", requestId, response);
+            }
+        });
+
+        // ============================================================
 
         conn.On<object>("Registered", data =>
         {

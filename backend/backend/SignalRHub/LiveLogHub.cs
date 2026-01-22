@@ -417,6 +417,107 @@ public class LiveLogHub : Hub
     }
 
     // ============================================================
+    //  LINUX SYSTEM MANAGEMENT RESPONSES (Worker → Hub → API)
+    // ============================================================
+
+    /// <summary>
+    /// Called by worker to return response for Linux system management requests.
+    /// Routes the response back to the pending API request.
+    /// </summary>
+    public Task LinuxSystemResponse(string requestId, object response)
+    {
+        if (!_sessionWorkerIds.TryGetValue(SessionId, out _))
+        {
+            _logger.LogWarning("LinuxSystemResponse: Unauthenticated session {SessionId}", SessionId);
+            return Task.CompletedTask;
+        }
+
+        try
+        {
+            Controllers.LinuxSystemController.CompleteRequest(requestId, response);
+            _logger.LogDebug("LinuxSystemResponse: Completed request {RequestId}", requestId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "LinuxSystemResponse: Error completing request {RequestId}", requestId);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Typed response for service list
+    /// </summary>
+    public Task ServiceListResponse(string requestId, ServiceListResponse response)
+        => LinuxSystemResponse(requestId, response);
+
+    /// <summary>
+    /// Typed response for service action
+    /// </summary>
+    public Task ServiceActionResponse(string requestId, ServiceActionResponse response)
+        => LinuxSystemResponse(requestId, response);
+
+    /// <summary>
+    /// Typed response for container list
+    /// </summary>
+    public Task ContainerListResponse(string requestId, ContainerListResponse response)
+        => LinuxSystemResponse(requestId, response);
+
+    /// <summary>
+    /// Typed response for container action
+    /// </summary>
+    public Task ContainerActionResponse(string requestId, ContainerActionResponse response)
+        => LinuxSystemResponse(requestId, response);
+
+    /// <summary>
+    /// Typed response for user list
+    /// </summary>
+    public Task UserListResponse(string requestId, UserListResponse response)
+        => LinuxSystemResponse(requestId, response);
+
+    /// <summary>
+    /// Typed response for firewall status
+    /// </summary>
+    public Task FirewallStatusResponse(string requestId, FirewallStatusResponse response)
+        => LinuxSystemResponse(requestId, response);
+
+    /// <summary>
+    /// Typed response for SSH sessions
+    /// </summary>
+    public Task SshSessionListResponse(string requestId, SshSessionListResponse response)
+        => LinuxSystemResponse(requestId, response);
+
+    /// <summary>
+    /// Typed response for security audit
+    /// </summary>
+    public Task SecurityAuditResponse(string requestId, SecurityAuditInfo response)
+        => LinuxSystemResponse(requestId, response);
+
+    /// <summary>
+    /// Typed response for cron jobs
+    /// </summary>
+    public Task CronJobListResponse(string requestId, CronJobListResponse response)
+        => LinuxSystemResponse(requestId, response);
+
+    /// <summary>
+    /// Typed response for directory listing
+    /// </summary>
+    public Task DirectoryListResponse(string requestId, DirectoryListResponse response)
+        => LinuxSystemResponse(requestId, response);
+
+    /// <summary>
+    /// Typed response for file content
+    /// </summary>
+    public Task FileContentResponse(string requestId, FileContentResponse response)
+        => LinuxSystemResponse(requestId, response);
+
+    /// <summary>
+    /// Typed response for command execution
+    /// </summary>
+    public Task CommandExecutionResponse(string requestId, CommandExecutionResponse response)
+        => LinuxSystemResponse(requestId, response);
+
+    // ============================================================
     //  CONNECT / DISCONNECT
     // ============================================================
 

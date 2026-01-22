@@ -8,6 +8,7 @@ using backend.Data;
 using backend.Services;
 using backend.Handlers;
 using backend.Configuration;
+using backend.Middleware;
 using backend.Application.Common.Interfaces;
 using backend.Application.Logs.Commands;
 using backend.Application.Logs.Queries;
@@ -136,6 +137,7 @@ builder.Services.AddSingleton<ILiveLogBuffer, LiveLogBuffer>();
 builder.Services.AddSingleton<ILiveLogAnalysisQueue, LiveLogAnalysisQueue>();
 builder.Services.AddSingleton<IWorkerRegistry, WorkerRegistry>();
 builder.Services.AddHostedService<LiveLogAnalysisBackgroundWorker>();
+builder.Services.AddHostedService<WorkerCleanupBackgroundService>();
 builder.Services.AddHttpContextAccessor();
 
 // Subscription & Payment Services
@@ -184,6 +186,10 @@ using (var scope = app.Services.CreateScope())
     await DbInitializer.InitializeAsync(dbContext, plansConfig);
 }
 app.UseRouting();
+
+// Global exception handling - must be early in pipeline
+app.UseGlobalExceptionHandler();
+
 app.UseCors("AllowFrontend");
 app.Use(async (context, next) =>
 {

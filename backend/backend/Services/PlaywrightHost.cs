@@ -7,6 +7,7 @@ namespace backend.Services
     /// - Launches Chromium once
     /// - Reused across requests
     /// - Container-safe
+    /// - Auto-reconnects on failure
     /// </summary>
     public static class PlaywrightHost
     {
@@ -16,16 +17,28 @@ namespace backend.Services
 
         public static async Task<IBrowser> GetBrowserAsync()
         {
-            if (_browser != null)
+            // Check if browser is still connected
+            if (_browser != null && _browser.IsConnected)
                 return _browser;
 
             await _lock.WaitAsync();
             try
             {
-                if (_browser != null)
+                // Double-check after acquiring lock
+                if (_browser != null && _browser.IsConnected)
                     return _browser;
 
-                _playwright = await Playwright.CreateAsync();
+                // Clean up stale browser if exists
+                if (_browser != null)
+                {
+                    try { await _browser.CloseAsync(); } catch { }
+                    _browser = null;
+                }
+
+                if (_playwright == null)
+                {
+                    _playwright = await Playwright.CreateAsync();
+                }
 
                 _browser = await _playwright.Chromium.LaunchAsync(
                     new BrowserTypeLaunchOptions
@@ -45,6 +58,26 @@ namespace backend.Services
                     });
 
                 return _browser;
+            }
+            finally
+            {
+                _lock.Release();
+            }
+        }
+
+        /// <summary>
+        /// Force reset the browser (useful after errors)
+        /// </summary>
+        public static async Task ResetBrowserAsync()
+        {
+            await _lock.WaitAsync();
+            try
+            {
+                if (_browser != null)
+                {
+                    try { await _browser.CloseAsync(); } catch { }
+                    _browser = null;
+                }
             }
             finally
             {

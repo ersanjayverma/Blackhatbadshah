@@ -49,4 +49,9 @@ public interface IWorkerRegistry
     /// </summary>
     /// <returns>Number of workers removed</returns>
     int RemoveStaleWorkers(string? apiUrlFilter = null);
+
+    /// <summary>
+    /// Get summary statistics about registered workers
+    /// </summary>
+    WorkerSummary GetSummary();
 }

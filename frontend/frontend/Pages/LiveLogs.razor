@@ -528,6 +528,7 @@
 
     private IDisposable? _logReceivedSub;
     private IDisposable? _logBatchSub;
+    private IDisposable? _logUpdateSub;
     private IDisposable? _sessionConnectedSub;
     private IDisposable? _sessionDisconnectedSub;
     private IDisposable? _chunkQueuedSub;
@@ -561,11 +562,8 @@
             var response = await WorkerApi.GetWorkersAsync();
             _availableWorkers = response.Workers;
 
-            // If already subscribed, refresh paths for dropdown
             if (_isSubscribed)
-            {
                 LoadSelectedWorkerPaths();
-            }
         }
         catch (Exception ex)
         {
@@ -607,7 +605,6 @@
         var selected = _availableWorkers.FirstOrDefault(w => w.WorkerId == _subscribedWorkerId);
         _selectedWorkerLogPaths = selected?.AvailableLogPaths?.ToList() ?? new List<string>();
 
-        // If current selected log path no longer exists, clear it
         if (!string.IsNullOrWhiteSpace(_selectedLogPath) && !_selectedWorkerLogPaths.Contains(_selectedLogPath))
             _selectedLogPath = string.Empty;
     }
@@ -621,14 +618,15 @@
         {
             if (_isSubscribed && !string.IsNullOrEmpty(_subscribedWorkerId))
             {
-                // stop stream before switching worker
                 await SafeStopStream();
                 await HubService.Connection.SendAsync("UnsubscribeFromWorker", _subscribedWorkerId);
             }
 
             await HubService.Connection.SendAsync("SubscribeToWorker", _workerIdInput.Trim());
             _subscribedWorkerId = _workerIdInput.Trim();
+
             _isSubscribed = true;
+            _isConnected = true; // UI fix
             _isStreaming = false;
 
             await LocalStorage.SetItemAsync(WorkerIdStorageKey, _subscribedWorkerId);
@@ -687,8 +685,10 @@
 
             await HubService.StartAsync();
 
+            // Old pipeline (keep it, no harm)
             _logReceivedSub = HubService.On<LiveLogEntry>("LiveLogReceived", async (entry) =>
             {
+                _isConnected = true;
                 AddLog(entry);
                 await InvokeAsync(StateHasChanged);
                 if (_autoScroll)
@@ -697,6 +697,7 @@
 
             _logBatchSub = HubService.On<LiveLogBatch>("LiveLogBatch", async (batch) =>
             {
+                _isConnected = true;
                 _sessionId = batch.SessionId;
 
                 foreach (var entry in batch.Entries)
@@ -707,14 +708,61 @@
                     await ScrollToBottom();
             });
 
+            // ✅ FIX: LiveLogUpdate is what backend is actually broadcasting
+            _logUpdateSub = HubService.On<object>("LiveLogUpdate", async (update) =>
+            {
+                try
+                {
+                    _isConnected = true;
+
+                    var t = update?.GetType();
+                    var workerId = t?.GetProperty("WorkerId")?.GetValue(update)?.ToString();
+                    var logPath = t?.GetProperty("LogPath")?.GetValue(update)?.ToString();
+                    var line = t?.GetProperty("Line")?.GetValue(update)?.ToString();
+
+                    if (string.IsNullOrWhiteSpace(line))
+                        return;
+
+                    // accept only currently subscribed worker
+                    if (!string.IsNullOrWhiteSpace(workerId) &&
+                        !string.Equals(workerId, _subscribedWorkerId, StringComparison.OrdinalIgnoreCase))
+                        return;
+
+                    // accept only selected log path
+                    if (!string.IsNullOrWhiteSpace(_selectedLogPath) &&
+                        !string.IsNullOrWhiteSpace(logPath) &&
+                        !string.Equals(logPath, _selectedLogPath, StringComparison.OrdinalIgnoreCase))
+                        return;
+
+                    var entry = new LiveLogEntry
+                    {
+                        Id = Guid.NewGuid().ToString("N"),
+                        WorkerId = workerId ?? _subscribedWorkerId,
+                        SessionId = _sessionId,
+                        RawLine = line,
+                        Message = line,
+                        Source = "LiveLog",
+                        Level = "INFO",
+                        Timestamp = DateTime.UtcNow
+                    };
+
+                    AddLog(entry);
+
+                    await InvokeAsync(StateHasChanged);
+                    if (_autoScroll)
+                        await ScrollToBottom();
+                }
+                catch
+                {
+                    // ignore parsing issues
+                }
+            });
+
             _sessionConnectedSub = HubService.On<object>("LiveLogSessionConnected", async (data) =>
             {
                 _isConnected = true;
-
-                // refresh list to get log paths
                 await RefreshWorkers();
                 LoadSelectedWorkerPaths();
-
                 await InvokeAsync(StateHasChanged);
                 Toast.ShowSuccess("Worker connected!");
             });
@@ -735,7 +783,14 @@
 
             _subscribedToWorkerSub = HubService.On<string>("SubscribedToWorker", async (workerId) =>
             {
-                Console.WriteLine($"Confirmed subscription to worker: {workerId}");
+                if (!string.IsNullOrWhiteSpace(_subscribedWorkerId) &&
+                    workerId.Equals(_subscribedWorkerId, StringComparison.OrdinalIgnoreCase))
+                {
+                    _isConnected = true;
+                    await RefreshWorkers();
+                    LoadSelectedWorkerPaths();
+                }
+
                 await InvokeAsync(StateHasChanged);
             });
 
@@ -780,13 +835,10 @@
 
         try
         {
-            // stop previous
             await SafeStopStream();
 
-            // save selection
             await LocalStorage.SetItemAsync(LogPathStorageKey, _selectedLogPath);
 
-            // StartLiveLog should be implemented on HUB as: StartLiveLog(workerId, logPath)
             await HubService.Connection.SendAsync("StartLiveLog", _subscribedWorkerId, _selectedLogPath);
 
             _isStreaming = true;
@@ -842,7 +894,7 @@
     {
         _stats.TotalLogs++;
 
-        switch (entry.Level.ToUpperInvariant())
+        switch ((entry.Level ?? "INFO").ToUpperInvariant())
         {
             case "ERROR":
             case "FATAL":
@@ -961,7 +1013,7 @@
 
     private string GetRowClass(string level)
     {
-        return level.ToUpperInvariant() switch
+        return (level ?? "INFO").ToUpperInvariant() switch
         {
             "ERROR" or "FATAL" or "CRITICAL" or "ALERT" or "EMERG" => "log-row-error",
             "WARN" or "WARNING" => "log-row-warn",
@@ -973,7 +1025,7 @@
 
     private string GetLevelBadgeClass(string level)
     {
-        return level.ToUpperInvariant() switch
+        return (level ?? "INFO").ToUpperInvariant() switch
         {
             "ERROR" or "FATAL" or "CRITICAL" or "ALERT" or "EMERG" => "bg-danger",
             "WARN" or "WARNING" => "bg-warning text-dark",
@@ -987,6 +1039,7 @@
     {
         _logReceivedSub?.Dispose();
         _logBatchSub?.Dispose();
+        _logUpdateSub?.Dispose();
         _sessionConnectedSub?.Dispose();
         _sessionDisconnectedSub?.Dispose();
         _chunkQueuedSub?.Dispose();

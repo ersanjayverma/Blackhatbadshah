@@ -168,6 +168,8 @@ public class LogPusherService : BackgroundService
                 TimeSpan.FromSeconds(10),
                 TimeSpan.FromSeconds(30)
             })
+            .WithKeepAliveInterval(TimeSpan.FromSeconds(15))
+            .WithServerTimeout(TimeSpan.FromSeconds(60))
             .Build();
 
         WireHubHandlers(_connection, stoppingToken);

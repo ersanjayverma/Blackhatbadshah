@@ -1,0 +1,69 @@
+# BHB Worker Passwordless Sudo Configuration
+# Installed by bhb-worker package
+# This allows the bhb-worker service to manage system services, containers, and logs
+
+# Disable TTY requirement for sudo commands from service
+Defaults!/usr/bin/systemctl !requiretty
+Defaults!/usr/bin/journalctl !requiretty
+Defaults!/usr/bin/docker !requiretty
+
+# Allow systemctl commands (service management)
+root ALL=(ALL) NOPASSWD: /usr/bin/systemctl start *
+root ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop *
+root ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart *
+root ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload *
+root ALL=(ALL) NOPASSWD: /usr/bin/systemctl status *
+root ALL=(ALL) NOPASSWD: /usr/bin/systemctl enable *
+root ALL=(ALL) NOPASSWD: /usr/bin/systemctl disable *
+root ALL=(ALL) NOPASSWD: /usr/bin/systemctl is-enabled *
+root ALL=(ALL) NOPASSWD: /usr/bin/systemctl list-units *
+root ALL=(ALL) NOPASSWD: /usr/bin/systemctl daemon-reload
+
+# Allow journalctl for log viewing
+root ALL=(ALL) NOPASSWD: /usr/bin/journalctl *
+
+# Allow reading system logs
+root ALL=(ALL) NOPASSWD: /usr/bin/cat /var/log/*
+root ALL=(ALL) NOPASSWD: /usr/bin/cat /etc/crontab
+root ALL=(ALL) NOPASSWD: /usr/bin/cat /etc/passwd
+root ALL=(ALL) NOPASSWD: /usr/bin/tail *
+root ALL=(ALL) NOPASSWD: /usr/bin/head *
+root ALL=(ALL) NOPASSWD: /usr/bin/grep *
+
+# Allow crontab management
+root ALL=(ALL) NOPASSWD: /usr/bin/crontab *
+
+# Allow UFW firewall commands
+root ALL=(ALL) NOPASSWD: /usr/sbin/ufw *
+
+# Allow iptables read-only
+root ALL=(ALL) NOPASSWD: /usr/sbin/iptables -L *
+root ALL=(ALL) NOPASSWD: /usr/sbin/iptables -S *
+root ALL=(ALL) NOPASSWD: /usr/sbin/iptables -n *
+
+# Allow process management
+root ALL=(ALL) NOPASSWD: /usr/bin/kill *
+root ALL=(ALL) NOPASSWD: /bin/kill *
+
+# Allow user/session monitoring
+root ALL=(ALL) NOPASSWD: /usr/bin/getent *
+root ALL=(ALL) NOPASSWD: /usr/bin/who
+root ALL=(ALL) NOPASSWD: /usr/bin/w
+root ALL=(ALL) NOPASSWD: /usr/bin/last *
+root ALL=(ALL) NOPASSWD: /usr/bin/lastlog
+
+# Docker commands
+root ALL=(ALL) NOPASSWD: /usr/bin/docker *
+
+# Network diagnostics
+root ALL=(ALL) NOPASSWD: /usr/bin/ss *
+root ALL=(ALL) NOPASSWD: /usr/bin/netstat *
+root ALL=(ALL) NOPASSWD: /usr/sbin/ss *
+root ALL=(ALL) NOPASSWD: /usr/sbin/netstat *
+
+# Disk and system info
+root ALL=(ALL) NOPASSWD: /usr/bin/df *
+root ALL=(ALL) NOPASSWD: /usr/bin/du *
+root ALL=(ALL) NOPASSWD: /usr/bin/free *
+root ALL=(ALL) NOPASSWD: /usr/bin/uptime
+root ALL=(ALL) NOPASSWD: /usr/bin/hostname *

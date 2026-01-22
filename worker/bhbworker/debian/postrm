@@ -4,8 +4,15 @@ set -e
 # Reload systemd to forget the unit file
 systemctl daemon-reload
 
-# On purge, remove config files
+# Remove sudoers file
+if [ -f /etc/sudoers.d/bhb-worker ]; then
+    echo "Removing bhb-worker sudoers configuration..."
+    rm -f /etc/sudoers.d/bhb-worker
+fi
+
+# On purge, remove config files and all data
 if [ "$1" = "purge" ]; then
+    echo "Purging bhb-worker data..."
     rm -rf /opt/bhb-worker
 fi
 

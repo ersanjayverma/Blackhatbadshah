@@ -20,7 +20,16 @@ using backend.Infrastructure.Persistence.Repositories;
 using backend.Infrastructure.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddSignalR();
+builder.Services.AddSignalR(options =>
+{
+    // Increase timeouts to prevent premature disconnections
+    options.KeepAliveInterval = TimeSpan.FromSeconds(15);
+    options.ClientTimeoutInterval = TimeSpan.FromSeconds(60);
+    options.HandshakeTimeout = TimeSpan.FromSeconds(30);
+    
+    // Enable detailed errors in development
+    options.EnableDetailedErrors = builder.Environment.IsDevelopment();
+});
 builder.Services.AddSingleton<IConfiguration>(builder.Configuration);
 // -------------------- Services --------------------
 builder.Services.AddControllers();

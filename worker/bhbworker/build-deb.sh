@@ -50,6 +50,12 @@ echo "[4/6] Copying application files..."
 cp -f "$PUBLISH_DIR/bhb-worker" "$BUILD_DIR/opt/bhb-worker/bhb-worker"
 cp -f "$WORK_DIR/appsettings.json" "$BUILD_DIR/opt/bhb-worker/appsettings.json.default"
 
+# Copy sudoers file for automatic sudo configuration
+if [[ -f "$WORK_DIR/debian/bhb-worker.sudoers" ]]; then
+  cp -f "$WORK_DIR/debian/bhb-worker.sudoers" "$BUILD_DIR/opt/bhb-worker/bhb-worker.sudoers"
+  chmod 644 "$BUILD_DIR/opt/bhb-worker/bhb-worker.sudoers"
+fi
+
 echo "[5/6] Copying debian control files..."
 cp -f "$WORK_DIR/debian/control" "$BUILD_DIR/DEBIAN/"
 cp -f "$WORK_DIR/debian/postinst" "$BUILD_DIR/DEBIAN/"

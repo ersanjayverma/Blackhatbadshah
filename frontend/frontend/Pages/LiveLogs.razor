@@ -622,13 +622,11 @@
                 await HubService.Connection.SendAsync("UnsubscribeFromWorker", _subscribedWorkerId);
             }
 
-            Console.WriteLine($"[Subscribe] Subscribing to workerId: {_workerIdInput.Trim()}");
-
             await HubService.Connection.SendAsync("SubscribeToWorker", _workerIdInput.Trim());
             _subscribedWorkerId = _workerIdInput.Trim();
 
             _isSubscribed = true;
-            _isConnected = true; // UI fix
+            _isConnected = true;
             _isStreaming = false;
 
             await LocalStorage.SetItemAsync(WorkerIdStorageKey, _subscribedWorkerId);
@@ -735,46 +733,50 @@
                     string? logPath = null;
                     string? line = null;
 
-                    // Handle JsonElement from SignalR
+                    // Handle JsonElement from SignalR (camelCase from JSON serialization)
                     if (update is System.Text.Json.JsonElement je && je.ValueKind == System.Text.Json.JsonValueKind.Object)
                     {
-                        if (je.TryGetProperty("WorkerId", out var wProp))
+                        // Try camelCase first (default JSON serialization)
+                        if (je.TryGetProperty("workerId", out var wProp))
                             workerId = wProp.GetString();
-                        if (je.TryGetProperty("LogPath", out var lpProp))
+                        else if (je.TryGetProperty("WorkerId", out wProp))
+                            workerId = wProp.GetString();
+
+                        if (je.TryGetProperty("logPath", out var lpProp))
                             logPath = lpProp.GetString();
-                        if (je.TryGetProperty("Line", out var lProp))
+                        else if (je.TryGetProperty("LogPath", out lpProp))
+                            logPath = lpProp.GetString();
+
+                        if (je.TryGetProperty("line", out var lProp))
+                            line = lProp.GetString();
+                        else if (je.TryGetProperty("Line", out lProp))
                             line = lProp.GetString();
                     }
                     else
                     {
                         // Fallback to reflection for other types
                         var t = update?.GetType();
-                        workerId = t?.GetProperty("WorkerId")?.GetValue(update)?.ToString();
-                        logPath = t?.GetProperty("LogPath")?.GetValue(update)?.ToString();
-                        line = t?.GetProperty("Line")?.GetValue(update)?.ToString();
+                        workerId = t?.GetProperty("WorkerId")?.GetValue(update)?.ToString()
+                                ?? t?.GetProperty("workerId")?.GetValue(update)?.ToString();
+                        logPath = t?.GetProperty("LogPath")?.GetValue(update)?.ToString()
+                               ?? t?.GetProperty("logPath")?.GetValue(update)?.ToString();
+                        line = t?.GetProperty("Line")?.GetValue(update)?.ToString()
+                            ?? t?.GetProperty("line")?.GetValue(update)?.ToString();
                     }
-
-                    Console.WriteLine($"[LiveLogUpdate] Received: workerId={workerId}, logPath={logPath}, line={(line?.Length > 50 ? line?.Substring(0, 50) + "..." : line)}");
 
                     if (string.IsNullOrWhiteSpace(line))
                         return;
 
-                    // accept only currently subscribed worker (case-insensitive)
+                    // Accept only currently subscribed worker (case-insensitive)
                     if (!string.IsNullOrWhiteSpace(workerId) &&
                         !string.Equals(workerId, _subscribedWorkerId, StringComparison.OrdinalIgnoreCase))
-                    {
-                        Console.WriteLine($"[LiveLogUpdate] Filtered out: workerId mismatch ({workerId} != {_subscribedWorkerId})");
                         return;
-                    }
 
-                    // accept only selected log path (if streaming a specific path)
+                    // Accept only selected log path (if streaming a specific path)
                     if (_isStreaming && !string.IsNullOrWhiteSpace(_selectedLogPath) &&
                         !string.IsNullOrWhiteSpace(logPath) &&
                         !string.Equals(logPath, _selectedLogPath, StringComparison.OrdinalIgnoreCase))
-                    {
-                        Console.WriteLine($"[LiveLogUpdate] Filtered out: logPath mismatch ({logPath} != {_selectedLogPath})");
                         return;
-                    }
 
                     var entry = new LiveLogEntry
                     {
@@ -880,8 +882,6 @@
             await SafeStopStream();
 
             await LocalStorage.SetItemAsync(LogPathStorageKey, _selectedLogPath);
-
-            Console.WriteLine($"[StartStream] Starting live log: workerId={_subscribedWorkerId}, logPath={_selectedLogPath}");
 
             await HubService.Connection.SendAsync("StartLiveLog", _subscribedWorkerId, _selectedLogPath);
 

@@ -78,6 +78,17 @@ public sealed class LiveLogBatch
     public int ChunkNumber { get; set; }
 }
 
+/// <summary>
+/// DTO for live log line updates sent via SignalR
+/// </summary>
+public sealed class LiveLogUpdate
+{
+    public string WorkerId { get; set; } = string.Empty;
+    public string LogPath { get; set; } = string.Empty;
+    public string Line { get; set; } = string.Empty;
+    public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+}
+
 public sealed class LiveLogSessionStatus
 {
     public string SessionId { get; set; } = string.Empty;

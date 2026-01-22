@@ -775,6 +775,13 @@ public class LogPusherService : BackgroundService
         if (_liveLogCts.ContainsKey(logPath))
             return;
 
+        // Handle journalctl:// paths
+        if (logPath.StartsWith("journalctl://", StringComparison.OrdinalIgnoreCase))
+        {
+            await StartJournalctlStreamingAsync(logPath);
+            return;
+        }
+
         if (!File.Exists(logPath))
         {
             _logger.LogWarning("[LiveLog] file not found: {Path}", logPath);
@@ -860,6 +867,87 @@ public class LogPusherService : BackgroundService
             finally
             {
                 _logger.LogInformation("[LiveLog] Streaming stopped: {Path}", logPath);
+            }
+        }, token);
+    }
+
+    private async Task StartJournalctlStreamingAsync(string logPath)
+    {
+        var cts = new CancellationTokenSource();
+        _liveLogCts[logPath] = cts;
+        var token = cts.Token;
+
+        var unit = logPath.Replace("journalctl://", "", StringComparison.OrdinalIgnoreCase);
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                _logger.LogInformation("[LiveLog] Streaming journalctl started: {Unit}", unit);
+
+                // Build journalctl args for follow mode
+                var args = unit switch
+                {
+                    "system" => "-f -n 20 --no-pager",
+                    "kernel" => "-k -f -n 20 --no-pager",
+                    "auth" => "-u sshd -u systemd-logind -f -n 20 --no-pager",
+                    _ => $"-u {unit} -f -n 20 --no-pager"
+                };
+
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "/usr/bin/journalctl",
+                    Arguments = args,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                using var proc = Process.Start(psi);
+                if (proc == null)
+                {
+                    _logger.LogError("[LiveLog] Failed to start journalctl");
+                    return;
+                }
+
+                // Register cancellation to kill process
+                token.Register(() =>
+                {
+                    try { proc.Kill(); } catch { }
+                });
+
+                // Read output line by line
+                while (!token.IsCancellationRequested && !proc.StandardOutput.EndOfStream)
+                {
+                    var line = await proc.StandardOutput.ReadLineAsync();
+                    if (string.IsNullOrEmpty(line)) continue;
+
+                    if (_connection?.State == HubConnectionState.Connected)
+                    {
+                        try
+                        {
+                            await _connection.InvokeAsync("LiveLogLine", _workerId, logPath, line, DateTime.UtcNow, token);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            break;
+                        }
+                        catch { }
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // normal
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[LiveLog] journalctl stream failed: {Path}", logPath);
+            }
+            finally
+            {
+                _logger.LogInformation("[LiveLog] Streaming journalctl stopped: {Unit}", unit);
             }
         }, token);
     }

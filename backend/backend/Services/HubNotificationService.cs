@@ -94,9 +94,17 @@ public class HubNotificationService : IHubNotificationService
 
     public async Task NotifyLiveLogUpdateAsync(string workerId, string logPath, string line, DateTime timestamp)
     {
-        // Broadcast live log line to all frontend clients subscribed to this worker
+        // Use strongly-typed DTO for consistent JSON serialization
+        var update = new LiveLogUpdate
+        {
+            WorkerId = workerId,
+            LogPath = logPath,
+            Line = line,
+            Timestamp = timestamp
+        };
+        
         await _hubContext.Clients.Group($"livelog_{workerId}")
-            .SendAsync("LiveLogUpdate", new { WorkerId = workerId, LogPath = logPath, Line = line, Timestamp = timestamp });
+            .SendAsync("LiveLogUpdate", update);
     }
 
     public async Task NotifyWorkerMetricsAsync(string workerId, WorkerMetrics metrics)

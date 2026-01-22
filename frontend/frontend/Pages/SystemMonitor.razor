@@ -380,7 +380,7 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    @foreach (var proc in GetFilteredProcesses().Take(15))
+                                    @foreach (var proc in GetFilteredProcesses())
                                     {
                                         <tr>
                                             <td class="font-monospace fw-bold">@proc.Pid</td>
@@ -417,18 +417,10 @@
                                                 </div>
                                             </td>
                                         </tr>
-                                    }
+                                }
                                 </tbody>
                             </table>
                         </div>
-                        @if (GetFilteredProcesses().Count() > 15)
-                        {
-                            <div class="text-center py-3 border-top">
-                                <button class="btn btn-outline-primary" @onclick="ShowProcessesModal">
-                                    <i class="bi bi-list me-1"></i>View All @GetFilteredProcesses().Count() Processes
-                                </button>
-                            </div>
-                        }
                     </div>
                 </div>
             }

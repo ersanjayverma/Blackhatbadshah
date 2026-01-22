@@ -178,7 +178,7 @@
                                     </div>
                                     <div class="col-md-6">
                                         <label class="form-label fw-bold"><i class="bi bi-search me-2"></i>Search</label>
-                                        <input type="text" class="form-control" placeholder="Search by name..."
+                                        <input type="text" class="form-control" placeholder="Search by name or hostname..."
                                                @bind="_searchTerm" @bind:event="oninput" @bind:after="FilterManagedWorkers" />
                                     </div>
                                 </div>
@@ -219,7 +219,8 @@
                                         <table class="table table-hover modern-table mb-0">
                                             <thead>
                                                 <tr>
-                                                    <th><i class="bi bi-tag me-1"></i>Hostname</th>
+                                                    <th><i class="bi bi-tag me-1"></i>Worker Name</th>
+                                                    <th><i class="bi bi-hdd me-1"></i>Actual Hostname</th>
                                                     <th><i class="bi bi-activity me-1"></i>Status</th>
                                                     <th><i class="bi bi-calendar me-1"></i>Created</th>
                                                     <th><i class="bi bi-clock me-1"></i>Last Seen</th>
@@ -230,7 +231,17 @@
                                                 @foreach (var worker in _filteredManagedWorkers)
                                                 {
                                                     <tr>
-                                                        <td class="fw-semibold">@worker.Hostname</td>
+                                                        <td class="fw-semibold">@worker.Name</td>
+                                                        <td>
+                                                            @if (worker.Hostname != worker.Name)
+                                                            {
+                                                                <span class="fw-bold">@worker.Hostname</span>
+                                                            }
+                                                            else
+                                                            {
+                                                                <span class="text-secondary small">Not connected yet</span>
+                                                            }
+                                                        </td>
                                                         <td>
                                                             @if (worker.IsActive)
                                                             {
@@ -351,7 +362,7 @@
                                     <div class="col-md-6">
                                         <label class="form-label fw-bold"><i class="bi bi-search me-2"></i>Search</label>
                                         <div class="input-group">
-                                            <input type="text" class="form-control" placeholder="Search by hostname..."
+                                            <input type="text" class="form-control" placeholder="Search by name or hostname..."
                                                    @bind="_searchHostname" @bind:event="oninput" @bind:after="FilterLiveWorkers" />
                                             @if (!string.IsNullOrEmpty(_searchHostname))
                                             {
@@ -411,9 +422,9 @@
                                             <div class="card-header d-flex justify-content-between align-items-center @(worker.IsOnline ? "bg-success bg-opacity-10" : "")">
                                                 <div>
                                                     <h6 class="mb-0 fw-bold">
-                                                        <i class="bi bi-hdd me-2"></i>@worker.Hostname
+                                                        <i class="bi bi-hdd me-2"></i>@GetBhbName(worker)
                                                     </h6>
-                                                    <small class="fw-bold">@worker.WorkerId</small>
+                                                    <small class="fw-bold">@worker.Hostname</small>
                                                 </div>
                                                 <span class="badge @(worker.IsOnline ? "bg-success" : "bg-secondary")">
                                                     <i class="bi bi-circle-fill me-1" style="font-size: 0.5rem;"></i>
@@ -1042,7 +1053,11 @@ BHB_API_URL=https://api.blackhatbadshah.com</code></pre>
                 if (_statusFilter == "active" && !w.IsActive) return false;
                 if (_statusFilter == "revoked" && !w.IsRevoked) return false;
                 if (!string.IsNullOrWhiteSpace(_searchTerm))
-                    return w.Name.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase);
+                {
+                    // Search in both Name and Hostname
+                    return w.Name.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                           w.Hostname.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase);
+                }
                 return true;
             })
             .OrderByDescending(w => w.CreatedAt)
@@ -1208,7 +1223,15 @@ BHB_API_URL=https://api.blackhatbadshah.com</code></pre>
     {
         _filteredLiveWorkers = _liveWorkers.Workers
             .Where(w => !_showOnlineOnly || w.IsOnline)
-            .Where(w => string.IsNullOrEmpty(_searchHostname) || w.Hostname.Contains(_searchHostname, StringComparison.OrdinalIgnoreCase))
+            .Where(w =>
+            {
+                if (string.IsNullOrEmpty(_searchHostname)) return true;
+                
+                // Search in both actual hostname and BHB name
+                var bhbName = GetBhbName(w);
+                return w.Hostname.Contains(_searchHostname, StringComparison.OrdinalIgnoreCase) ||
+                       bhbName.Contains(_searchHostname, StringComparison.OrdinalIgnoreCase);
+            })
             .ToList();
     }
 
@@ -1355,6 +1378,13 @@ BHB_API_URL=https://api.blackhatbadshah.com</code></pre>
         {
             Toast.ShowError($"Failed to copy: {ex.Message}");
         }
+    }
+
+    private string GetBhbName(WorkerRegistration worker)
+    {
+        // Find the BHB name from managed workers by WorkerId
+        var managedWorker = _managedWorkers.FirstOrDefault(w => w.Id.ToString() == worker.WorkerId);
+        return managedWorker?.Name ?? "Unknown";
     }
 
     public async ValueTask DisposeAsync()

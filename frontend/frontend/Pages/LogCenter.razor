@@ -357,8 +357,8 @@
                                 <label class="form-label fw-bold"><i class="bi bi-cpu me-2"></i>AI Model</label>
                                 <select class="form-select" @bind="_selectedModel">
                                     <optgroup label="Claude (Anthropic)">
-                                        <option value="claude-sonnet-4-5">Claude Sonnet 4.5</option>
-                                        <option value="claude-opus-4-5">Claude Opus 4.5</option>
+                                        <option value="claude-sonnet-4-5">Claude Sonnet 4.5 (Recommended)</option>
+                                        <option value="claude-opus-4-5">Claude Opus 4.5 (Most Powerful)</option>
                                         <option value="claude-sonnet-3-5">Claude Sonnet 3.5</option>
                                     </optgroup>
                                     <optgroup label="GPT (OpenAI)">
@@ -366,9 +366,11 @@
                                         <option value="gpt-4-turbo">GPT-4 Turbo</option>
                                         <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
                                     </optgroup>
-                                    <optgroup label="Open Source">
+                                    <optgroup label="Open Source (TogetherAI)">
+                                        <option value="gpt-oss-120b">gpt-oss-120b</option>
                                         <option value="together-llama-3.1-405b">Llama 3.1 405B</option>
                                         <option value="together-mixtral-8x7b">Mixtral 8x7B</option>
+                                        <option value="together-qwen">Qwen</option>
                                     </optgroup>
                                 </select>
                             </div>

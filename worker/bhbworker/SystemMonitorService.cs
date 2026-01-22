@@ -380,11 +380,10 @@ public class SystemMonitorService
             data.RunningProcesses = processInfos.Count(p => p.Status == "Running");
             data.SleepingProcesses = data.TotalProcesses - data.RunningProcesses;
 
-            // Top processes by CPU and Memory
+            // All processes sorted by CPU and Memory
             data.TopProcesses = processInfos
                 .OrderByDescending(p => p.CpuPercent)
                 .ThenByDescending(p => p.MemoryMB)
-                .Take(20)
                 .ToList();
         }
         catch (Exception ex)

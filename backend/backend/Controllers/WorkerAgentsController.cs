@@ -1,6 +1,7 @@
 using backend.Data;
 using backend.Data.Entities;
 using backend.Handlers;
+using backend.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -15,11 +16,16 @@ public class WorkerAgentsController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly ILogger<WorkerAgentsController> _logger;
+    private readonly IWorkerRegistry _workerRegistry;
 
-    public WorkerAgentsController(AppDbContext db, ILogger<WorkerAgentsController> logger)
+    public WorkerAgentsController(
+        AppDbContext db, 
+        ILogger<WorkerAgentsController> logger,
+        IWorkerRegistry workerRegistry)
     {
         _db = db;
         _logger = logger;
+        _workerRegistry = workerRegistry;
     }
 
     private string? GetUserId()
@@ -149,21 +155,32 @@ public class WorkerAgentsController : ControllerBase
         var workers = await _db.WorkerAgents
             .Where(w => w.CreatedByUserId == userId)
             .OrderByDescending(w => w.CreatedAt)
-            .Select(w => new WorkerAgentListItem
+            .ToListAsync();
+
+        // Get live worker data from registry to populate actual hostname
+        var apiUrl = $"{Request.Scheme}://{Request.Host}";
+        var liveWorkers = _workerRegistry.GetWorkers(apiUrl);
+
+        var workerList = workers.Select(w =>
+        {
+            // Find the live worker registration to get actual hostname
+            var liveWorker = liveWorkers.Workers.FirstOrDefault(lw => lw.WorkerId == w.Id.ToString());
+
+            return new WorkerAgentListItem
             {
                 Id = w.Id,
                 Name = w.Name,
-                Hostname = w.Name, // Use Name as Hostname for PSK/admin workers
+                Hostname = liveWorker?.Hostname ?? w.Name, // Use actual hostname if online, otherwise BHB name
                 Status = w.Status,
                 CreatedAt = w.CreatedAt,
                 LastSeenAt = w.LastSeenAt,
                 RevokedAt = w.RevokedAt,
                 CreatedByUserId = w.CreatedByUserId,
                 WorkspaceId = w.WorkspaceId
-            })
-            .ToListAsync();
+            };
+        }).ToList();
 
-        return Ok(workers);
+        return Ok(workerList);
     }
 
     // POST /api/worker-agents/{workerId}/revoke

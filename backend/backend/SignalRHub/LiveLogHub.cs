@@ -64,14 +64,18 @@ public class LiveLogHub : Hub
 
     private string SessionId => Context.ConnectionId;
 
-    private static string WorkerGroup(string workerId) => $"worker:{workerId}";
-    private static string LiveLogGroup(string workerId) => $"livelog:{workerId}";
+    // Use underscore-based group names so they match other hubs/services
+    private static string WorkerGroup(string workerId) => $"worker_{workerId}";
+    private static string LiveLogGroup(string workerId) => $"livelog_{workerId}";
 
     private static string? NormalizeWorkerId(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return null;
         if (raw.StartsWith("worker:", StringComparison.OrdinalIgnoreCase))
             return raw.Substring("worker:".Length);
+        // also accept underscore-prefixed formats used for group names
+        if (raw.StartsWith("worker_", StringComparison.OrdinalIgnoreCase))
+            return raw.Substring("worker_".Length);
         return raw;
     }
 

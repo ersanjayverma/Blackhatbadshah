@@ -92,6 +92,21 @@ public class HubNotificationService : IHubNotificationService
             .SendAsync("LiveLogChunkQueued", new { sessionId, workerId, chunkNumber, queuedAt = DateTime.UtcNow });
     }
 
+    public async Task NotifyLiveLogUpdateAsync(string workerId, string logPath, string line, DateTime timestamp)
+    {
+        // Use strongly-typed DTO for consistent JSON serialization
+        var update = new LiveLogUpdate
+        {
+            WorkerId = workerId,
+            LogPath = logPath,
+            Line = line,
+            Timestamp = timestamp
+        };
+        
+        await _hubContext.Clients.Group($"livelog_{workerId}")
+            .SendAsync("LiveLogUpdate", update);
+    }
+
     public async Task NotifyWorkerMetricsAsync(string workerId, WorkerMetrics metrics)
     {
         await _hubContext.Clients.Group($"livelog_{workerId}")
@@ -123,8 +138,10 @@ public class HubNotificationService : IHubNotificationService
 
     public async Task NotifyWorkerRegisteredAsync(string workerId)
     {
-        // Broadcast to all connected clients that a worker has registered/updated
-        await _hubContext.Clients.All.SendAsync("WorkerRegistered", new { workerId, registeredAt = DateTime.UtcNow });
+        // Only notify clients subscribed to this specific worker's group
+        // This prevents spamming all clients on every heartbeat
+        await _hubContext.Clients.Group($"livelog_{workerId}")
+            .SendAsync("WorkerRegistered", new { workerId, registeredAt = DateTime.UtcNow });
     }
 
     public async Task NotifyLogPullResponseAsync(string workerId, LogPullResponse response)

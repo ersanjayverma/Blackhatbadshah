@@ -71,8 +71,8 @@ public class DataHub : Hub
         await Groups.AddToGroupAsync(Context.ConnectionId, $"sysmon_{workerId}");
         await Clients.Caller.SendAsync("SubscribedToSystemMonitor", workerId);
 
-        // Request immediate data from worker
-        await _liveLogHub.Clients.Group($"livelog_{workerId}").SendAsync("RequestSystemMonitorData");
+        // Request immediate data from worker (worker joins worker_{workerId} group)
+        await _liveLogHub.Clients.Group($"worker_{workerId}").SendAsync("RequestSystemMonitorData");
     }
 
     // Unsubscribe from system monitor updates
@@ -89,9 +89,33 @@ public class DataHub : Hub
     {
         if (string.IsNullOrEmpty(request.WorkerId)) return;
 
-        // Forward the kill request to the worker
-        await _liveLogHub.Clients.Group($"livelog_{request.WorkerId}")
+        // Forward the kill request to the worker (worker joins worker_{workerId} group)
+        await _liveLogHub.Clients.Group($"worker_{request.WorkerId}")
             .SendAsync("KillProcess", request.Pid, request.Force);
+    }
+
+    // Start live log streaming from a worker
+    public async Task StartLiveLog(string workerId, string logPath)
+    {
+        if (string.IsNullOrEmpty(workerId) || string.IsNullOrEmpty(logPath)) return;
+
+        // Forward to the worker group (worker_{workerId}) in LiveLogHub
+        await _liveLogHub.Clients.Group($"worker_{workerId}").SendAsync("StartLiveLog", logPath);
+
+        // Confirm to caller
+        await Clients.Caller.SendAsync("LiveStreamStarted", new { workerId, logPath });
+    }
+
+    // Stop live log streaming from a worker
+    public async Task StopLiveLog(string workerId, string logPath)
+    {
+        if (string.IsNullOrEmpty(workerId) || string.IsNullOrEmpty(logPath)) return;
+
+        // Forward to the worker group (worker_{workerId}) in LiveLogHub
+        await _liveLogHub.Clients.Group($"worker_{workerId}").SendAsync("StopLiveLog", logPath);
+
+        // Confirm to caller
+        await Clients.Caller.SendAsync("LiveStreamStopped", new { workerId, logPath });
     }
 
     public override async Task OnConnectedAsync()

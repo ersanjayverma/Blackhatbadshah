@@ -5,6 +5,7 @@ using shared.Dto;
 using System.Text.RegularExpressions;
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
+using System.Collections.Concurrent;
 
 namespace backend.Hubs;
 
@@ -18,9 +19,15 @@ public class LiveLogHub : Hub
     private readonly backend.Data.AppDbContext _db;
     private readonly ILogger<LiveLogHub> _logger;
 
-    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> _chunkCounters = new();
-    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _sessionWorkerIds = new();
-    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> _logCounters = new();
+    private static readonly ConcurrentDictionary<string, int> _chunkCounters = new();
+    private static readonly ConcurrentDictionary<string, string> _sessionWorkerIds = new();
+    private static readonly ConcurrentDictionary<string, int> _logCounters = new();
+
+    // Track which sessions are worker vs frontend
+    private static readonly ConcurrentDictionary<string, bool> _isWorkerSession = new();
+
+    // frontend subscriptions: connectionId -> (workerId, logPath)
+    private static readonly ConcurrentDictionary<string, (string workerId, string logPath)> _liveLogSubscriptions = new();
 
     // Common log level patterns
     private static readonly Regex LogLevelRegex = new(
@@ -55,47 +62,43 @@ public class LiveLogHub : Hub
         _db = db;
     }
 
-    private string GetSessionId() => Context.ConnectionId;
+    private string SessionId => Context.ConnectionId;
+
+    // Use underscore-based group names so they match other hubs/services
+    private static string WorkerGroup(string workerId) => $"worker_{workerId}";
+    private static string LiveLogGroup(string workerId) => $"livelog_{workerId}";
 
     private static string? NormalizeWorkerId(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return null;
-        // Some authentication schemes prefix the id with 'worker:GUID'
         if (raw.StartsWith("worker:", StringComparison.OrdinalIgnoreCase))
             return raw.Substring("worker:".Length);
+        // also accept underscore-prefixed formats used for group names
+        if (raw.StartsWith("worker_", StringComparison.OrdinalIgnoreCase))
+            return raw.Substring("worker_".Length);
         return raw;
     }
 
-    private string? GetPsk()
-    {
-        var httpContext = Context.GetHttpContext();
-        return httpContext?.Request.Query["psk"].ToString();
-    }
-
     private string? GetWorkerIdFromQuery()
-    {
-        var httpContext = Context.GetHttpContext();
-        return httpContext?.Request.Query["workerId"].ToString();
-    }
+        => Context.GetHttpContext()?.Request.Query["workerId"].ToString();
 
-    private string? GetApiKeyFromQuery()
+    private string? GetApiKeyFromHeaderOrQuery()
     {
-        var httpContext = Context.GetHttpContext();
-        // Support both workerKey and apiKey query parameter names
-        var val = httpContext?.Request.Query["workerKey"].ToString();
-        if (string.IsNullOrEmpty(val)) val = httpContext?.Request.Query["apiKey"].ToString();
-        return val;
-    }
+        var http = Context.GetHttpContext();
+        if (http == null) return null;
 
-    private bool ValidatePsk(string? psk)
-    {
-        if (string.IsNullOrEmpty(psk)) return false;
-        var configuredPsk = _configuration["LiveLog:Psk"];
-        return !string.IsNullOrEmpty(configuredPsk) && psk == configuredPsk;
+        var key = http.Request.Headers[WorkerKeyAuthenticationOptions.HeaderName].ToString();
+        if (!string.IsNullOrWhiteSpace(key)) return key;
+
+        key = http.Request.Query["workerKey"].ToString();
+        if (!string.IsNullOrWhiteSpace(key)) return key;
+
+        key = http.Request.Query["apiKey"].ToString();
+        return string.IsNullOrWhiteSpace(key) ? null : key;
     }
 
     /// <summary>
-    /// Parses a raw log line to extract level, source, and message using pattern matching.
+    /// Parses a raw log line to extract level, source, and message.
     /// </summary>
     private LiveLogEntry ParseLogLine(string logLine, string sessionId)
     {
@@ -106,7 +109,6 @@ public class LiveLogHub : Hub
             Timestamp = DateTime.UtcNow
         };
 
-        // Try to extract log level
         var levelMatch = LogLevelRegex.Match(logLine);
         if (levelMatch.Success)
         {
@@ -120,7 +122,6 @@ public class LiveLogHub : Hub
             };
         }
 
-        // Try syslog format first
         var syslogMatch = SyslogRegex.Match(logLine);
         if (syslogMatch.Success)
         {
@@ -128,20 +129,17 @@ public class LiveLogHub : Hub
             entry.Message = syslogMatch.Groups["message"].Value.Trim();
 
             if (DateTime.TryParse(syslogMatch.Groups["timestamp"].Value, out var ts))
-            {
                 entry.Timestamp = ts;
-            }
+
             return entry;
         }
 
-        // Try to extract timestamp and remaining message
         var timestampMatch = TimestampRegex.Match(logLine);
         if (timestampMatch.Success)
         {
             if (DateTime.TryParse(timestampMatch.Groups["timestamp"].Value, out var ts))
-            {
                 entry.Timestamp = ts;
-            }
+
             entry.Message = logLine[timestampMatch.Length..].Trim();
         }
         else
@@ -149,7 +147,6 @@ public class LiveLogHub : Hub
             entry.Message = logLine;
         }
 
-        // Try to extract source from common patterns like [SourceName] or <SourceName>
         var sourceMatch = Regex.Match(entry.Message, @"^\[(?<source>[^\]]+)\]|\<(?<source>[^\>]+)\>");
         if (sourceMatch.Success)
         {
@@ -160,44 +157,49 @@ public class LiveLogHub : Hub
         return entry;
     }
 
-    /// <summary>
-    /// Pushes a single log line. Broadcasts to frontend in real-time. No auto-analysis.
-    /// </summary>
+    private async Task TouchWorkerLastSeenAsync(Guid workerId)
+    {
+        try
+        {
+            var worker = await _db.WorkerAgents.FirstOrDefaultAsync(x => x.Id == workerId);
+            if (worker != null)
+            {
+                worker.LastSeenAt = DateTime.UtcNow;
+                await _db.SaveChangesAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to update LastSeenAt for worker {WorkerId}", workerId);
+        }
+    }
+
+    // ============================================================
+    //  WORKER → HUB METHODS
+    // ============================================================
+
     public async Task PushLog(string logLine, string? model = null)
     {
-        var sessionId = GetSessionId();
-
-        if (!_sessionWorkerIds.TryGetValue(sessionId, out var workerId))
+        if (!_sessionWorkerIds.TryGetValue(SessionId, out var workerId))
         {
             await Clients.Caller.SendAsync("Error", "Session not authenticated");
             return;
         }
 
-        // Parse the log line
-        var entry = ParseLogLine(logLine, sessionId);
+        var entry = ParseLogLine(logLine, SessionId);
         entry.WorkerId = workerId;
 
-        // Track log count
-        _logCounters.AddOrUpdate(sessionId, 1, (_, v) => v + 1);
+        _logCounters.AddOrUpdate(SessionId, 1, (_, v) => v + 1);
 
-        // Buffer the raw log for potential later analysis
-        var (_, _, totalBytes) = _buffer.AppendLog(sessionId, logLine);
+        var (_, _, totalBytes) = _buffer.AppendLog(SessionId, logLine);
 
-        // Broadcast to frontend in real-time (no auto-analysis)
         await _hubNotification.NotifyLiveLogReceivedAsync(workerId, entry);
-
-        // Notify worker of buffer progress
         await Clients.Caller.SendAsync("BufferProgress", totalBytes, 10 * 1024);
     }
 
-    /// <summary>
-    /// Pushes multiple log lines at once.
-    /// </summary>
     public async Task PushLogs(string[] logLines, string? model = null)
     {
-        var sessionId = GetSessionId();
-
-        if (!_sessionWorkerIds.TryGetValue(sessionId, out var workerId))
+        if (!_sessionWorkerIds.TryGetValue(SessionId, out var workerId))
         {
             await Clients.Caller.SendAsync("Error", "Session not authenticated");
             return;
@@ -209,24 +211,21 @@ public class LiveLogHub : Hub
         {
             if (string.IsNullOrWhiteSpace(line)) continue;
 
-            var entry = ParseLogLine(line, sessionId);
+            var entry = ParseLogLine(line, SessionId);
             entry.WorkerId = workerId;
             entries.Add(entry);
 
-            // Buffer for potential later analysis
-            _buffer.AppendLog(sessionId, line);
+            _buffer.AppendLog(SessionId, line);
         }
 
-        // Track log count
-        _logCounters.AddOrUpdate(sessionId, entries.Count, (_, v) => v + entries.Count);
+        _logCounters.AddOrUpdate(SessionId, entries.Count, (_, v) => v + entries.Count);
 
-        var totalBytes = _buffer.GetBufferSize(sessionId);
-        var chunkCount = _chunkCounters.TryGetValue(sessionId, out var count) ? count : 0;
+        var totalBytes = _buffer.GetBufferSize(SessionId);
+        var chunkCount = _chunkCounters.TryGetValue(SessionId, out var count) ? count : 0;
 
-        // Broadcast batch to frontend
         var batch = new LiveLogBatch
         {
-            SessionId = sessionId,
+            SessionId = SessionId,
             WorkerId = workerId,
             Entries = entries,
             TotalBufferBytes = totalBytes,
@@ -234,79 +233,12 @@ public class LiveLogHub : Hub
         };
 
         await _hubNotification.NotifyLiveLogBatchAsync(workerId, batch);
-
-        // Notify worker of buffer progress
         await Clients.Caller.SendAsync("BufferProgress", totalBytes, 10 * 1024);
     }
 
-    /// <summary>
-    /// Manually triggers AI analysis of current buffer. Called explicitly by user.
-    /// </summary>
-    public async Task FlushAndAnalyze(string? model = null)
-    {
-        var sessionId = GetSessionId();
-
-        if (!_sessionWorkerIds.TryGetValue(sessionId, out var workerId))
-        {
-            await Clients.Caller.SendAsync("Error", "Session not authenticated");
-            return;
-        }
-
-        var (content, totalBytes) = _buffer.Flush(sessionId);
-
-        if (!string.IsNullOrEmpty(content))
-        {
-            var chunkNumber = _chunkCounters.AddOrUpdate(sessionId, 1, (_, v) => v + 1);
-
-            _logger.LogInformation(
-                "Manual AI analysis triggered for session {SessionId}, worker {WorkerId}, chunk {ChunkNumber}, bytes {Bytes}",
-                sessionId, workerId, chunkNumber, totalBytes);
-
-            await _analysisQueue.QueueAnalysisJobAsync(
-                sessionId,
-                workerId,
-                workerId, // userId is workerId for PSK-auth workers
-                "psk-auth",
-                content,
-                chunkNumber,
-                model);
-
-            await Clients.Caller.SendAsync("ChunkQueued", chunkNumber, totalBytes);
-            await _hubNotification.NotifyLiveLogChunkQueuedAsync(workerId, sessionId, chunkNumber);
-        }
-        else
-        {
-            await Clients.Caller.SendAsync("BufferEmpty", "No logs to analyze");
-        }
-    }
-
-    /// <summary>
-    /// Gets current buffer status.
-    /// </summary>
-    public async Task GetBufferStatus()
-    {
-        var sessionId = GetSessionId();
-        var currentSize = _buffer.GetBufferSize(sessionId);
-        var chunkCount = _chunkCounters.TryGetValue(sessionId, out var count) ? count : 0;
-        var logCount = _logCounters.TryGetValue(sessionId, out var lc) ? lc : 0;
-
-        await Clients.Caller.SendAsync("BufferStatus", new
-        {
-            CurrentBytes = currentSize,
-            ThresholdBytes = 10 * 1024,
-            ChunksAnalyzed = chunkCount,
-            TotalLogsReceived = logCount
-        });
-    }
-
-    /// <summary>
-    /// Receives system metrics from worker and broadcasts to dashboard.
-    /// </summary>
     public async Task PushMetrics(WorkerMetrics metrics)
     {
-        var sessionId = GetSessionId();
-
-        if (!_sessionWorkerIds.TryGetValue(sessionId, out var workerId))
+        if (!_sessionWorkerIds.TryGetValue(SessionId, out var workerId))
         {
             await Clients.Caller.SendAsync("Error", "Session not authenticated");
             return;
@@ -315,24 +247,17 @@ public class LiveLogHub : Hub
         metrics.WorkerId = workerId;
         metrics.Timestamp = DateTime.UtcNow;
 
-        // Update worker heartbeat in registry
         _workerRegistry.UpdateHeartbeat(workerId, metrics);
 
-        _logger.LogDebug("Received metrics from worker {WorkerId}: CPU={Cpu}%, Memory={Mem}%",
-            workerId, metrics.CpuPercent, metrics.MemoryPercent);
+        if (Guid.TryParse(workerId, out var wid))
+            await TouchWorkerLastSeenAsync(wid);
 
-        // Broadcast metrics to dashboard
         await _hubNotification.NotifyWorkerMetricsAsync(workerId, metrics);
     }
 
-    /// <summary>
-    /// Receives detailed system monitor data from worker and broadcasts to dashboard.
-    /// </summary>
     public async Task PushSystemMonitorData(SystemMonitorData data)
     {
-        var sessionId = GetSessionId();
-
-        if (!_sessionWorkerIds.TryGetValue(sessionId, out var workerId))
+        if (!_sessionWorkerIds.TryGetValue(SessionId, out var workerId))
         {
             await Clients.Caller.SendAsync("Error", "Session not authenticated");
             return;
@@ -341,64 +266,152 @@ public class LiveLogHub : Hub
         data.WorkerId = workerId;
         data.Timestamp = DateTime.UtcNow;
 
-        _logger.LogDebug("Received system monitor data from worker {WorkerId}: CPU={Cpu}%, Memory={Mem}%, Processes={Procs}",
-            workerId, data.CpuPercent, data.MemoryPercent, data.TotalProcesses);
-
-        // Broadcast system monitor data to dashboard
         await _hubNotification.NotifySystemMonitorDataAsync(workerId, data);
     }
 
-    /// <summary>
-    /// Receives kill process response from worker and broadcasts to dashboard.
-    /// </summary>
-    public async Task KillProcessResponse(KillProcessResponse response)
+    public async Task WorkerOnline(string workerId)
     {
-        var sessionId = GetSessionId();
+        // heartbeat from worker - just update registry, don't broadcast
+        if (Guid.TryParse(workerId, out var wid))
+            await TouchWorkerLastSeenAsync(wid);
 
-        if (!_sessionWorkerIds.TryGetValue(sessionId, out var workerId))
+        _workerRegistry.UpdateOnline(workerId);
+        
+        // Don't call NotifyWorkerRegisteredAsync on every heartbeat - causes spam
+        // Only notify on actual registration (see RegisterWorker method)
+    }
+
+    public async Task RegisterWorker(RegisterWorkerRequest request)
+    {
+        if (!_sessionWorkerIds.TryGetValue(SessionId, out var workerId))
+        {
+            await Clients.Caller.SendAsync("Error", "Session not authenticated");
+            return;
+        }
+
+        var httpContext = Context.GetHttpContext();
+        var apiUrl = httpContext != null
+            ? $"{httpContext.Request.Scheme}://{httpContext.Request.Host}"
+            : string.Empty;
+
+        _workerRegistry.RegisterWorker(workerId, SessionId, apiUrl, request);
+
+        // Update worker details in DB + mark last seen
+        if (Guid.TryParse(workerId, out var wid))
+            await TouchWorkerLastSeenAsync(wid);
+
+        await Clients.Caller.SendAsync("Registered", new
+        {
+            WorkerId = workerId,
+            Hostname = request.Hostname,
+            LogPaths = request.AvailableLogPaths
+        });
+
+        await _hubNotification.NotifyWorkerRegisteredAsync(workerId);
+    }
+
+    public async Task LogPullResponse(LogPullResponse response)
+    {
+        if (!_sessionWorkerIds.TryGetValue(SessionId, out var workerId))
         {
             await Clients.Caller.SendAsync("Error", "Session not authenticated");
             return;
         }
 
         response.WorkerId = workerId;
-
-        _logger.LogInformation("Kill process response from worker {WorkerId}: PID={Pid}, Success={Success}, Message={Message}",
-            workerId, response.Pid, response.Success, response.Message);
-
-        // Broadcast kill process response to dashboard
-        await _hubNotification.NotifyKillProcessResponseAsync(workerId, response);
+        await _hubNotification.NotifyLogPullResponseAsync(workerId, response);
     }
+
+    // ============================================================
+    //  FRONTEND → HUB METHODS (stream control)
+    // ============================================================
+
+    public async Task StartLiveLog(string workerId, string logPath)
+    {
+        if (string.IsNullOrWhiteSpace(workerId) || string.IsNullOrWhiteSpace(logPath))
+            return;
+
+        _liveLogSubscriptions[Context.ConnectionId] = (workerId, logPath);
+
+        // ✅ send to worker connection group
+        await Clients.Group(WorkerGroup(workerId)).SendAsync("StartLiveLog", logPath);
+
+        // optional - let UI know
+        await Clients.Caller.SendAsync("LiveStreamStarted", new { workerId, logPath });
+    }
+
+    public async Task StopLiveLog(string workerId, string logPath)
+    {
+        _liveLogSubscriptions.TryRemove(Context.ConnectionId, out _);
+
+        await Clients.Group(WorkerGroup(workerId)).SendAsync("StopLiveLog", logPath);
+        await Clients.Caller.SendAsync("LiveStreamStopped", new { workerId, logPath });
+    }
+
+    public async Task LiveLogUpdate(LiveLogUpdate update)
+    {
+        if (update == null || string.IsNullOrWhiteSpace(update.WorkerId))
+            return;
+
+        // Use the notification service to broadcast to DataHub clients
+        await _hubNotification.NotifyLiveLogUpdateAsync(update.WorkerId, update.LogPath, update.Line, update.Timestamp);
+    }
+
+    /// <summary>
+    /// Called by worker to stream a single live log line.
+    /// This is the method the worker's LogPusherService calls.
+    /// </summary>
+    public async Task LiveLogLine(string workerId, string logPath, string line, DateTime timestamp)
+    {
+        // Validate the caller is authenticated as a worker
+        if (!_sessionWorkerIds.TryGetValue(SessionId, out var sessionWorkerId))
+        {
+            await Clients.Caller.SendAsync("Error", "Session not authenticated");
+            return;
+        }
+
+        // Use the notification service to broadcast to DataHub clients
+        // This ensures frontend clients connected to DataHub receive the update
+        await _hubNotification.NotifyLiveLogUpdateAsync(sessionWorkerId, logPath, line, timestamp);
+    }
+
+    // ============================================================
+    //  CONNECT / DISCONNECT
+    // ============================================================
 
     public override async Task OnConnectedAsync()
     {
-        var sessionId = GetSessionId();
+        var sessionId = SessionId;
         var httpContext = Context.GetHttpContext();
-        var queryWorkerId = GetWorkerIdFromQuery();
+        var queryWorkerId = NormalizeWorkerId(GetWorkerIdFromQuery());
 
-        // Prefer framework authentication (WorkerKey scheme) if available
         string? workerId = null;
+        bool isWorker = false;
+
+        // 1) pipeline auth (worker scheme)
         if (Context.User?.Identity?.IsAuthenticated == true)
         {
-            workerId = Context.User.FindFirst("workerId")?.Value
-                       ?? Context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            workerId = NormalizeWorkerId(workerId);
+            workerId = NormalizeWorkerId(
+                Context.User.FindFirst("workerId")?.Value ??
+                Context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+
+            if (!string.IsNullOrWhiteSpace(workerId))
+                isWorker = true;
         }
 
-        // If not authenticated via pipeline, try header-based API key or PSK fallback
+        // 2) api key (header/query)
         if (string.IsNullOrWhiteSpace(workerId))
         {
-            string? apiKey = httpContext?.Request.Headers[WorkerKeyAuthenticationOptions.HeaderName].ToString();
-            if (string.IsNullOrWhiteSpace(apiKey))
-            {
-                apiKey = GetApiKeyFromQuery();
-            }
+            var apiKey = GetApiKeyFromHeaderOrQuery();
             if (!string.IsNullOrWhiteSpace(apiKey))
             {
                 try
                 {
                     var hashed = WorkerKeyAuthenticationHandler.HashApiKey(apiKey);
-                    var worker = await _db.WorkerAgents.FirstOrDefaultAsync(w => w.ApiKeyHash == hashed && w.Status == backend.Data.Entities.WorkerAgentStatus.Active);
+                    var worker = await _db.WorkerAgents
+                        .FirstOrDefaultAsync(w => w.ApiKeyHash == hashed &&
+                                                 w.Status == backend.Data.Entities.WorkerAgentStatus.Active);
+
                     if (worker == null)
                     {
                         _logger.LogWarning("LiveLogHub: Invalid API key for session {SessionId}", sessionId);
@@ -407,19 +420,16 @@ public class LiveLogHub : Hub
                     }
 
                     workerId = worker.Id.ToString();
+                    isWorker = true;
 
-                    // update last seen timestamp when authenticating via direct API key
-                    try
-                    {
-                        worker.LastSeenAt = DateTime.UtcNow;
-                        await _db.SaveChangesAsync();
-                    }
-                    catch { }
+                    await TouchWorkerLastSeenAsync(worker.Id);
 
-                    if (!string.IsNullOrWhiteSpace(queryWorkerId) && !string.Equals(queryWorkerId, workerId, StringComparison.OrdinalIgnoreCase))
+                    if (!string.IsNullOrWhiteSpace(queryWorkerId) &&
+                        !string.Equals(queryWorkerId, workerId, StringComparison.OrdinalIgnoreCase))
                     {
-                        _logger.LogWarning("LiveLogHub: Mismatched workerId query vs API key owner for session {SessionId} - proceeding with API key owner", sessionId);
-                        // Do not abort; prefer API key owner. Continue using worker.Id from API key.
+                        _logger.LogWarning(
+                            "LiveLogHub: workerId mismatch query={QueryWorkerId} keyOwner={KeyWorkerId} session={SessionId}. Using keyOwner.",
+                            queryWorkerId, workerId, sessionId);
                     }
                 }
                 catch (Exception ex)
@@ -429,195 +439,70 @@ public class LiveLogHub : Hub
                     return;
                 }
             }
-            else
-            {
-                var psk = GetPsk();
-                if (!ValidatePsk(psk))
-                {
-                    _logger.LogWarning("LiveLogHub: Invalid PSK for session {SessionId}", sessionId);
-                    Context.Abort();
-                    return;
-                }
-
-                workerId = queryWorkerId;
-                if (string.IsNullOrEmpty(workerId))
-                {
-                    _logger.LogWarning("LiveLogHub: Missing workerId for session {SessionId}", sessionId);
-                    Context.Abort();
-                    return;
-                }
-            }
         }
 
+        // ❌ PSK REMOVED
+        if (string.IsNullOrWhiteSpace(workerId))
+        {
+            _logger.LogWarning("LiveLogHub: Connection rejected - unauthenticated session {SessionId}", sessionId);
+            Context.Abort();
+            return;
+        }
+
+        // store mapping
         _sessionWorkerIds[sessionId] = workerId;
         _logCounters[sessionId] = 0;
-        await Groups.AddToGroupAsync(sessionId, $"livelog_{workerId}");
+        _isWorkerSession[sessionId] = isWorker;
 
-        // Get the API URL from the request for visibility filtering
+        // groups:
+        // - worker clients join worker:<id>
+        // - all connections join livelog:<id> for dashboard fanout (optional)
+        if (isWorker)
+            await Groups.AddToGroupAsync(sessionId, WorkerGroup(workerId));
+
+        await Groups.AddToGroupAsync(sessionId, LiveLogGroup(workerId));
+
         var apiUrl = httpContext != null
             ? $"{httpContext.Request.Scheme}://{httpContext.Request.Host}"
             : string.Empty;
 
-        // Log DB presence of worker and register in registry
-        try
-        {
-            if (Guid.TryParse(workerId, out var wid))
-            {
-                var dbWorker = await _db.WorkerAgents.FindAsync(wid);
-                if (dbWorker == null)
-                {
-                    _logger.LogWarning("LiveLogHub: Connected worker {WorkerId} not found in DB (may be unregistered)", workerId);
-                }
-                else
-                {
-                    _logger.LogInformation("LiveLogHub: Connected worker {WorkerId} found in DB. CreatedBy={User}, Status={Status}", workerId, dbWorker.CreatedByUserId, dbWorker.Status);
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Error checking worker in DB for {WorkerId}", workerId);
-        }
-
-        // Register worker in the registry with basic info
         _workerRegistry.RegisterWorker(workerId, sessionId, apiUrl);
 
-        // Notify all clients that a worker has connected/registered (ensure frontend visibility)
-        try
-        {
-            await _hubNotification.NotifyWorkerRegisteredAsync(workerId);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to notify clients about worker registration for {WorkerId}", workerId);
-        }
+        await _hubNotification.NotifyWorkerRegisteredAsync(workerId);
 
-        _logger.LogInformation("LiveLogHub: Worker connected - WorkerId {WorkerId}, Session {SessionId}, ApiUrl {ApiUrl}",
-            workerId, sessionId, apiUrl);
         await Clients.Caller.SendAsync("Connected", new { SessionId = sessionId, WorkerId = workerId });
 
-        // Notify frontend that a worker session connected
-        await _hubNotification.NotifyLiveLogSessionConnectedAsync(workerId, sessionId);
+        // only notify "worker session connected" when real worker connects
+        if (isWorker)
+            await _hubNotification.NotifyLiveLogSessionConnectedAsync(workerId, sessionId);
 
         await base.OnConnectedAsync();
     }
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
-        var sessionId = GetSessionId();
+        var sessionId = SessionId;
+
+        _liveLogSubscriptions.TryRemove(sessionId, out _);
 
         if (_sessionWorkerIds.TryRemove(sessionId, out var workerId))
         {
-            // Don't auto-analyze on disconnect, just clean up
             _buffer.Flush(sessionId);
 
-            await Groups.RemoveFromGroupAsync(sessionId, $"livelog_{workerId}");
+            await Groups.RemoveFromGroupAsync(sessionId, LiveLogGroup(workerId));
 
-            // Unregister worker from registry
-            _workerRegistry.UnregisterWorker(workerId, sessionId);
+            if (_isWorkerSession.TryRemove(sessionId, out var wasWorker) && wasWorker)
+            {
+                await Groups.RemoveFromGroupAsync(sessionId, WorkerGroup(workerId));
 
-            // Notify frontend that worker session disconnected
-            await _hubNotification.NotifyLiveLogSessionDisconnectedAsync(workerId, sessionId);
+                _workerRegistry.UnregisterWorker(workerId, sessionId);
+                await _hubNotification.NotifyLiveLogSessionDisconnectedAsync(workerId, sessionId);
+            }
         }
 
         _chunkCounters.TryRemove(sessionId, out _);
         _logCounters.TryRemove(sessionId, out _);
 
-        _logger.LogInformation("LiveLogHub: Session {SessionId} disconnected", sessionId);
         await base.OnDisconnectedAsync(exception);
-    }
-
-    /// <summary>
-    /// Called by worker to register itself with detailed information.
-    /// </summary>
-    public async Task RegisterWorker(RegisterWorkerRequest request)
-    {
-        var sessionId = GetSessionId();
-
-        if (!_sessionWorkerIds.TryGetValue(sessionId, out var workerId))
-        {
-            await Clients.Caller.SendAsync("Error", "Session not authenticated");
-            return;
-        }
-
-        var httpContext = Context.GetHttpContext();
-        var apiUrl = httpContext != null
-            ? $"{httpContext.Request.Scheme}://{httpContext.Request.Host}"
-            : string.Empty;
-
-        _workerRegistry.RegisterWorker(workerId, sessionId, apiUrl, request);
-
-        _logger.LogInformation(
-            "Worker registered with details: {WorkerId}, Hostname: {Hostname}, LogPaths: {LogPaths}",
-            workerId, request.Hostname, string.Join(", ", request.AvailableLogPaths));
-
-        await Clients.Caller.SendAsync("Registered", new
-        {
-            WorkerId = workerId,
-            Hostname = request.Hostname,
-            LogPaths = request.AvailableLogPaths
-        });
-
-        // Notify frontend about worker registration update
-        await _hubNotification.NotifyWorkerRegisteredAsync(workerId);
-    }
-
-    /// <summary>
-    /// Called by worker to respond to a log pull request.
-    /// </summary>
-    public async Task LogPullResponse(LogPullResponse response)
-    {
-        var sessionId = GetSessionId();
-
-        if (!_sessionWorkerIds.TryGetValue(sessionId, out var workerId))
-        {
-            await Clients.Caller.SendAsync("Error", "Session not authenticated");
-            return;
-        }
-
-        response.WorkerId = workerId;
-
-        _logger.LogInformation(
-            "Log pull response from worker {WorkerId}: Path={Path}, Lines={LineCount}, Success={Success}",
-            workerId, response.LogPath, response.Lines.Count, response.Success);
-
-        // Broadcast log pull response to frontend
-        await _hubNotification.NotifyLogPullResponseAsync(workerId, response);
-    }
-
-    // Store subscriptions: connectionId -> (workerId, logPath)
-    private static readonly Dictionary<string, (string workerId, string logPath)> _liveLogSubscriptions = new();
-
-    // Called by frontend to start live log streaming for a worker/logPath
-    public async Task StartLiveLog(string workerId, string logPath)
-    {
-        _liveLogSubscriptions[Context.ConnectionId] = (workerId, logPath);
-        // Forward to worker via SignalR (assuming worker is connected as a client)
-        await Clients.Group(workerId).SendAsync("StartLiveLog", logPath);
-    }
-
-    // Called by frontend to stop live log streaming
-    public async Task StopLiveLog(string workerId, string logPath)
-    {
-        _liveLogSubscriptions.Remove(Context.ConnectionId);
-        await Clients.Group(workerId).SendAsync("StopLiveLog", logPath);
-    }
-
-    // Called by worker to push new log lines
-    public async Task LiveLogUpdate(object update)
-    {
-        // Broadcast to all clients subscribed to this worker/logPath
-        if (update is not null)
-        {
-            var workerId = update.GetType().GetProperty("WorkerId")?.GetValue(update)?.ToString();
-            var logPath = update.GetType().GetProperty("LogPath")?.GetValue(update)?.ToString();
-            foreach (var kvp in _liveLogSubscriptions)
-            {
-                if (kvp.Value.workerId == workerId && kvp.Value.logPath == logPath)
-                {
-                    await Clients.Client(kvp.Key).SendAsync("LiveLogUpdate", update);
-                }
-            }
-        }
     }
 }

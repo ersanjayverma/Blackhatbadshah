@@ -2,6 +2,7 @@
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Components.WebAssembly.Authentication
 @using Microsoft.AspNetCore.SignalR.Client
+@using Microsoft.AspNetCore.Components.Web
 @using shared.Dto
 @using frontend.Services
 @using Blazored.LocalStorage
@@ -48,11 +49,13 @@
                 </div>
             </div>
 
-            <!-- WORKER SELECTION -->
+            <!-- WORKER + LOG PATH SELECTION -->
             <div class="card modern-card shadow-sm mb-4">
                 <div class="card-body">
                     <div class="row g-3 align-items-end">
-                        <div class="col-md-6">
+
+                        <!-- Worker -->
+                        <div class="col-md-5">
                             <label class="form-label fw-bold">
                                 <i class="bi bi-hdd-network me-2"></i>Select Worker
                             </label>
@@ -66,6 +69,7 @@
                                         </option>
                                     }
                                 </select>
+
                                 <button class="btn btn-outline-secondary" @onclick="RefreshWorkers" disabled="@_loadingWorkers" title="Refresh workers">
                                     @if (_loadingWorkers)
                                     {
@@ -76,6 +80,7 @@
                                         <i class="bi bi-arrow-clockwise"></i>
                                     }
                                 </button>
+
                                 @if (_isSubscribed)
                                 {
                                     <button class="btn btn-outline-danger" @onclick="Unsubscribe">
@@ -89,12 +94,75 @@
                                     </button>
                                 }
                             </div>
+
                             <div class="mt-2 d-flex gap-2 align-items-center">
                                 <span class="badge bg-success">@_availableWorkers.Count(w => w.IsOnline) Online</span>
                                 <span class="badge bg-secondary">@_availableWorkers.Count Total</span>
                             </div>
                         </div>
-                        <div class="col-md-6">
+
+                        <!-- Log path -->
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">
+                                <i class="bi bi-file-earmark-text me-2"></i>Select Log to Stream
+                            </label>
+
+                            <select class="form-select"
+                                    @bind="_selectedLogPath"
+                                    disabled="@(!_isSubscribed || !_isConnected || _isStreaming)">
+                                <option value="">-- Select log path --</option>
+
+                                @foreach (var p in _selectedWorkerLogPaths)
+                                {
+                                    <option value="@p">@p</option>
+                                }
+                            </select>
+
+                            <div class="small text-secondary mt-1">
+                                @if (!_isSubscribed)
+                                {
+                                    <span>Connect worker first.</span>
+                                }
+                                else if (_selectedWorkerLogPaths.Count == 0)
+                                {
+                                    <span>No log paths received from worker yet.</span>
+                                }
+                                else
+                                {
+                                    <span>@_selectedWorkerLogPaths.Count paths available</span>
+                                }
+                            </div>
+                        </div>
+
+                        <!-- Start/Stop stream -->
+                        <div class="col-md-3 text-end">
+                            <label class="form-label fw-bold d-block">&nbsp;</label>
+
+                            <div class="btn-group w-100">
+                                <button class="btn btn-success"
+                                        @onclick="StartStream"
+                                        disabled="@(!_isSubscribed || !_isConnected || _isStreaming || string.IsNullOrWhiteSpace(_selectedLogPath))">
+                                    <i class="bi bi-play-fill me-1"></i>Start Stream
+                                </button>
+
+                                <button class="btn btn-outline-danger"
+                                        @onclick="StopStream"
+                                        disabled="@(!_isStreaming)">
+                                    <i class="bi bi-stop-fill me-1"></i>Stop
+                                </button>
+                            </div>
+
+                            @if (_isStreaming)
+                            {
+                                <div class="small mt-2 text-success">
+                                    <i class="bi bi-broadcast me-1"></i>
+                                    Streaming: @_selectedLogPath
+                                </div>
+                            }
+                        </div>
+
+                        <!-- Selected worker info -->
+                        <div class="col-12">
                             @if (_isSubscribed)
                             {
                                 var selectedWorker = _availableWorkers.FirstOrDefault(w => w.WorkerId == _subscribedWorkerId);
@@ -102,7 +170,7 @@
                                     <div class="d-flex align-items-center">
                                         <i class="bi bi-check-circle me-2 fs-5"></i>
                                         <div>
-                                            <strong>Streaming from: @(selectedWorker?.Hostname ?? _subscribedWorkerId)</strong>
+                                            <strong>Connected to: @(selectedWorker?.Hostname ?? _subscribedWorkerId)</strong>
                                             <div class="small">Worker ID: @_subscribedWorkerId</div>
                                         </div>
                                     </div>
@@ -112,10 +180,11 @@
                             {
                                 <div class="alert alert-info mb-0 py-2">
                                     <i class="bi bi-info-circle me-2"></i>
-                                    Select a worker from the dropdown and click Connect to start receiving logs.
+                                    Select a worker and click Connect.
                                 </div>
                             }
                         </div>
+
                     </div>
                 </div>
             </div>
@@ -201,7 +270,7 @@
             <div class="card modern-card shadow-sm mb-4">
                 <div class="card-body">
                     <div class="row g-3 align-items-end">
-                        <!-- Level Filter -->
+
                         <div class="col-md-2">
                             <label class="form-label small fw-bold">Level</label>
                             <select class="form-select" @bind="_filterLevel">
@@ -214,7 +283,6 @@
                             </select>
                         </div>
 
-                        <!-- Source Filter -->
                         <div class="col-md-2">
                             <label class="form-label small fw-bold">Source</label>
                             <select class="form-select" @bind="_filterSource">
@@ -226,14 +294,12 @@
                             </select>
                         </div>
 
-                        <!-- Search -->
                         <div class="col-md-3">
                             <label class="form-label small fw-bold">Search</label>
                             <input type="text" class="form-control" placeholder="Search logs..."
                                    @bind="_searchText" @bind:event="oninput" />
                         </div>
 
-                        <!-- Auto-scroll -->
                         <div class="col-md-2">
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" id="autoScroll"
@@ -244,7 +310,6 @@
                             </div>
                         </div>
 
-                        <!-- Analyze Button -->
                         <div class="col-md-3 text-end">
                             <div class="btn-group">
                                 <button class="btn btn-primary" @onclick="AnalyzeSelected"
@@ -265,6 +330,7 @@
                                 </button>
                             </div>
                         </div>
+
                     </div>
                 </div>
             </div>
@@ -286,10 +352,10 @@
                         <div class="empty-state-box">
                             <i class="bi bi-broadcast display-1 mb-3"></i>
                             <h5 class="fw-bold">Waiting for logs...</h5>
-                            <p>Logs will appear here when your worker starts pushing them</p>
+                            <p>Click <b>Start Stream</b> after selecting a log file.</p>
                             <small>
                                 <i class="bi bi-info-circle me-1"></i>
-                                Make sure your BHBWorker is running and connected
+                                Worker must be online and subscribed.
                             </small>
                         </div>
                     }
@@ -369,26 +435,6 @@
                 </div>
             }
 
-            <!-- LIVE LOGS (SignalR) -->
-            @if (_liveLogs.Count > 0)
-            {
-                <div class="card modern-card shadow-lg mb-4">
-                    <div class="card-header gradient-header-dark">
-                        <h5 class="mb-0">
-                            <i class="bi bi-terminal me-2"></i>Live Logs
-                        </h5>
-                    </div>
-                    <div class="card-body" style="max-height:300px;overflow-y:auto;">
-                        <pre>
-                            @foreach (var log in _liveLogs)
-                            {
-                                @log<br />
-                            }
-                        </pre>
-                    </div>
-                </div>
-            }
-
         </div>
     </Authorized>
 
@@ -456,9 +502,12 @@
 
     private bool _isConnected = false;
     private bool _isSubscribed = false;
+    private bool _isStreaming = false;
+
     private bool _autoScroll = true;
     private bool _selectAll = false;
     private bool _analyzing = false;
+
     private string _sessionId = string.Empty;
     private string _workerIdInput = string.Empty;
     private string _subscribedWorkerId = string.Empty;
@@ -471,10 +520,15 @@
     private List<WorkerRegistration> _availableWorkers = new();
     private bool _loadingWorkers;
 
+    private string _selectedLogPath = string.Empty;
+    private List<string> _selectedWorkerLogPaths = new();
+
     private const string WorkerIdStorageKey = "bhb_livelog_worker_id";
+    private const string LogPathStorageKey = "bhb_livelog_log_path";
 
     private IDisposable? _logReceivedSub;
     private IDisposable? _logBatchSub;
+    private IDisposable? _logUpdateSub;
     private IDisposable? _sessionConnectedSub;
     private IDisposable? _sessionDisconnectedSub;
     private IDisposable? _chunkQueuedSub;
@@ -482,12 +536,6 @@
     private IDisposable? _analysisStartedSub;
     private IDisposable? _analysisCompletedSub;
     private IDisposable? _analysisFailedSub;
-
-    private HubConnection? _hubConnection;
-    private List<string> _liveLogs = new();
-    private string? _selectedLogPath;
-    private string? _selectedWorkerId;
-    private IDisposable? _liveLogSub;
 
     private List<LiveLogEntry> FilteredLogs => _logs
         .Where(l => string.IsNullOrEmpty(_filterLevel) || l.Level == _filterLevel)
@@ -501,8 +549,7 @@
     {
         await InitializeSignalR();
         await RefreshWorkers();
-        await LoadSavedWorkerId();
-        await StartSignalR();
+        await LoadSavedWorkerIdAndLogPath();
     }
 
     private async Task RefreshWorkers()
@@ -514,6 +561,9 @@
         {
             var response = await WorkerApi.GetWorkersAsync();
             _availableWorkers = response.Workers;
+
+            if (_isSubscribed)
+                LoadSelectedWorkerPaths();
         }
         catch (Exception ex)
         {
@@ -526,43 +576,62 @@
         }
     }
 
-    private async Task LoadSavedWorkerId()
+    private async Task LoadSavedWorkerIdAndLogPath()
     {
         try
         {
             var savedWorkerId = await LocalStorage.GetItemAsync<string>(WorkerIdStorageKey);
+            var savedLogPath = await LocalStorage.GetItemAsync<string>(LogPathStorageKey);
+
             if (!string.IsNullOrEmpty(savedWorkerId))
             {
                 _workerIdInput = savedWorkerId;
                 await Subscribe();
             }
+
+            if (!string.IsNullOrEmpty(savedLogPath))
+            {
+                _selectedLogPath = savedLogPath;
+            }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Failed to load saved worker ID: {ex.Message}");
+            Console.WriteLine($"Failed to load saved values: {ex.Message}");
         }
+    }
+
+    private void LoadSelectedWorkerPaths()
+    {
+        var selected = _availableWorkers.FirstOrDefault(w => w.WorkerId == _subscribedWorkerId);
+        _selectedWorkerLogPaths = selected?.AvailableLogPaths?.ToList() ?? new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(_selectedLogPath) && !_selectedWorkerLogPaths.Contains(_selectedLogPath))
+            _selectedLogPath = string.Empty;
     }
 
     private async Task Subscribe()
     {
-        if (string.IsNullOrWhiteSpace(_workerIdInput)) return;
+        if (string.IsNullOrWhiteSpace(_workerIdInput))
+            return;
 
         try
         {
-            // Unsubscribe from previous worker if any
             if (_isSubscribed && !string.IsNullOrEmpty(_subscribedWorkerId))
             {
+                await SafeStopStream();
                 await HubService.Connection.SendAsync("UnsubscribeFromWorker", _subscribedWorkerId);
             }
 
-            // Subscribe to new worker
             await HubService.Connection.SendAsync("SubscribeToWorker", _workerIdInput.Trim());
             _subscribedWorkerId = _workerIdInput.Trim();
-            _isSubscribed = true;
 
-            // Save to local storage
+            _isSubscribed = true;
+            _isConnected = true;
+            _isStreaming = false;
+
             await LocalStorage.SetItemAsync(WorkerIdStorageKey, _subscribedWorkerId);
 
+            LoadSelectedWorkerPaths();
             Toast.ShowSuccess($"Subscribed to worker: {_subscribedWorkerId}");
             ClearLogs();
         }
@@ -574,17 +643,24 @@
 
     private async Task Unsubscribe()
     {
-        if (!_isSubscribed || string.IsNullOrEmpty(_subscribedWorkerId)) return;
+        if (!_isSubscribed || string.IsNullOrEmpty(_subscribedWorkerId))
+            return;
 
         try
         {
+            await SafeStopStream();
             await HubService.Connection.SendAsync("UnsubscribeFromWorker", _subscribedWorkerId);
+
             _isSubscribed = false;
             _isConnected = false;
-            _subscribedWorkerId = string.Empty;
+            _isStreaming = false;
 
-            // Clear from local storage
+            _subscribedWorkerId = string.Empty;
+            _selectedWorkerLogPaths.Clear();
+            _selectedLogPath = string.Empty;
+
             await LocalStorage.RemoveItemAsync(WorkerIdStorageKey);
+            await LocalStorage.RemoveItemAsync(LogPathStorageKey);
 
             Toast.ShowSuccess("Unsubscribed from worker");
         }
@@ -602,42 +678,108 @@
             {
                 var tokenResult = await TokenProvider.RequestAccessToken();
                 if (tokenResult.TryGetToken(out var token))
-                {
                     return token.Value;
-                }
+
                 return null;
             });
+
             await HubService.StartAsync();
 
-            // Subscribe to live log events
+            // Old pipeline (keep it, no harm)
             _logReceivedSub = HubService.On<LiveLogEntry>("LiveLogReceived", async (entry) =>
             {
+                _isConnected = true;
                 AddLog(entry);
                 await InvokeAsync(StateHasChanged);
-                if (_autoScroll) await ScrollToBottom();
+                if (_autoScroll)
+                    await ScrollToBottom();
             });
 
             _logBatchSub = HubService.On<LiveLogBatch>("LiveLogBatch", async (batch) =>
             {
+                _isConnected = true;
                 _sessionId = batch.SessionId;
+
                 foreach (var entry in batch.Entries)
-                {
                     AddLog(entry);
-                }
+
                 await InvokeAsync(StateHasChanged);
-                if (_autoScroll) await ScrollToBottom();
+                if (_autoScroll)
+                    await ScrollToBottom();
+            });
+
+            // Handle LiveStreamStarted confirmation from server
+            HubService.On<object>("LiveStreamStarted", async (data) =>
+            {
+                _isStreaming = true;
+                await InvokeAsync(StateHasChanged);
+            });
+
+            // Handle LiveStreamStopped confirmation from server
+            HubService.On<object>("LiveStreamStopped", async (data) =>
+            {
+                _isStreaming = false;
+                await InvokeAsync(StateHasChanged);
+            });
+
+            // ✅ LiveLogUpdate - using strongly typed DTO
+            _logUpdateSub = HubService.On<LiveLogUpdate>("LiveLogUpdate", async (update) =>
+            {
+                try
+                {
+                    _isConnected = true;
+
+                    if (string.IsNullOrWhiteSpace(update?.Line))
+                        return;
+
+                    // Accept only currently subscribed worker (case-insensitive)
+                    if (!string.IsNullOrWhiteSpace(update.WorkerId) &&
+                        !string.Equals(update.WorkerId, _subscribedWorkerId, StringComparison.OrdinalIgnoreCase))
+                        return;
+
+                    // Accept only selected log path (if streaming a specific path)
+                    if (_isStreaming && !string.IsNullOrWhiteSpace(_selectedLogPath) &&
+                        !string.IsNullOrWhiteSpace(update.LogPath) &&
+                        !string.Equals(update.LogPath, _selectedLogPath, StringComparison.OrdinalIgnoreCase))
+                        return;
+
+                    var entry = new LiveLogEntry
+                    {
+                        Id = Guid.NewGuid().ToString("N"),
+                        WorkerId = update.WorkerId ?? _subscribedWorkerId,
+                        SessionId = _sessionId,
+                        RawLine = update.Line,
+                        Message = update.Line,
+                        Source = update.LogPath ?? "LiveLog",
+                        Level = "INFO",
+                        Timestamp = update.Timestamp
+                    };
+
+                    AddLog(entry);
+
+                    await InvokeAsync(StateHasChanged);
+                    if (_autoScroll)
+                        await ScrollToBottom();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"LiveLogUpdate error: {ex.Message}");
+                }
             });
 
             _sessionConnectedSub = HubService.On<object>("LiveLogSessionConnected", async (data) =>
             {
                 _isConnected = true;
+                await RefreshWorkers();
+                LoadSelectedWorkerPaths();
                 await InvokeAsync(StateHasChanged);
-                Toast.ShowSuccess("Worker connected! Logs will appear shortly.");
+                Toast.ShowSuccess("Worker connected!");
             });
 
             _sessionDisconnectedSub = HubService.On<object>("LiveLogSessionDisconnected", async (data) =>
             {
                 _isConnected = false;
+                _isStreaming = false;
                 await InvokeAsync(StateHasChanged);
                 Toast.ShowWarning("Worker disconnected.");
             });
@@ -650,11 +792,17 @@
 
             _subscribedToWorkerSub = HubService.On<string>("SubscribedToWorker", async (workerId) =>
             {
-                Console.WriteLine($"Confirmed subscription to worker: {workerId}");
+                if (!string.IsNullOrWhiteSpace(_subscribedWorkerId) &&
+                    workerId.Equals(_subscribedWorkerId, StringComparison.OrdinalIgnoreCase))
+                {
+                    _isConnected = true;
+                    await RefreshWorkers();
+                    LoadSelectedWorkerPaths();
+                }
+
                 await InvokeAsync(StateHasChanged);
             });
 
-            // Analysis status notifications
             _analysisStartedSub = HubService.On<object>("AnalysisStarted", async (data) =>
             {
                 Toast.ShowInfo("Analysis started...");
@@ -680,43 +828,66 @@
         }
     }
 
-    private async Task StartSignalR()
+    private async Task StartStream()
     {
-        _hubConnection = new HubConnectionBuilder()
-            .WithUrl(Navigation.ToAbsoluteUri("/hubs/livelog"))
-            .Build();
-
-        _liveLogSub = _hubConnection.On<object>("LiveLogUpdate", (update) =>
+        if (!_isSubscribed || !_isConnected)
         {
-            var line = update?.GetType().GetProperty("Line")?.GetValue(update)?.ToString();
-            if (!string.IsNullOrEmpty(line))
+            Toast.ShowWarning("Worker not connected yet.");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_selectedLogPath))
+        {
+            Toast.ShowWarning("Select a log path first.");
+            return;
+        }
+
+        try
+        {
+            await SafeStopStream();
+
+            await LocalStorage.SetItemAsync(LogPathStorageKey, _selectedLogPath);
+
+            await HubService.Connection.SendAsync("StartLiveLog", _subscribedWorkerId, _selectedLogPath);
+
+            _isStreaming = true;
+            ClearLogs();
+            Toast.ShowSuccess("Live streaming started.");
+        }
+        catch (Exception ex)
+        {
+            _isStreaming = false;
+            Toast.ShowError($"Failed to start stream: {ex.Message}");
+        }
+    }
+
+    private async Task StopStream()
+    {
+        await SafeStopStream();
+        Toast.ShowInfo("Streaming stopped.");
+    }
+
+    private async Task SafeStopStream()
+    {
+        if (!_isStreaming) return;
+
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(_subscribedWorkerId) && !string.IsNullOrWhiteSpace(_selectedLogPath))
             {
-                _liveLogs.Add(line);
-                InvokeAsync(StateHasChanged);
+                await HubService.Connection.SendAsync("StopLiveLog", _subscribedWorkerId, _selectedLogPath);
             }
-        });
-
-        await _hubConnection.StartAsync();
-    }
-
-    private async Task StartLiveLog(string workerId, string logPath)
-    {
-        _selectedWorkerId = workerId;
-        _selectedLogPath = logPath;
-        await _hubConnection?.InvokeAsync("StartLiveLog", workerId, logPath);
-    }
-
-    private async Task StopLiveLog()
-    {
-        if (_selectedWorkerId != null && _selectedLogPath != null)
+        }
+        catch { }
+        finally
         {
-            await _hubConnection?.InvokeAsync("StopLiveLog", _selectedWorkerId, _selectedLogPath);
+            _isStreaming = false;
+            await InvokeAsync(StateHasChanged);
         }
     }
 
     private void AddLog(LiveLogEntry entry)
     {
-        // Limit to last 1000 logs to prevent memory issues
         if (_logs.Count >= 1000)
         {
             var toRemove = _logs[0];
@@ -732,7 +903,7 @@
     {
         _stats.TotalLogs++;
 
-        switch (entry.Level.ToUpperInvariant())
+        switch ((entry.Level ?? "INFO").ToUpperInvariant())
         {
             case "ERROR":
             case "FATAL":
@@ -741,14 +912,17 @@
             case "EMERG":
                 _stats.ErrorCount++;
                 break;
+
             case "WARN":
             case "WARNING":
                 _stats.WarningCount++;
                 break;
+
             case "INFO":
             case "NOTICE":
                 _stats.InfoCount++;
                 break;
+
             case "DEBUG":
             case "TRACE":
             case "VERBOSE":
@@ -801,6 +975,7 @@
     {
         foreach (var log in FilteredLogs)
             _selectedLogs.Add(log.Id);
+
         _selectAll = true;
     }
 
@@ -847,7 +1022,7 @@
 
     private string GetRowClass(string level)
     {
-        return level.ToUpperInvariant() switch
+        return (level ?? "INFO").ToUpperInvariant() switch
         {
             "ERROR" or "FATAL" or "CRITICAL" or "ALERT" or "EMERG" => "log-row-error",
             "WARN" or "WARNING" => "log-row-warn",
@@ -859,7 +1034,7 @@
 
     private string GetLevelBadgeClass(string level)
     {
-        return level.ToUpperInvariant() switch
+        return (level ?? "INFO").ToUpperInvariant() switch
         {
             "ERROR" or "FATAL" or "CRITICAL" or "ALERT" or "EMERG" => "bg-danger",
             "WARN" or "WARNING" => "bg-warning text-dark",
@@ -873,6 +1048,7 @@
     {
         _logReceivedSub?.Dispose();
         _logBatchSub?.Dispose();
+        _logUpdateSub?.Dispose();
         _sessionConnectedSub?.Dispose();
         _sessionDisconnectedSub?.Dispose();
         _chunkQueuedSub?.Dispose();
@@ -881,16 +1057,8 @@
         _analysisCompletedSub?.Dispose();
         _analysisFailedSub?.Dispose();
 
-        if (_liveLogSub != null)
-        {
-            _liveLogSub.Dispose();
-        }
-        if (_hubConnection != null)
-        {
-            await _hubConnection.DisposeAsync();
-        }
+        await SafeStopStream();
 
-        // Unsubscribe from worker when leaving page
         if (_isSubscribed && !string.IsNullOrEmpty(_subscribedWorkerId))
         {
             try

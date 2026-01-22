@@ -21,6 +21,7 @@ public interface IHubNotificationService
     Task NotifyLiveLogSessionConnectedAsync(string workerId, string sessionId);
     Task NotifyLiveLogSessionDisconnectedAsync(string workerId, string sessionId);
     Task NotifyLiveLogChunkQueuedAsync(string workerId, string sessionId, int chunkNumber);
+    Task NotifyLiveLogUpdateAsync(string workerId, string logPath, string line, DateTime timestamp);
 
     // Worker metrics notifications
     Task NotifyWorkerMetricsAsync(string workerId, WorkerMetrics metrics);

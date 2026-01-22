@@ -56,6 +56,15 @@ public class WorkerRegistry : IWorkerRegistry
         }
     }
 
+    public void UpdateOnline(string workerId)
+    {
+        if (_workers.TryGetValue(workerId, out var worker))
+        {
+            worker.IsOnline = true;
+            worker.LastHeartbeat = DateTime.UtcNow;
+        }
+    }
+
     public void UpdateHeartbeat(string workerId, WorkerMetrics? metrics = null)
     {
         if (_workers.TryGetValue(workerId, out var worker))

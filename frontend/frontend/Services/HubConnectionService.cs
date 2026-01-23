@@ -7,9 +7,9 @@ public class HubConnectionService : IAsyncDisposable
 {
     private HubConnection? _connection;
     private bool _isStarted;
-    private SemaphoreSlim? _startLock = new(1, 1);
+    private readonly SemaphoreSlim _startLock = new(1, 1);
     private Func<Task<string?>>? _tokenProvider;
-    private readonly object _lockGuard = new();
+    private bool _disposed;
 
     public HubConnection Connection => _connection ?? throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
 
@@ -22,19 +22,11 @@ public class HubConnectionService : IAsyncDisposable
     public event Action<Exception?>? OnClosed;
     public event Action<bool>? OnConnectionStateChanged;
 
-    private SemaphoreSlim GetOrCreateLock()
-    {
-        lock (_lockGuard)
-        {
-            _startLock ??= new SemaphoreSlim(1, 1);
-            return _startLock;
-        }
-    }
-
     public async Task InitializeAsync(Func<Task<string?>> tokenProviderFunc)
     {
-        var semaphore = GetOrCreateLock();
-        await semaphore.WaitAsync();
+        if (_disposed) return;
+
+        await _startLock.WaitAsync();
         try
         {
             if (_connection != null)
@@ -53,19 +45,18 @@ public class HubConnectionService : IAsyncDisposable
                         }
                         return string.Empty;
                     };
-                    // Allow all transports with WebSockets preferred, fallback to LongPolling
                     options.Transports = HttpTransportType.WebSockets | HttpTransportType.LongPolling;
                 })
-                .WithAutomaticReconnect(new[] { 
-                    TimeSpan.Zero,           // Immediate first retry
-                    TimeSpan.FromSeconds(2), 
-                    TimeSpan.FromSeconds(5), 
+                .WithAutomaticReconnect(new[] {
+                    TimeSpan.Zero,
+                    TimeSpan.FromSeconds(2),
+                    TimeSpan.FromSeconds(5),
                     TimeSpan.FromSeconds(10),
                     TimeSpan.FromSeconds(30),
-                    TimeSpan.FromSeconds(60) // Extended retries
+                    TimeSpan.FromSeconds(60)
                 })
-                .WithKeepAliveInterval(TimeSpan.FromSeconds(30))  // Match server
-                .WithServerTimeout(TimeSpan.FromSeconds(90))       // Match server
+                .WithKeepAliveInterval(TimeSpan.FromSeconds(30))
+                .WithServerTimeout(TimeSpan.FromSeconds(90))
                 .Build();
 
             _connection.Reconnecting += error =>
@@ -77,7 +68,6 @@ public class HubConnectionService : IAsyncDisposable
 
             _connection.Reconnected += async connectionId =>
             {
-                // Rejoin user group after reconnection
                 try
                 {
                     await _connection.InvokeAsync("JoinUserGroup");
@@ -100,14 +90,15 @@ public class HubConnectionService : IAsyncDisposable
         }
         finally
         {
-            semaphore.Release();
+            _startLock.Release();
         }
     }
 
     public async Task StartAsync()
     {
-        var semaphore = GetOrCreateLock();
-        await semaphore.WaitAsync();
+        if (_disposed) return;
+
+        await _startLock.WaitAsync();
         try
         {
             if (_connection == null)
@@ -118,21 +109,20 @@ public class HubConnectionService : IAsyncDisposable
                 await _connection.StartAsync();
                 _isStarted = true;
                 OnConnectionStateChanged?.Invoke(true);
-
-                // Join user-specific group
                 await _connection.InvokeAsync("JoinUserGroup");
             }
         }
         finally
         {
-            semaphore.Release();
+            _startLock.Release();
         }
     }
 
     public async Task StopAsync()
     {
-        var semaphore = GetOrCreateLock();
-        await semaphore.WaitAsync();
+        if (_disposed) return;
+
+        await _startLock.WaitAsync();
         try
         {
             if (_connection != null && _isStarted)
@@ -143,7 +133,7 @@ public class HubConnectionService : IAsyncDisposable
         }
         finally
         {
-            semaphore.Release();
+            _startLock.Release();
         }
     }
 
@@ -151,7 +141,6 @@ public class HubConnectionService : IAsyncDisposable
     {
         if (_connection == null)
             throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
-
         return _connection.On(methodName, handler);
     }
 
@@ -159,7 +148,6 @@ public class HubConnectionService : IAsyncDisposable
     {
         if (_connection == null)
             throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
-
         return _connection.On(methodName, handler);
     }
 
@@ -167,7 +155,6 @@ public class HubConnectionService : IAsyncDisposable
     {
         if (_connection == null)
             throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
-
         return _connection.On(methodName, handler);
     }
 
@@ -175,7 +162,6 @@ public class HubConnectionService : IAsyncDisposable
     {
         if (_connection == null)
             throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
-
         return _connection.On(methodName, handler);
     }
 
@@ -183,7 +169,6 @@ public class HubConnectionService : IAsyncDisposable
     {
         if (_connection == null)
             throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
-
         return _connection.On(methodName, handler);
     }
 
@@ -191,7 +176,6 @@ public class HubConnectionService : IAsyncDisposable
     {
         if (_connection == null)
             throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
-
         return _connection.On(methodName, handler);
     }
 
@@ -199,7 +183,6 @@ public class HubConnectionService : IAsyncDisposable
     {
         if (_connection == null)
             throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
-
         return _connection.On(methodName, handler);
     }
 
@@ -207,7 +190,6 @@ public class HubConnectionService : IAsyncDisposable
     {
         if (_connection == null)
             throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
-
         await _connection.InvokeAsync(methodName);
     }
 
@@ -215,7 +197,6 @@ public class HubConnectionService : IAsyncDisposable
     {
         if (_connection == null)
             throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
-
         await _connection.InvokeAsync(methodName, arg);
     }
 
@@ -223,7 +204,6 @@ public class HubConnectionService : IAsyncDisposable
     {
         if (_connection == null)
             throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
-
         await _connection.InvokeAsync(methodName, arg1, arg2);
     }
 
@@ -231,7 +211,6 @@ public class HubConnectionService : IAsyncDisposable
     {
         if (_connection == null)
             throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
-
         return await _connection.InvokeAsync<TResult>(methodName);
     }
 
@@ -239,31 +218,22 @@ public class HubConnectionService : IAsyncDisposable
     {
         if (_connection == null)
             throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
-
         return await _connection.InvokeAsync<TResult>(methodName, arg);
     }
 
     public async ValueTask DisposeAsync()
     {
-        SemaphoreSlim? semaphoreToDispose;
-        
-        lock (_lockGuard)
-        {
-            semaphoreToDispose = _startLock;
-            _startLock = null;
-        }
-        
+        if (_disposed) return;
+        _disposed = true;
+
         if (_connection != null)
         {
-            try
-            {
-                await _connection.DisposeAsync();
-            }
+            try { await _connection.DisposeAsync(); }
             catch { }
             _connection = null;
         }
-        
         _isStarted = false;
-        semaphoreToDispose?.Dispose();
+        _startLock.Dispose();
     }
 }
+

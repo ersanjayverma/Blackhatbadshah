@@ -33,8 +33,10 @@ builder.Services.AddSignalR(options =>
     options.MaximumReceiveMessageSize = 1024 * 1024;
     // Enable streaming for large data transfers
     options.StreamBufferCapacity = 20;
-    // Enable detailed errors in development
-    options.EnableDetailedErrors = builder.Environment.IsDevelopment();
+    // Enable detailed errors - helps diagnose disconnection issues
+    options.EnableDetailedErrors = true;
+    // Add hub exception filter for logging
+    options.AddFilter<backend.Hubs.HubExceptionFilter>();
 });
 builder.Services.AddSingleton<IConfiguration>(builder.Configuration);
 // -------------------- Services --------------------

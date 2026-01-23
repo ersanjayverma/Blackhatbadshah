@@ -310,15 +310,23 @@ public class LiveLogHub : Hub
             return;
         }
 
-        metrics.WorkerId = workerId;
-        metrics.Timestamp = DateTime.UtcNow;
+        try
+        {
+            metrics.WorkerId = workerId;
+            metrics.Timestamp = DateTime.UtcNow;
 
-        _workerRegistry.UpdateHeartbeat(workerId, metrics);
+            _workerRegistry.UpdateHeartbeat(workerId, metrics);
 
-        if (Guid.TryParse(workerId, out var wid))
-            await TouchWorkerLastSeenAsync(wid);
+            if (Guid.TryParse(workerId, out var wid))
+                await TouchWorkerLastSeenAsync(wid);
 
-        await _hubNotification.NotifyWorkerMetricsAsync(workerId, metrics);
+            await _hubNotification.NotifyWorkerMetricsAsync(workerId, metrics);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error processing metrics from worker {WorkerId}", workerId);
+            // Don't rethrow - we don't want to disconnect the worker for metrics errors
+        }
     }
 
     public async Task PushSystemMonitorData(SystemMonitorData data)
@@ -329,22 +337,38 @@ public class LiveLogHub : Hub
             return;
         }
 
-        data.WorkerId = workerId;
-        data.Timestamp = DateTime.UtcNow;
+        try
+        {
+            data.WorkerId = workerId;
+            data.Timestamp = DateTime.UtcNow;
 
-        await _hubNotification.NotifySystemMonitorDataAsync(workerId, data);
+            await _hubNotification.NotifySystemMonitorDataAsync(workerId, data);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error processing system monitor data from worker {WorkerId}", workerId);
+            // Don't rethrow - we don't want to disconnect the worker for monitor data errors
+        }
     }
 
     public async Task WorkerOnline(string workerId)
     {
-        // heartbeat from worker - just update registry, don't broadcast
-        if (Guid.TryParse(workerId, out var wid))
-            await TouchWorkerLastSeenAsync(wid);
+        try
+        {
+            // heartbeat from worker - just update registry, don't broadcast
+            if (Guid.TryParse(workerId, out var wid))
+                await TouchWorkerLastSeenAsync(wid);
 
-        _workerRegistry.UpdateOnline(workerId);
-        
-        // Don't call NotifyWorkerRegisteredAsync on every heartbeat - causes spam
-        // Only notify on actual registration (see RegisterWorker method)
+            _workerRegistry.UpdateOnline(workerId);
+            
+            // Don't call NotifyWorkerRegisteredAsync on every heartbeat - causes spam
+            // Only notify on actual registration (see RegisterWorker method)
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error processing WorkerOnline from worker {WorkerId}", workerId);
+            // Don't rethrow - heartbeat errors shouldn't disconnect the worker
+        }
     }
 
     public async Task RegisterWorker(RegisterWorkerRequest request)
@@ -355,25 +379,38 @@ public class LiveLogHub : Hub
             return;
         }
 
-        var httpContext = Context.GetHttpContext();
-        var apiUrl = httpContext != null
-            ? $"{httpContext.Request.Scheme}://{httpContext.Request.Host}"
-            : string.Empty;
-
-        _workerRegistry.RegisterWorker(workerId, SessionId, apiUrl, request);
-
-        // Update worker details in DB + mark last seen
-        if (Guid.TryParse(workerId, out var wid))
-            await TouchWorkerLastSeenAsync(wid);
-
-        await Clients.Caller.SendAsync("Registered", new
+        try
         {
-            WorkerId = workerId,
-            Hostname = request.Hostname,
-            LogPaths = request.AvailableLogPaths
-        });
+            var httpContext = Context.GetHttpContext();
+            var apiUrl = httpContext != null
+                ? $"{httpContext.Request.Scheme}://{httpContext.Request.Host}"
+                : string.Empty;
 
-        await _hubNotification.NotifyWorkerRegisteredAsync(workerId);
+            _workerRegistry.RegisterWorker(workerId, SessionId, apiUrl, request);
+
+            // Update worker details in DB + mark last seen
+            if (Guid.TryParse(workerId, out var wid))
+                await TouchWorkerLastSeenAsync(wid);
+
+            await Clients.Caller.SendAsync("Registered", new
+            {
+                WorkerId = workerId,
+                Hostname = request.Hostname,
+                LogPaths = request.AvailableLogPaths
+            });
+
+            await _hubNotification.NotifyWorkerRegisteredAsync(workerId);
+            
+            _logger.LogInformation(
+                "Worker registered: {WorkerId}, Hostname: {Hostname}, LogPaths: {LogCount}",
+                workerId, request.Hostname, request.AvailableLogPaths?.Count ?? 0);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error registering worker {WorkerId}", workerId);
+            await Clients.Caller.SendAsync("Error", $"Registration failed: {ex.Message}");
+            // Don't rethrow - let the worker stay connected and retry registration
+        }
     }
 
     public async Task LogPullResponse(LogPullResponse response)
@@ -384,8 +421,15 @@ public class LiveLogHub : Hub
             return;
         }
 
-        response.WorkerId = workerId;
-        await _hubNotification.NotifyLogPullResponseAsync(workerId, response);
+        try
+        {
+            response.WorkerId = workerId;
+            await _hubNotification.NotifyLogPullResponseAsync(workerId, response);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error processing LogPullResponse from worker {WorkerId}", workerId);
+        }
     }
 
     // ============================================================
@@ -419,8 +463,15 @@ public class LiveLogHub : Hub
         if (update == null || string.IsNullOrWhiteSpace(update.WorkerId))
             return;
 
-        // Use the notification service to broadcast to DataHub clients
-        await _hubNotification.NotifyLiveLogUpdateAsync(update.WorkerId, update.LogPath, update.Line, update.Timestamp);
+        try
+        {
+            // Use the notification service to broadcast to DataHub clients
+            await _hubNotification.NotifyLiveLogUpdateAsync(update.WorkerId, update.LogPath, update.Line, update.Timestamp);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Error broadcasting live log update for worker {WorkerId}", update.WorkerId);
+        }
     }
 
     /// <summary>
@@ -436,9 +487,17 @@ public class LiveLogHub : Hub
             return;
         }
 
-        // Use the notification service to broadcast to DataHub clients
-        // This ensures frontend clients connected to DataHub receive the update
-        await _hubNotification.NotifyLiveLogUpdateAsync(sessionWorkerId, logPath, line, timestamp);
+        try
+        {
+            // Use the notification service to broadcast to DataHub clients
+            // This ensures frontend clients connected to DataHub receive the update
+            await _hubNotification.NotifyLiveLogUpdateAsync(sessionWorkerId, logPath, line, timestamp);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Error broadcasting live log line for worker {WorkerId}", sessionWorkerId);
+            // Don't rethrow - we don't want to disconnect the worker for broadcast errors
+        }
     }
 
     // ============================================================
@@ -551,6 +610,11 @@ public class LiveLogHub : Hub
         var sessionId = SessionId;
         var httpContext = Context.GetHttpContext();
         var queryWorkerId = NormalizeWorkerId(GetWorkerIdFromQuery());
+        var remoteIp = httpContext?.Connection?.RemoteIpAddress?.ToString() ?? "unknown";
+
+        _logger.LogDebug(
+            "LiveLogHub: Connection attempt - SessionId: {SessionId}, RemoteIP: {RemoteIP}, QueryWorkerId: {QueryWorkerId}",
+            sessionId, remoteIp, queryWorkerId ?? "N/A");
 
         string? workerId = null;
         bool isWorker = false;
@@ -649,6 +713,15 @@ public class LiveLogHub : Hub
 
         await Clients.Caller.SendAsync("Connected", new { SessionId = sessionId, WorkerId = workerId });
 
+        _logger.LogInformation(
+            "========== WORKER CONNECTED ==========\n" +
+            "  WorkerId: {WorkerId}\n" +
+            "  SessionId: {SessionId}\n" +
+            "  IsWorker: {IsWorker}\n" +
+            "  Timestamp: {Timestamp}\n" +
+            "======================================",
+            workerId, sessionId, isWorker, DateTime.UtcNow.ToString("O"));
+
         // only notify "worker session connected" when real worker connects
         if (isWorker)
             await _hubNotification.NotifyLiveLogSessionConnectedAsync(workerId, sessionId);
@@ -659,6 +732,26 @@ public class LiveLogHub : Hub
 public override async Task OnDisconnectedAsync(Exception? exception)
 {
     var sessionId = SessionId;
+    
+    // Log detailed disconnect information
+    if (exception != null)
+    {
+        _logger.LogWarning(
+            "========== CLIENT DISCONNECTED WITH ERROR ==========\n" +
+            "  SessionId: {SessionId}\n" +
+            "  ErrorType: {ErrorType}\n" +
+            "  ErrorMessage: {ErrorMessage}\n" +
+            "  InnerException: {InnerException}\n" +
+            "  StackTrace: {StackTrace}\n" +
+            "  Timestamp: {Timestamp}\n" +
+            "====================================================",
+            sessionId,
+            exception.GetType().FullName,
+            exception.Message,
+            exception.InnerException?.Message ?? "N/A",
+            exception.StackTrace?.Split('\n').FirstOrDefault() ?? "N/A",
+            DateTime.UtcNow.ToString("O"));
+    }
 
     // Clean up per-connection transient state
     _liveLogSubscriptions.TryRemove(sessionId, out _);
@@ -680,8 +773,14 @@ public override async Task OnDisconnectedAsync(Exception? exception)
             // DO NOT unregister worker.
             // DO NOT notify worker-offline here.
             _logger.LogInformation(
-                "Transport disconnected for worker {WorkerId}, session {SessionId}. Awaiting reconnect.",
-                workerId, sessionId);
+                "========== WORKER TRANSPORT DISCONNECTED ==========\n" +
+                "  WorkerId: {WorkerId}\n" +
+                "  SessionId: {SessionId}\n" +
+                "  HadError: {HadError}\n" +
+                "  Timestamp: {Timestamp}\n" +
+                "  Note: Awaiting auto-reconnect from worker\n" +
+                "===================================================",
+                workerId, sessionId, exception != null, DateTime.UtcNow.ToString("O"));
         }
     }
 

@@ -1,12 +1,49 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Net.Sockets;
+using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace BHBWorker;
+
+/// <summary>
+/// Custom retry policy with exponential backoff for SignalR reconnection.
+/// Provides unlimited retries with increasing delays up to a maximum.
+/// Logs each retry attempt for diagnostics.
+/// </summary>
+public class RetryPolicy : IRetryPolicy
+{
+    private static readonly TimeSpan[] _retryDelays = new[]
+    {
+        TimeSpan.Zero,              // Immediate first retry
+        TimeSpan.FromSeconds(2),
+        TimeSpan.FromSeconds(5),
+        TimeSpan.FromSeconds(10),
+        TimeSpan.FromSeconds(30),
+        TimeSpan.FromSeconds(60),
+        TimeSpan.FromSeconds(120),  // 2 minutes max
+    };
+
+    public TimeSpan? NextRetryDelay(RetryContext retryContext)
+    {
+        // Never give up - use the last delay for all subsequent retries
+        var index = Math.Min(retryContext.PreviousRetryCount, _retryDelays.Length - 1);
+        var delay = _retryDelays[index];
+        
+        // Log retry attempt with details (using Console since we don't have ILogger here)
+        Console.WriteLine(
+            $"[SignalR Retry] Attempt #{retryContext.PreviousRetryCount + 1} | " +
+            $"Delay: {delay.TotalSeconds}s | " +
+            $"Elapsed: {retryContext.ElapsedTime.TotalSeconds:F1}s | " +
+            $"Error: {retryContext.RetryReason?.Message ?? "Unknown"} | " +
+            $"Time: {DateTime.UtcNow:O}");
+        
+        return delay;
+    }
+}
 
 public class LogPusherService : BackgroundService
 {
@@ -89,11 +126,24 @@ public class LogPusherService : BackgroundService
                     consecutiveFailures++;
                     var delay = Math.Min(5000 * consecutiveFailures, 60000); // Max 60s delay
                     _logger.LogWarning(
-                        "LiveLogHub host not reachable (attempt {Attempt}), retrying in {Delay}ms",
-                        consecutiveFailures, delay);
+                        "========== HOST UNREACHABLE ==========\n" +
+                        "  WorkerId: {WorkerId}\n" +
+                        "  HubUrl: {HubUrl}\n" +
+                        "  Attempt: {Attempt}\n" +
+                        "  RetryDelay: {Delay}ms\n" +
+                        "  Timestamp: {Timestamp}\n" +
+                        "=======================================",
+                        _workerId, hubUrl, consecutiveFailures, delay, DateTime.UtcNow.ToString("O"));
                     await Task.Delay(delay, stoppingToken);
                     continue;
                 }
+
+                // Reset failure counter on successful reachability
+                if (consecutiveFailures > 0)
+                {
+                    _logger.LogInformation("Host reachable after {Attempts} failed attempts", consecutiveFailures);
+                }
+                consecutiveFailures = 0;
 
                 // Connect ONCE. SignalR handles reconnects.
                 await EnsureConnectedAsync(hubUrl, psk, apiKey, _workerId, stoppingToken);
@@ -104,28 +154,67 @@ public class LogPusherService : BackgroundService
             }
             catch (OperationCanceledException)
             {
+                _logger.LogInformation("Worker shutdown requested");
                 break;
             }
             catch (Exception ex)
             {
                 consecutiveFailures++;
                 var delay = Math.Min(5000 * consecutiveFailures, 60000);
+                var errorReason = GetConnectionErrorReason(ex);
+                
+                _logger.LogError(
+                    "========== CONNECTION ERROR ==========\n" +
+                    "  WorkerId: {WorkerId}\n" +
+                    "  Attempt: {Attempt}/{MaxAttempts}\n" +
+                    "  Reason: {Reason}\n" +
+                    "  ErrorType: {ErrorType}\n" +
+                    "  ErrorMessage: {ErrorMessage}\n" +
+                    "  InnerException: {InnerException}\n" +
+                    "  RetryDelay: {Delay}ms\n" +
+                    "  Timestamp: {Timestamp}\n" +
+                    "======================================",
+                    _workerId,
+                    consecutiveFailures,
+                    maxConsecutiveFailures,
+                    errorReason,
+                    ex.GetType().FullName,
+                    ex.Message,
+                    ex.InnerException?.Message ?? "N/A",
+                    delay,
+                    DateTime.UtcNow.ToString("O"));
                 
                 if (consecutiveFailures >= maxConsecutiveFailures)
                 {
-                    _logger.LogError(ex, 
-                        "Too many consecutive failures ({Count}). Worker may need manual intervention.",
+                    _logger.LogCritical(
+                        "CRITICAL: Too many consecutive failures ({Count}). Worker may need manual intervention.",
                         consecutiveFailures);
-                }
-                else
-                {
-                    _logger.LogError(ex, "Error in worker loop (attempt {Attempt}). Retrying in {Delay}ms...",
-                        consecutiveFailures, delay);
                 }
                 
                 await Task.Delay(delay, stoppingToken);
             }
         }
+    }
+
+    /// <summary>
+    /// Analyzes the exception to determine the likely cause of connection failure.
+    /// </summary>
+    private static string GetConnectionErrorReason(Exception ex)
+    {
+        var message = ex.Message?.ToLowerInvariant() ?? "";
+        
+        return ex switch
+        {
+            SocketException socketEx => $"Network error: {socketEx.SocketErrorCode}",
+            System.Net.Http.HttpRequestException httpEx => $"HTTP error: {httpEx.StatusCode?.ToString() ?? "Unknown"}",
+            TimeoutException => "Connection timed out",
+            _ when message.Contains("websocket") => "WebSocket connection failed",
+            _ when message.Contains("ssl") || message.Contains("tls") => "SSL/TLS error",
+            _ when message.Contains("auth") => "Authentication error",
+            _ when message.Contains("refused") => "Connection refused",
+            _ when message.Contains("timeout") => "Operation timed out",
+            _ => "Unknown connection error"
+        };
     }
 
 
@@ -151,6 +240,7 @@ public class LogPusherService : BackgroundService
             _logger.LogInformation("Using PSK auth for worker {WorkerId}", workerId);
         }
 
+
         _connection = new HubConnectionBuilder()
             .WithUrl(fullUrl, options =>
             {
@@ -158,23 +248,53 @@ public class LogPusherService : BackgroundService
                 {
                     try { options.Headers.Add("X-Worker-Key", apiKey); } catch { }
                 }
+                // Prefer WebSockets for best performance and lowest latency
+                options.Transports = Microsoft.AspNetCore.Http.Connections.HttpTransportType.WebSockets;
+                // Skip negotiation to connect faster (WebSockets only)
+                options.SkipNegotiation = true;
             })
-            .WithAutomaticReconnect(new[]
-            {
-                TimeSpan.FromSeconds(1),
-                TimeSpan.FromSeconds(5),
-                TimeSpan.FromSeconds(10),
-                TimeSpan.FromSeconds(30)
-            })
-            .WithKeepAliveInterval(TimeSpan.FromSeconds(15))
-            .WithServerTimeout(TimeSpan.FromSeconds(60))
+            .WithAutomaticReconnect(new RetryPolicy())
+            .WithKeepAliveInterval(TimeSpan.FromSeconds(30))  // Match server KeepAliveInterval
+            .WithServerTimeout(TimeSpan.FromSeconds(90))       // Match server ClientTimeoutInterval
             .Build();
 
         WireHubHandlers(_connection, stoppingToken);
 
-        _logger.LogInformation("Connecting to LiveLogHub...");
+        _logger.LogInformation(
+            "========== CONNECTING TO HUB ==========\n" +
+            "  WorkerId: {WorkerId}\n" +
+            "  HubUrl: {HubUrl}\n" +
+            "  Transport: WebSockets (SkipNegotiation=true)\n" +
+            "  KeepAlive: 30s\n" +
+            "  ServerTimeout: 90s\n" +
+            "  AuthMode: {AuthMode}\n" +
+            "  Timestamp: {Timestamp}\n" +
+            "========================================",
+            workerId,
+            hubUrl,
+            useApiKey ? "API Key" : "PSK",
+            DateTime.UtcNow.ToString("O"));
+        
+        var connectStart = DateTime.UtcNow;
         await _connection.StartAsync(stoppingToken);
-        _logger.LogInformation("Connected successfully!");
+        var connectDuration = DateTime.UtcNow - connectStart;
+        
+        _logger.LogInformation(
+            "========== CONNECTED SUCCESSFULLY ==========\n" +
+            "  WorkerId: {WorkerId}\n" +
+            "  ConnectionId: {ConnectionId}\n" +
+            "  ConnectDuration: {Duration}ms\n" +
+            "  State: {State}\n" +
+            "  Timestamp: {Timestamp}\n" +
+            "============================================",
+            workerId,
+            _connection.ConnectionId,
+            connectDuration.TotalMilliseconds,
+            _connection.State,
+            DateTime.UtcNow.ToString("O"));
+        
+        _currentConnectionId = _connection.ConnectionId;
+        
         await RegisterWorkerAsync();
         await PushMetrics();
         await PingOnline();
@@ -404,47 +524,179 @@ public class LogPusherService : BackgroundService
         }
     });
 
+
     // ============================================================
 
     conn.On<object>("Registered", _ => { /* noop */ });
 
     // ------------------------------------------------------------------
-    // SignalR lifecycle (AUTHORITATIVE)
+    // SignalR lifecycle (AUTHORITATIVE) - Enhanced logging for diagnostics
     // ------------------------------------------------------------------
-    conn.Reconnecting += async _ =>
+    conn.Reconnecting += error =>
     {
-        _logger.LogWarning("Reconnecting to hub...");
-        await StopMetricsAndMonitorAsync();
+        var disconnectReason = GetDisconnectReason(error);
+        _logger.LogWarning(
+            "========== CONNECTION RECONNECTING ==========\n" +
+            "  WorkerId: {WorkerId}\n" +
+            "  PreviousConnectionId: {ConnectionId}\n" +
+            "  Reason: {Reason}\n" +
+            "  ErrorType: {ErrorType}\n" +
+            "  ErrorMessage: {ErrorMessage}\n" +
+            "  InnerException: {InnerException}\n" +
+            "  StackTrace: {StackTrace}\n" +
+            "  Timestamp: {Timestamp}\n" +
+            "=============================================",
+            _workerId,
+            _currentConnectionId ?? "unknown",
+            disconnectReason,
+            error?.GetType().FullName ?? "N/A",
+            error?.Message ?? "Connection lost (no error details)",
+            error?.InnerException?.Message ?? "N/A",
+            error?.StackTrace?.Split('\n').FirstOrDefault() ?? "N/A",
+            DateTime.UtcNow.ToString("O"));
+        
+        // Don't stop metrics during brief reconnects - they'll queue up
+        return Task.CompletedTask;
     };
 
     conn.Reconnected += async connectionId =>
     {
-        _logger.LogInformation("Reconnected to hub. ConnectionId: {ConnectionId}", connectionId);
-
+        _logger.LogInformation(
+            "========== CONNECTION RECONNECTED ==========\n" +
+            "  WorkerId: {WorkerId}\n" +
+            "  NewConnectionId: {NewConnectionId}\n" +
+            "  PreviousConnectionId: {PreviousConnectionId}\n" +
+            "  Timestamp: {Timestamp}\n" +
+            "============================================",
+            _workerId,
+            connectionId,
+            _currentConnectionId ?? "unknown",
+            DateTime.UtcNow.ToString("O"));
+        
         _currentConnectionId = connectionId;
 
-        // SINGLE source of truth
-        await RegisterWorkerAsync();
-        await PushMetrics();
-        await PingOnline();
-
-        Interlocked.Exchange(ref _loopsStarted, 0);
-
-        if (Interlocked.Exchange(ref _loopsStarted, 1) == 0)
+        // Re-register and push state after reconnect
+        try
         {
-            StartMetricsAndMonitor(stoppingToken);
+            await RegisterWorkerAsync();
+            await PushMetrics();
+            await PingOnline();
         }
-
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during reconnection registration");
+        }
     };
 
-    conn.Closed += async ex =>
+    conn.Closed += error =>
     {
-        _logger.LogWarning("Hub connection closed. Exception: {Error}", ex?.Message ?? "none");
-      
+        var disconnectReason = GetDisconnectReason(error);
+        var willReconnect = error != null; // SignalR auto-reconnect only triggers if there was an error
+        
+        _logger.LogWarning(
+            "========== CONNECTION CLOSED ==========\n" +
+            "  WorkerId: {WorkerId}\n" +
+            "  ConnectionId: {ConnectionId}\n" +
+            "  Reason: {Reason}\n" +
+            "  WillAttemptReconnect: {WillReconnect}\n" +
+            "  ErrorType: {ErrorType}\n" +
+            "  ErrorMessage: {ErrorMessage}\n" +
+            "  InnerException: {InnerException}\n" +
+            "  StackTrace: {StackTrace}\n" +
+            "  Timestamp: {Timestamp}\n" +
+            "=======================================",
+            _workerId,
+            _currentConnectionId ?? "unknown",
+            disconnectReason,
+            willReconnect,
+            error?.GetType().FullName ?? "N/A",
+            error?.Message ?? "Graceful disconnect (no error)",
+            error?.InnerException?.Message ?? "N/A",
+            error?.StackTrace?.Split('\n').FirstOrDefault() ?? "N/A",
+            DateTime.UtcNow.ToString("O"));
+        
         _currentConnectionId = null;
-        await StopMetricsAndMonitorAsync();
+        // Note: SignalR will auto-reconnect if configured, don't stop metrics here
+        // The reconnect policy will handle reconnection attempts
+        return Task.CompletedTask;
     };
 }
+
+    /// <summary>
+    /// Analyzes the exception to determine the likely cause of disconnection.
+    /// </summary>
+    private static string GetDisconnectReason(Exception? error)
+    {
+        if (error == null)
+            return "Graceful shutdown or server-initiated close";
+
+        var message = error.Message?.ToLowerInvariant() ?? "";
+        var typeName = error.GetType().Name;
+
+        // Check for specific exception types
+        return error switch
+        {
+            OperationCanceledException => "Operation was cancelled (possibly timeout or shutdown)",
+            TimeoutException => "Connection timed out - server may be overloaded or network latency too high",
+            SocketException socketEx => $"Socket error ({socketEx.SocketErrorCode}): {GetSocketErrorDescription(socketEx.SocketErrorCode)}",
+            System.Net.Http.HttpRequestException httpEx => $"HTTP error: {httpEx.StatusCode?.ToString() ?? "Unknown"} - {GetHttpErrorDescription(httpEx)}",
+            System.IO.IOException ioEx when ioEx.InnerException is SocketException innerSocket => 
+                $"IO/Socket error ({innerSocket.SocketErrorCode}): {GetSocketErrorDescription(innerSocket.SocketErrorCode)}",
+            _ when message.Contains("websocket") => "WebSocket protocol error or connection reset",
+            _ when message.Contains("transport") => "Transport layer failure (WebSocket/SSE/LongPolling)",
+            _ when message.Contains("handshake") => "Handshake failed - authentication or protocol mismatch",
+            _ when message.Contains("timeout") => "Connection or operation timed out",
+            _ when message.Contains("refused") => "Connection refused by server",
+            _ when message.Contains("reset") => "Connection reset by peer (server or network)",
+            _ when message.Contains("closed") => "Connection closed by remote host",
+            _ when message.Contains("ssl") || message.Contains("tls") => "SSL/TLS negotiation failure",
+            _ when message.Contains("certificate") => "Certificate validation failed",
+            _ when message.Contains("dns") || message.Contains("host") => "DNS resolution failed or host unreachable",
+            _ when message.Contains("unauthorized") || message.Contains("401") => "Authentication failed (401 Unauthorized)",
+            _ when message.Contains("forbidden") || message.Contains("403") => "Access denied (403 Forbidden)",
+            _ => $"Unknown error ({typeName})"
+        };
+    }
+
+    private static string GetSocketErrorDescription(SocketError socketError)
+    {
+        return socketError switch
+        {
+            SocketError.ConnectionRefused => "Server actively refused the connection",
+            SocketError.ConnectionReset => "Connection was forcibly closed by the remote host",
+            SocketError.ConnectionAborted => "Connection was aborted by the local system",
+            SocketError.TimedOut => "Connection attempt timed out",
+            SocketError.HostUnreachable => "Host is unreachable (network path issue)",
+            SocketError.NetworkUnreachable => "Network is unreachable",
+            SocketError.NetworkDown => "Network is down",
+            SocketError.HostDown => "Host is down",
+            SocketError.Shutdown => "Socket has been shut down",
+            SocketError.NotConnected => "Socket is not connected",
+            SocketError.AddressNotAvailable => "Address not available",
+            SocketError.OperationAborted => "Operation was aborted",
+            SocketError.Interrupted => "Operation was interrupted",
+            _ => socketError.ToString()
+        };
+    }
+
+    private static string GetHttpErrorDescription(System.Net.Http.HttpRequestException httpEx)
+    {
+        var statusCode = httpEx.StatusCode;
+        if (statusCode == null)
+            return httpEx.Message;
+
+        return statusCode switch
+        {
+            System.Net.HttpStatusCode.Unauthorized => "Invalid or expired authentication credentials",
+            System.Net.HttpStatusCode.Forbidden => "Access to the hub is forbidden",
+            System.Net.HttpStatusCode.NotFound => "Hub endpoint not found - check URL configuration",
+            System.Net.HttpStatusCode.BadGateway => "Bad gateway - proxy or load balancer issue",
+            System.Net.HttpStatusCode.ServiceUnavailable => "Service unavailable - server may be restarting",
+            System.Net.HttpStatusCode.GatewayTimeout => "Gateway timeout - upstream server not responding",
+            System.Net.HttpStatusCode.InternalServerError => "Internal server error on the hub",
+            _ => $"HTTP {(int)statusCode} {statusCode}"
+        };
+    }
 
     private void StartMetricsAndMonitor(CancellationToken stoppingToken)
     {

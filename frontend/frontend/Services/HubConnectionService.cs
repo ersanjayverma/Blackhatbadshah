@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.SignalR.Client;
 
 namespace frontend.Services;
@@ -41,8 +42,19 @@ public class HubConnectionService : IAsyncDisposable
                         }
                         return string.Empty;
                     };
+                    // Prefer WebSockets for best performance
+                    options.Transports = Microsoft.AspNetCore.Http.Connections.HttpTransportType.WebSockets;
                 })
-                .WithAutomaticReconnect(new[] { TimeSpan.Zero, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10) })
+                .WithAutomaticReconnect(new[] { 
+                    TimeSpan.Zero,           // Immediate first retry
+                    TimeSpan.FromSeconds(2), 
+                    TimeSpan.FromSeconds(5), 
+                    TimeSpan.FromSeconds(10),
+                    TimeSpan.FromSeconds(30),
+                    TimeSpan.FromSeconds(60) // Extended retries
+                })
+                .WithKeepAliveInterval(TimeSpan.FromSeconds(30))  // Match server
+                .WithServerTimeout(TimeSpan.FromSeconds(90))       // Match server
                 .Build();
 
             _connection.Reconnecting += error =>

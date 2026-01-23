@@ -22,11 +22,17 @@ using backend.Infrastructure.Storage;
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSignalR(options =>
 {
-    // Increase timeouts to prevent premature disconnections
-    options.KeepAliveInterval = TimeSpan.FromSeconds(15);
-    options.ClientTimeoutInterval = TimeSpan.FromSeconds(60);
+    // Optimized SignalR settings for stability and performance
+    // KeepAlive: Server sends ping every 30s (increased from 15s to reduce chatter)
+    options.KeepAliveInterval = TimeSpan.FromSeconds(30);
+    // ClientTimeout: Must be >= 2x KeepAliveInterval (30s * 2 = 60s minimum)
+    options.ClientTimeoutInterval = TimeSpan.FromSeconds(90);
+    // Handshake: Allow more time for slow connections
     options.HandshakeTimeout = TimeSpan.FromSeconds(30);
-    
+    // Increase max message size for large log batches (1MB)
+    options.MaximumReceiveMessageSize = 1024 * 1024;
+    // Enable streaming for large data transfers
+    options.StreamBufferCapacity = 20;
     // Enable detailed errors in development
     options.EnableDetailedErrors = builder.Environment.IsDevelopment();
 });

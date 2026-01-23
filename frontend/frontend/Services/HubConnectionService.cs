@@ -53,8 +53,8 @@ public class HubConnectionService : IAsyncDisposable
                         }
                         return string.Empty;
                     };
-                    // Prefer WebSockets for best performance
-                    options.Transports = Microsoft.AspNetCore.Http.Connections.HttpTransportType.WebSockets;
+                    // Allow all transports with WebSockets preferred, fallback to LongPolling
+                    options.Transports = HttpTransportType.WebSockets | HttpTransportType.LongPolling;
                 })
                 .WithAutomaticReconnect(new[] { 
                     TimeSpan.Zero,           // Immediate first retry

@@ -20,8 +20,6 @@ using backend.Infrastructure.Persistence.Repositories;
 using backend.Infrastructure.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
-// Register hub exception filter for logging all hub errors
-builder.Services.AddSingleton<HubExceptionFilter>();
 builder.Services.AddSignalR(options =>
 {
     // Optimized SignalR settings for stability and performance

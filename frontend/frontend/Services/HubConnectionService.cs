@@ -7,8 +7,9 @@ public class HubConnectionService : IAsyncDisposable
 {
     private HubConnection? _connection;
     private bool _isStarted;
-    private readonly SemaphoreSlim _startLock = new(1, 1);
+    private SemaphoreSlim _startLock = new(1, 1);
     private Func<Task<string?>>? _tokenProvider;
+    private bool _disposed;
 
     public HubConnection Connection => _connection ?? throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
 
@@ -21,8 +22,19 @@ public class HubConnectionService : IAsyncDisposable
     public event Action<Exception?>? OnClosed;
     public event Action<bool>? OnConnectionStateChanged;
 
+    private void EnsureNotDisposed()
+    {
+        if (_disposed)
+        {
+            // Recreate the semaphore if it was disposed (singleton service reuse scenario)
+            _disposed = false;
+            _startLock = new SemaphoreSlim(1, 1);
+        }
+    }
+
     public async Task InitializeAsync(Func<Task<string?>> tokenProviderFunc)
     {
+        EnsureNotDisposed();
         await _startLock.WaitAsync();
         try
         {
@@ -95,6 +107,7 @@ public class HubConnectionService : IAsyncDisposable
 
     public async Task StartAsync()
     {
+        EnsureNotDisposed();
         await _startLock.WaitAsync();
         try
         {
@@ -119,6 +132,7 @@ public class HubConnectionService : IAsyncDisposable
 
     public async Task StopAsync()
     {
+        EnsureNotDisposed();
         await _startLock.WaitAsync();
         try
         {
@@ -232,11 +246,17 @@ public class HubConnectionService : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        if (_disposed) return;
+        
+        _disposed = true;
+        
         if (_connection != null)
         {
             await _connection.DisposeAsync();
             _connection = null;
         }
+        
+        _isStarted = false;
         _startLock.Dispose();
     }
 }

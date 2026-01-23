@@ -54,4 +54,7 @@ public interface IWorkerRegistry
     /// Get summary statistics about registered workers
     /// </summary>
     WorkerSummary GetSummary();
+
+    bool IsCurrentSession(string workerId, string sessionId);
+
 }

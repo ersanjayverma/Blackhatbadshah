@@ -23,6 +23,11 @@ public class WorkerRegistry : IWorkerRegistry
     {
         _logger = logger;
     }
+    public bool IsCurrentSession(string workerId, string sessionId)
+    {
+        return _workers.TryGetValue(workerId, out var w)
+            && w.SessionId == sessionId;
+    }
 
     public void RegisterWorker(string workerId, string sessionId, string apiUrl, RegisterWorkerRequest? request = null)
     {

@@ -22,10 +22,10 @@ public class LogPusherService : BackgroundService
 
     private string _workerId = string.Empty;
     private const string WorkerIdFileName = ".bhb-worker-id";
-    
+    private bool _connectionStarted = false;
     // Track registration state to prevent duplicates
-    private bool _isRegistered = false;
     private string? _currentConnectionId = null;
+    private int _loopsStarted = 0;
 
     // Metrics tracking
     private DateTime _startTime;
@@ -55,7 +55,7 @@ public class LogPusherService : BackgroundService
         var psk = _config["LiveLogHub:Psk"] ?? "";
         var configuredWorkerId = _config["LiveLogHub:WorkerId"] ?? "";
 
-        _workerId = !string.IsNullOrEmpty(configuredWorkerId) ? configuredWorkerId : GetOrCreateWorkerId();
+        _workerId = configuredWorkerId ;
 
         _startTime = DateTime.UtcNow;
         _previousCpuCheck = DateTime.UtcNow;
@@ -95,13 +95,12 @@ public class LogPusherService : BackgroundService
                     continue;
                 }
 
+                // Connect ONCE. SignalR handles reconnects.
                 await EnsureConnectedAsync(hubUrl, psk, apiKey, _workerId, stoppingToken);
-                consecutiveFailures = 0; // Reset on successful connection
 
-                // IMPORTANT:
-                // Do not run your own reconnect loop.
-                // SignalR auto reconnect will handle it.
+                // Block service lifetime
                 await Task.Delay(Timeout.Infinite, stoppingToken);
+
             }
             catch (OperationCanceledException)
             {
@@ -133,16 +132,11 @@ public class LogPusherService : BackgroundService
     private async Task EnsureConnectedAsync(string hubUrl, string psk, string apiKey, string workerId, CancellationToken stoppingToken)
     {
         // If already connected, done.
-        if (_connection is { State: HubConnectionState.Connected })
+       // DROP-IN FIX: never dispose/recreate when SignalR auto-reconnect is enabled
+        if (_connection != null)
             return;
 
-        // Dispose old broken connection (important)
-        if (_connection != null)
-        {
-            try { await _connection.DisposeAsync(); } catch { }
-            _connection = null;
-        }
-
+        _connectionStarted = true;
         bool useApiKey = !string.IsNullOrWhiteSpace(apiKey);
         string fullUrl;
 
@@ -181,312 +175,276 @@ public class LogPusherService : BackgroundService
         _logger.LogInformation("Connecting to LiveLogHub...");
         await _connection.StartAsync(stoppingToken);
         _logger.LogInformation("Connected successfully!");
+        await RegisterWorkerAsync();
+        await PushMetrics();
+        await PingOnline();
+      if (Interlocked.Exchange(ref _loopsStarted, 1) == 0)
+        {
+            StartMetricsAndMonitor(stoppingToken);
+        }
     }
 
     private void WireHubHandlers(HubConnection conn, CancellationToken stoppingToken)
-    {
-        conn.On<object>("Connected", async data =>
-        {
-            try
-            {
-                // If server returns canonical worker id, persist it
-                TryAdoptWorkerIdFromServer(data);
-                
-                // Track this connection
-                var newConnectionId = conn.ConnectionId;
-                _currentConnectionId = newConnectionId;
-                
-                _logger.LogInformation("Connected to hub. WorkerId: {WorkerId}, ConnectionId: {ConnectionId}", _workerId, newConnectionId);
-
-                // Register on initial connection (not on SignalR reconnects - handled by Reconnected event)
-                if (!_isRegistered)
-                {
-                    await RegisterWorkerAsync();
-                    _isRegistered = true;
-                    _logger.LogDebug("Worker registration completed for {WorkerId}", _workerId);
-                }
-                
-                await PushMetrics();
-                await PingOnline();
-
-                // Start loops now that connection is alive
-                StartMetricsAndMonitor(stoppingToken);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Connected handler failed");
-            }
-        });
-
-        conn.On("RequestMetrics", async () =>
-        {
-            await PushMetrics();
-            await PingOnline();
-        });
-
-        conn.On("RequestSystemMonitorData", async () =>
-        {
-            await PushSystemMonitorData();
-        });
-
-        conn.On<int, bool>("KillProcess", async (pid, force) =>
-        {
-            _logger.LogInformation("[SystemMonitor] KillProcess: PID={Pid}, Force={Force}", pid, force);
-            if (_systemMonitorService != null)
-            {
-                var response = _systemMonitorService.KillProcess(pid, force);
-                await conn.InvokeAsync("KillProcessResponse", response);
-            }
-        });
-
-        conn.On<string, int, bool>("PullLogs", async (logPath, lines, fromEnd) =>
-        {
-            _logger.LogInformation("[LogPull] Request: {Path}, {Lines} lines", logPath, lines);
-            await PullLogsAsync(logPath, lines, fromEnd);
-        });
-
-        conn.On<string>("StartLiveLog", async (logPath) =>
-        {
-            _logger.LogInformation("[LiveLog] Start: {Path}", logPath);
-            await StartLiveLogStreamingAsync(logPath);
-        });
-
-        conn.On<string>("StopLiveLog", (logPath) =>
-        {
-            _logger.LogInformation("[LiveLog] Stop: {Path}", logPath);
-            StopLiveLogStreaming(logPath);
-        });
-
-        // ============================================================
-        // LINUX SYSTEM MANAGEMENT HANDLERS
-        // ============================================================
-
-        conn.On<string>("GetServices", async (requestId) =>
-        {
-            _logger.LogInformation("[Linux] GetServices request: {RequestId}", requestId);
-            if (_linuxSystemService != null)
-            {
-                var response = await _linuxSystemService.GetServicesAsync();
-                await conn.InvokeAsync("ServiceListResponse", requestId, response);
-            }
-        });
-
-        conn.On<string, string, string>("ControlService", async (requestId, serviceName, action) =>
-        {
-            _logger.LogInformation("[Linux] ControlService: {Service} {Action}", serviceName, action);
-            if (_linuxSystemService != null)
-            {
-                var request = new ServiceActionRequest
-                {
-                    WorkerId = _workerId,
-                    ServiceName = serviceName,
-                    Action = action
-                };
-                var response = await _linuxSystemService.ControlServiceAsync(request);
-                await conn.InvokeAsync("ServiceActionResponse", requestId, response);
-            }
-        });
-
-        conn.On<string, bool>("GetContainers", async (requestId, includeAll) =>
-        {
-            _logger.LogInformation("[Linux] GetContainers request: {RequestId}", requestId);
-            if (_linuxSystemService != null)
-            {
-                var response = await _linuxSystemService.GetContainersAsync(includeAll);
-                await conn.InvokeAsync("ContainerListResponse", requestId, response);
-            }
-        });
-
-        conn.On<string, string, string, int?>("ControlContainer", async (requestId, containerId, action, logLines) =>
-        {
-            _logger.LogInformation("[Linux] ControlContainer: {Container} {Action}", containerId, action);
-            if (_linuxSystemService != null)
-            {
-                var request = new ContainerActionRequest
-                {
-                    WorkerId = _workerId,
-                    ContainerId = containerId,
-                    Action = action,
-                    LogLines = logLines
-                };
-                var response = await _linuxSystemService.ControlContainerAsync(request);
-                await conn.InvokeAsync("ContainerActionResponse", requestId, response);
-            }
-        });
-
-        conn.On<string>("GetUsers", async (requestId) =>
-        {
-            _logger.LogInformation("[Linux] GetUsers request: {RequestId}", requestId);
-            if (_linuxSystemService != null)
-            {
-                var response = await _linuxSystemService.GetUsersAsync();
-                await conn.InvokeAsync("UserListResponse", requestId, response);
-            }
-        });
-
-        conn.On<string>("GetFirewallStatus", async (requestId) =>
-        {
-            _logger.LogInformation("[Linux] GetFirewallStatus request: {RequestId}", requestId);
-            if (_linuxSystemService != null)
-            {
-                var response = await _linuxSystemService.GetFirewallStatusAsync();
-                await conn.InvokeAsync("FirewallStatusResponse", requestId, response);
-            }
-        });
-
-        conn.On<string>("GetSshSessions", async (requestId) =>
-        {
-            _logger.LogInformation("[Linux] GetSshSessions request: {RequestId}", requestId);
-            if (_linuxSystemService != null)
-            {
-                var response = await _linuxSystemService.GetSshSessionsAsync();
-                await conn.InvokeAsync("SshSessionListResponse", requestId, response);
-            }
-        });
-
-        conn.On<string>("GetSecurityAudit", async (requestId) =>
-        {
-            _logger.LogInformation("[Linux] GetSecurityAudit request: {RequestId}", requestId);
-            if (_linuxSystemService != null)
-            {
-                var response = await _linuxSystemService.GetSecurityAuditAsync();
-                await conn.InvokeAsync("SecurityAuditResponse", requestId, response);
-            }
-        });
-
-        conn.On<string>("GetCronJobs", async (requestId) =>
-        {
-            _logger.LogInformation("[Linux] GetCronJobs request: {RequestId}", requestId);
-            if (_linuxSystemService != null)
-            {
-                var response = await _linuxSystemService.GetCronJobsAsync();
-                await conn.InvokeAsync("CronJobListResponse", requestId, response);
-            }
-        });
-
-        conn.On<string, string, bool>("ListDirectory", async (requestId, path, includeHidden) =>
-        {
-            _logger.LogInformation("[Linux] ListDirectory: {Path}", path);
-            if (_linuxSystemService != null)
-            {
-                var request = new DirectoryListRequest
-                {
-                    WorkerId = _workerId,
-                    Path = path,
-                    IncludeHidden = includeHidden
-                };
-                var response = await _linuxSystemService.ListDirectoryAsync(request);
-                await conn.InvokeAsync("DirectoryListResponse", requestId, response);
-            }
-        });
-
-        conn.On<string, string, int?, bool>("ReadFile", async (requestId, filePath, maxLines, fromEnd) =>
-        {
-            _logger.LogInformation("[Linux] ReadFile: {Path}", filePath);
-            if (_linuxSystemService != null)
-            {
-                var request = new FileContentRequest
-                {
-                    WorkerId = _workerId,
-                    FilePath = filePath,
-                    MaxLines = maxLines,
-                    FromEnd = fromEnd
-                };
-                var response = await _linuxSystemService.ReadFileAsync(request);
-                await conn.InvokeAsync("FileContentResponse", requestId, response);
-            }
-        });
-
-        conn.On<string, CommandExecutionRequest>("ExecuteCommand", async (requestId, request) =>
-        {
-            _logger.LogInformation("[Linux] ExecuteCommand: {Command}", request.Command);
-            if (_linuxSystemService != null)
-            {
-                var response = await _linuxSystemService.ExecuteRemoteCommandAsync(request);
-                await conn.InvokeAsync("CommandExecutionResponse", requestId, response);
-            }
-        });
-
-        // ============================================================
-
-        conn.On<object>("Registered", data =>
-        {
-            // Registration confirmed silently
-        });
-
-        conn.Reconnecting += async ex =>
-        {
-            _logger.LogWarning("Reconnecting to hub...");
-            await StopMetricsAndMonitorAsync();
-        };
-
-        conn.Reconnected += async connectionId =>
-        {
-            _logger.LogInformation("Reconnected to hub. ConnectionId: {ConnectionId}", connectionId);
-
-            try
-            {
-                // Update connection ID tracking
-                _currentConnectionId = connectionId;
-                
-                // Re-register on reconnect. SignalR reconnect does NOT trigger OnConnectedAsync
-                // on the server, and no "Connected" event is sent. We must re-register here
-                // to ensure the server has fresh state. The server handles duplicate registrations gracefully.
-                if (!_isRegistered)
-                {
-                    await RegisterWorkerAsync();
-                    _isRegistered = true;
-                }
-                
-                await PushMetrics();
-                await PingOnline();
-                StartMetricsAndMonitor(stoppingToken);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Reconnected post-init failed");
-            }
-        };
-
-        conn.Closed += async ex =>
-        {
-            _logger.LogWarning("Hub connection closed. Exception: {Error}", ex?.Message ?? "none");
-            _isRegistered = false;
-            _currentConnectionId = null;
-            await StopMetricsAndMonitorAsync();
-        };
-    }
-
-    private void TryAdoptWorkerIdFromServer(object? data)
+{
+    // ------------------------------------------------------------------
+    // Custom hub "Connected" message
+    // READ-ONLY: log + track connection only
+    // ------------------------------------------------------------------
+    conn.On<object>("Connected", data =>
     {
         try
         {
-            if (data is System.Text.Json.JsonElement je && je.ValueKind == System.Text.Json.JsonValueKind.Object)
-            {
-                if (je.TryGetProperty("WorkerId", out var prop) && prop.ValueKind == System.Text.Json.JsonValueKind.String)
-                {
-                    var supplied = prop.GetString();
-                    if (!string.IsNullOrWhiteSpace(supplied) && supplied != _workerId)
-                    {
-                        _workerId = supplied;
-                        try
-                        {
-                            File.WriteAllText(Path.Combine(Directory.GetCurrentDirectory(), WorkerIdFileName), _workerId);
-                            _logger.LogInformation("Adopted WorkerId from server and persisted: {WorkerId}", _workerId);
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogWarning(ex, "Failed to persist WorkerId to disk");
-                        }
-                    }
-                }
-            }
+            _currentConnectionId = conn.ConnectionId;
+
+            _logger.LogInformation(
+                "Connected to hub. WorkerId: {WorkerId}, ConnectionId: {ConnectionId}",
+                _workerId,
+                _currentConnectionId);
         }
-        catch
+        catch (Exception ex)
         {
-            // ignore
+            _logger.LogError(ex, "Connected handler failed");
         }
-    }
+    });
+
+    // ------------------------------------------------------------------
+    // Metrics / system requests
+    // ------------------------------------------------------------------
+    conn.On("RequestMetrics", async () =>
+    {
+        await PushMetrics();
+        await PingOnline();
+    });
+
+    conn.On("RequestSystemMonitorData", async () =>
+    {
+        await PushSystemMonitorData();
+    });
+
+    // ------------------------------------------------------------------
+    // Process control
+    // ------------------------------------------------------------------
+    conn.On<int, bool>("KillProcess", async (pid, force) =>
+    {
+        _logger.LogInformation("[SystemMonitor] KillProcess: PID={Pid}, Force={Force}", pid, force);
+        if (_systemMonitorService != null)
+        {
+            var response = _systemMonitorService.KillProcess(pid, force);
+            await conn.InvokeAsync("KillProcessResponse", response);
+        }
+    });
+
+    // ------------------------------------------------------------------
+    // Log pulling
+    // ------------------------------------------------------------------
+    conn.On<string, int, bool>("PullLogs", async (logPath, lines, fromEnd) =>
+    {
+        _logger.LogInformation("[LogPull] Request: {Path}, {Lines} lines", logPath, lines);
+        await PullLogsAsync(logPath, lines, fromEnd);
+    });
+
+    conn.On<string>("StartLiveLog", async (logPath) =>
+    {
+        _logger.LogInformation("[LiveLog] Start: {Path}", logPath);
+        await StartLiveLogStreamingAsync(logPath);
+    });
+
+    conn.On<string>("StopLiveLog", logPath =>
+    {
+        _logger.LogInformation("[LiveLog] Stop: {Path}", logPath);
+        StopLiveLogStreaming(logPath);
+    });
+
+    // ============================================================
+    // LINUX SYSTEM MANAGEMENT HANDLERS
+    // ============================================================
+    conn.On<string>("GetServices", async requestId =>
+    {
+        _logger.LogInformation("[Linux] GetServices request: {RequestId}", requestId);
+        if (_linuxSystemService != null)
+        {
+            var response = await _linuxSystemService.GetServicesAsync();
+            await conn.InvokeAsync("ServiceListResponse", requestId, response);
+        }
+    });
+
+    conn.On<string, string, string>("ControlService", async (requestId, serviceName, action) =>
+    {
+        _logger.LogInformation("[Linux] ControlService: {Service} {Action}", serviceName, action);
+        if (_linuxSystemService != null)
+        {
+            var request = new ServiceActionRequest
+            {
+                WorkerId = _workerId,
+                ServiceName = serviceName,
+                Action = action
+            };
+            var response = await _linuxSystemService.ControlServiceAsync(request);
+            await conn.InvokeAsync("ServiceActionResponse", requestId, response);
+        }
+    });
+
+    conn.On<string, bool>("GetContainers", async (requestId, includeAll) =>
+    {
+        _logger.LogInformation("[Linux] GetContainers request: {RequestId}", requestId);
+        if (_linuxSystemService != null)
+        {
+            var response = await _linuxSystemService.GetContainersAsync(includeAll);
+            await conn.InvokeAsync("ContainerListResponse", requestId, response);
+        }
+    });
+
+    conn.On<string, string, string, int?>("ControlContainer", async (requestId, containerId, action, logLines) =>
+    {
+        _logger.LogInformation("[Linux] ControlContainer: {Container} {Action}", containerId, action);
+        if (_linuxSystemService != null)
+        {
+            var request = new ContainerActionRequest
+            {
+                WorkerId = _workerId,
+                ContainerId = containerId,
+                Action = action,
+                LogLines = logLines
+            };
+            var response = await _linuxSystemService.ControlContainerAsync(request);
+            await conn.InvokeAsync("ContainerActionResponse", requestId, response);
+        }
+    });
+
+    conn.On<string>("GetUsers", async requestId =>
+    {
+        _logger.LogInformation("[Linux] GetUsers request: {RequestId}", requestId);
+        if (_linuxSystemService != null)
+        {
+            var response = await _linuxSystemService.GetUsersAsync();
+            await conn.InvokeAsync("UserListResponse", requestId, response);
+        }
+    });
+
+    conn.On<string>("GetFirewallStatus", async requestId =>
+    {
+        _logger.LogInformation("[Linux] GetFirewallStatus request: {RequestId}", requestId);
+        if (_linuxSystemService != null)
+        {
+            var response = await _linuxSystemService.GetFirewallStatusAsync();
+            await conn.InvokeAsync("FirewallStatusResponse", requestId, response);
+        }
+    });
+
+    conn.On<string>("GetSshSessions", async requestId =>
+    {
+        _logger.LogInformation("[Linux] GetSshSessions request: {RequestId}", requestId);
+        if (_linuxSystemService != null)
+        {
+            var response = await _linuxSystemService.GetSshSessionsAsync();
+            await conn.InvokeAsync("SshSessionListResponse", requestId, response);
+        }
+    });
+
+    conn.On<string>("GetSecurityAudit", async requestId =>
+    {
+        _logger.LogInformation("[Linux] GetSecurityAudit request: {RequestId}", requestId);
+        if (_linuxSystemService != null)
+        {
+            var response = await _linuxSystemService.GetSecurityAuditAsync();
+            await conn.InvokeAsync("SecurityAuditResponse", requestId, response);
+        }
+    });
+
+    conn.On<string>("GetCronJobs", async requestId =>
+    {
+        _logger.LogInformation("[Linux] GetCronJobs request: {RequestId}", requestId);
+        if (_linuxSystemService != null)
+        {
+            var response = await _linuxSystemService.GetCronJobsAsync();
+            await conn.InvokeAsync("CronJobListResponse", requestId, response);
+        }
+    });
+
+    conn.On<string, string, bool>("ListDirectory", async (requestId, path, includeHidden) =>
+    {
+        _logger.LogInformation("[Linux] ListDirectory: {Path}", path);
+        if (_linuxSystemService != null)
+        {
+            var request = new DirectoryListRequest
+            {
+                WorkerId = _workerId,
+                Path = path,
+                IncludeHidden = includeHidden
+            };
+            var response = await _linuxSystemService.ListDirectoryAsync(request);
+            await conn.InvokeAsync("DirectoryListResponse", requestId, response);
+        }
+    });
+
+    conn.On<string, string, int?, bool>("ReadFile", async (requestId, filePath, maxLines, fromEnd) =>
+    {
+        _logger.LogInformation("[Linux] ReadFile: {Path}", filePath);
+        if (_linuxSystemService != null)
+        {
+            var request = new FileContentRequest
+            {
+                WorkerId = _workerId,
+                FilePath = filePath,
+                MaxLines = maxLines,
+                FromEnd = fromEnd
+            };
+            var response = await _linuxSystemService.ReadFileAsync(request);
+            await conn.InvokeAsync("FileContentResponse", requestId, response);
+        }
+    });
+
+    conn.On<string, CommandExecutionRequest>("ExecuteCommand", async (requestId, request) =>
+    {
+        _logger.LogInformation("[Linux] ExecuteCommand: {Command}", request.Command);
+        if (_linuxSystemService != null)
+        {
+            var response = await _linuxSystemService.ExecuteRemoteCommandAsync(request);
+            await conn.InvokeAsync("CommandExecutionResponse", requestId, response);
+        }
+    });
+
+    // ============================================================
+
+    conn.On<object>("Registered", _ => { /* noop */ });
+
+    // ------------------------------------------------------------------
+    // SignalR lifecycle (AUTHORITATIVE)
+    // ------------------------------------------------------------------
+    conn.Reconnecting += async _ =>
+    {
+        _logger.LogWarning("Reconnecting to hub...");
+        await StopMetricsAndMonitorAsync();
+    };
+
+    conn.Reconnected += async connectionId =>
+    {
+        _logger.LogInformation("Reconnected to hub. ConnectionId: {ConnectionId}", connectionId);
+
+        _currentConnectionId = connectionId;
+
+        // SINGLE source of truth
+        await RegisterWorkerAsync();
+        await PushMetrics();
+        await PingOnline();
+
+        Interlocked.Exchange(ref _loopsStarted, 0);
+
+        if (Interlocked.Exchange(ref _loopsStarted, 1) == 0)
+        {
+            StartMetricsAndMonitor(stoppingToken);
+        }
+
+    };
+
+    conn.Closed += async ex =>
+    {
+        _logger.LogWarning("Hub connection closed. Exception: {Error}", ex?.Message ?? "none");
+      
+        _currentConnectionId = null;
+        await StopMetricsAndMonitorAsync();
+    };
+}
 
     private void StartMetricsAndMonitor(CancellationToken stoppingToken)
     {
@@ -661,21 +619,7 @@ public class LogPusherService : BackgroundService
         return metrics;
     }
 
-    private string GetOrCreateWorkerId()
-    {
-        var workerIdPath = Path.Combine(Directory.GetCurrentDirectory(), WorkerIdFileName);
 
-        if (File.Exists(workerIdPath))
-        {
-            var existingId = File.ReadAllText(workerIdPath).Trim();
-            if (!string.IsNullOrEmpty(existingId))
-                return existingId;
-        }
-
-        var newId = $"bhb-{Guid.NewGuid().ToString("N")[..8]}";
-        File.WriteAllText(workerIdPath, newId);
-        return newId;
-    }
 
     private static async Task<bool> IsHubHostReachableAsync(string hubUrl, int timeoutMs, CancellationToken ct)
     {

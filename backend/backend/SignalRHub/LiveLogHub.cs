@@ -656,30 +656,36 @@ public class LiveLogHub : Hub
         await base.OnConnectedAsync();
     }
 
-    public override async Task OnDisconnectedAsync(Exception? exception)
+public override async Task OnDisconnectedAsync(Exception? exception)
+{
+    var sessionId = SessionId;
+
+    // Clean up per-connection transient state
+    _liveLogSubscriptions.TryRemove(sessionId, out _);
+    _chunkCounters.TryRemove(sessionId, out _);
+    _logCounters.TryRemove(sessionId, out _);
+
+    if (_sessionWorkerIds.TryRemove(sessionId, out var workerId))
     {
-        var sessionId = SessionId;
+        _buffer.Flush(sessionId);
 
-        _liveLogSubscriptions.TryRemove(sessionId, out _);
+        await Groups.RemoveFromGroupAsync(sessionId, LiveLogGroup(workerId));
 
-        if (_sessionWorkerIds.TryRemove(sessionId, out var workerId))
+        if (_isWorkerSession.TryRemove(sessionId, out var wasWorker) && wasWorker)
         {
-            _buffer.Flush(sessionId);
+            await Groups.RemoveFromGroupAsync(sessionId, WorkerGroup(workerId));
 
-            await Groups.RemoveFromGroupAsync(sessionId, LiveLogGroup(workerId));
-
-            if (_isWorkerSession.TryRemove(sessionId, out var wasWorker) && wasWorker)
-            {
-                await Groups.RemoveFromGroupAsync(sessionId, WorkerGroup(workerId));
-
-                _workerRegistry.UnregisterWorker(workerId, sessionId);
-                await _hubNotification.NotifyLiveLogSessionDisconnectedAsync(workerId, sessionId);
-            }
+            // IMPORTANT:
+            // This is a transport-level disconnect only.
+            // DO NOT unregister worker.
+            // DO NOT notify worker-offline here.
+            _logger.LogInformation(
+                "Transport disconnected for worker {WorkerId}, session {SessionId}. Awaiting reconnect.",
+                workerId, sessionId);
         }
-
-        _chunkCounters.TryRemove(sessionId, out _);
-        _logCounters.TryRemove(sessionId, out _);
-
-        await base.OnDisconnectedAsync(exception);
     }
+
+    await base.OnDisconnectedAsync(exception);
+}
+
 }

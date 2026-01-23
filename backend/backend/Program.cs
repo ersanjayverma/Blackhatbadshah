@@ -20,7 +20,7 @@ using backend.Infrastructure.Persistence.Repositories;
 using backend.Infrastructure.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
-// Register hub exception filter for logging all hub errors (before SignalR so it's available)
+// Register hub exception filter for logging all hub errors
 builder.Services.AddSingleton<HubExceptionFilter>();
 builder.Services.AddSignalR(options =>
 {
@@ -37,8 +37,6 @@ builder.Services.AddSignalR(options =>
     options.StreamBufferCapacity = 20;
     // Enable detailed errors - helps diagnose disconnection issues
     options.EnableDetailedErrors = true;
-    // Add hub exception filter (resolved from DI using the factory overload)
-    options.AddFilter(serviceProvider => serviceProvider.GetRequiredService<HubExceptionFilter>());
 });
 builder.Services.AddSingleton<IConfiguration>(builder.Configuration);
 // -------------------- Services --------------------

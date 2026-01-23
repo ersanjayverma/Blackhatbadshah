@@ -100,14 +100,14 @@ public class HubConnectionService : IAsyncDisposable
         }
         finally
         {
-            _startLock.Release();
+            semaphore.Release();
         }
     }
 
     public async Task StartAsync()
     {
-        EnsureNotDisposed();
-        await _startLock.WaitAsync();
+        var semaphore = GetOrCreateLock();
+        await semaphore.WaitAsync();
         try
         {
             if (_connection == null)
@@ -125,14 +125,14 @@ public class HubConnectionService : IAsyncDisposable
         }
         finally
         {
-            _startLock.Release();
+            semaphore.Release();
         }
     }
 
     public async Task StopAsync()
     {
-        EnsureNotDisposed();
-        await _startLock.WaitAsync();
+        var semaphore = GetOrCreateLock();
+        await semaphore.WaitAsync();
         try
         {
             if (_connection != null && _isStarted)
@@ -143,7 +143,7 @@ public class HubConnectionService : IAsyncDisposable
         }
         finally
         {
-            _startLock.Release();
+            semaphore.Release();
         }
     }
 
@@ -245,17 +245,25 @@ public class HubConnectionService : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (_disposed) return;
+        SemaphoreSlim? semaphoreToDispose;
         
-        _disposed = true;
+        lock (_lockGuard)
+        {
+            semaphoreToDispose = _startLock;
+            _startLock = null;
+        }
         
         if (_connection != null)
         {
-            await _connection.DisposeAsync();
+            try
+            {
+                await _connection.DisposeAsync();
+            }
+            catch { }
             _connection = null;
         }
         
         _isStarted = false;
-        _startLock.Dispose();
+        semaphoreToDispose?.Dispose();
     }
 }

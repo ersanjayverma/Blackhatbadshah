@@ -234,6 +234,162 @@ public class LogsController : ControllerBase
     }
 
     // -----------------------------------------
+    // DELETE api/logs/bulk
+    // -----------------------------------------
+    [HttpPost("bulk-delete")]
+    public async Task<IActionResult> BulkDelete([FromBody] BulkDeleteRequest request)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                     ?? User.FindFirstValue("sub");
+        if (userId == null) return Unauthorized();
+
+        if (request.Ids == null || request.Ids.Count == 0)
+            return BadRequest(new { error = "No log IDs provided" });
+
+        var successCount = 0;
+        var errors = new List<BulkOperationError>();
+
+        foreach (var id in request.Ids)
+        {
+            try
+            {
+                var log = await _db.Logs.FindAsync(id);
+                if (log == null)
+                {
+                    errors.Add(new BulkOperationError { Id = id, Error = "Log not found" });
+                    continue;
+                }
+                if (log.UserId != userId)
+                {
+                    errors.Add(new BulkOperationError { Id = id, Error = "Access denied" });
+                    continue;
+                }
+
+                try
+                {
+                    if (System.IO.File.Exists(log.StoragePath))
+                        System.IO.File.Delete(log.StoragePath);
+                }
+                catch { }
+
+                _db.Logs.Remove(log);
+                successCount++;
+            }
+            catch (Exception ex)
+            {
+                errors.Add(new BulkOperationError { Id = id, Error = ex.Message });
+            }
+        }
+
+        await _db.SaveChangesAsync();
+
+        // Notify frontend
+        foreach (var id in request.Ids.Where(id => !errors.Any(e => e.Id == id)))
+        {
+            await _hubNotification.NotifyLogDeletedAsync(userId, id);
+        }
+
+        return Ok(new BulkOperationResponse
+        {
+            TotalRequested = request.Ids.Count,
+            SuccessCount = successCount,
+            FailedCount = errors.Count,
+            Errors = errors.Count > 0 ? errors : null
+        });
+    }
+
+    // -----------------------------------------
+    // POST api/logs/bulk-analyze
+    // -----------------------------------------
+    [HttpPost("bulk-analyze")]
+    public async Task<IActionResult> BulkAnalyze([FromBody] BulkAnalyzeRequest request)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                     ?? User.FindFirstValue("sub");
+        if (userId == null) return Unauthorized();
+
+        if (request.LogIds == null || request.LogIds.Count == 0)
+            return BadRequest(new { error = "No log IDs provided" });
+
+        // Check plan limits
+        var (allowed, message) = await _planEnforcement.CheckAnalysisAllowedAsync(userId, request.Model);
+        if (!allowed)
+        {
+            return StatusCode(402, new { error = message, upgradeRequired = true });
+        }
+
+        var authHeader = Request.Headers.Authorization.ToString();
+        var token = authHeader.StartsWith("Bearer ") ? authHeader[7..] : null;
+        if (token == null) return Unauthorized();
+
+        var successCount = 0;
+        var errors = new List<BulkOperationError>();
+
+        foreach (var id in request.LogIds)
+        {
+            try
+            {
+                var log = await _db.Logs.FindAsync(id);
+                if (log == null)
+                {
+                    errors.Add(new BulkOperationError { Id = id, Error = "Log not found" });
+                    continue;
+                }
+                if (log.UserId != userId)
+                {
+                    errors.Add(new BulkOperationError { Id = id, Error = "Access denied" });
+                    continue;
+                }
+
+                await _analysisQueue.QueueAnalysisJobAsync(id, userId, token, request.Model);
+                successCount++;
+            }
+            catch (Exception ex)
+            {
+                errors.Add(new BulkOperationError { Id = id, Error = ex.Message });
+            }
+        }
+
+        return Accepted(new BulkOperationResponse
+        {
+            TotalRequested = request.LogIds.Count,
+            SuccessCount = successCount,
+            FailedCount = errors.Count,
+            Errors = errors.Count > 0 ? errors : null
+        });
+    }
+
+    // -----------------------------------------
+    // DELETE api/logs/all
+    // -----------------------------------------
+    [HttpDelete("all")]
+    public async Task<IActionResult> DeleteAll()
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                     ?? User.FindFirstValue("sub");
+        if (userId == null) return Unauthorized();
+
+        var logs = await _db.Logs.Where(l => l.UserId == userId).ToListAsync();
+
+        foreach (var log in logs)
+        {
+            try
+            {
+                if (System.IO.File.Exists(log.StoragePath))
+                    System.IO.File.Delete(log.StoragePath);
+            }
+            catch { }
+        }
+
+        _db.Logs.RemoveRange(logs);
+        await _db.SaveChangesAsync();
+
+        await _hubNotification.NotifyAllLogsDeletedAsync(userId, logs.Count);
+
+        return Ok(new DeleteAllResponse { Deleted = logs.Count });
+    }
+
+    // -----------------------------------------
     // POST api/logs/{id}/analyze
     // -----------------------------------------
     [HttpPost("{id:guid}/analyze")]

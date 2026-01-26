@@ -1,0 +1,248 @@
+﻿## 1. EXECUTIVE SUMMARY
+- **Overall health:** The 3‑minute window shows **multiple concurrent issues** – a flood of UDP packets being blocked by the host firewall, repeated **failed root‑SSH login attempts**, and an **unstable SignalR/WebSocket connection** for the `BHBWorker` service.  
+- **Criticality:** The most urgent problem is the **potential brute‑force SSH attack** combined with the **persistent UDP flood**, both of which could indicate a probing or denial‑of‑service (DoS) campaign.  
+- **Time range covered:** `2026‑01‑26 11:25:01` → `2026‑01‑26 11:28:01` (≈ 3 min).
+
+---
+
+## 2. CRITICAL ISSUES  
+
+| # | Issue | Root Cause (inferred) | Evidence (log excerpt) | Impact | Severity | First Occurrence |
+|---|-------|-----------------------|------------------------|--------|----------|------------------|
+| 1 | **Brute‑force SSH login attempts for `root`** | External attacker trying password‑auth on `root` (password auth is enabled). | ``` Jan 26 11:25:47 vmi3002731 sshd[181833]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=51.159.105.145  user=root Jan 26 11:25:49 vmi3002731 sshd[181833]: Failed password for root from 51.159.105.145 port 28586 ssh2 ``` | Successful breach would give full system control. Even failed attempts increase audit noise and can lock accounts if lockout policies are in place. | **Critical** | 11:25:47 |
+| 2 | **Persistent UDP flood blocked by UFW** | Malicious or mis‑configured external host (197.248.225.61) repeatedly sending large UDP packets to port 2055 on the server (likely a DoS attempt or an improperly routed service). | ``` Jan 26 11:25:21 vmi3002731 kernel: [UFW BLOCK] IN=eth0 OUT= MAC=... SRC=197.248.225.61 DST=38.242.153.42 LEN=1492 PROTO=UDP SPT=2055 DPT=2055 LEN=1472 ``` (repeated ~every 20 s until 11:28:01) | Consumes network bandwidth and CPU for packet filtering; could saturate the NIC if volume increases. | **High** | 11:25:21 |
+| 3 | **SignalR / WebSocket instability for BHBWorker** | Upstream proxy or load‑balancer returning `502 Bad Gateway` instead of the expected `101 Switching Protocols`, causing the client to retry and briefly lose connectivity. | ``` Jan 26 11:25:37 vmi3002731 bhb-worker[97389]: [SignalR Retry] Attempt #1 … Error: The remote party closed the WebSocket connection … Jan 26 11:25:37 vmi3002731 bhb-worker[97389]: [SignalR Retry] Attempt #2 … Error: The server returned status code '502' when status code '101' was expected. ``` (Attempts 1‑4, reconnection succeeds at 11:25:55) | Temporary loss of log streaming; if prolonged, downstream services lose telemetry and may miss critical alerts. | **Medium** | 11:25:37 |
+
+---
+
+## 3. WARNINGS & ANOMALIES  
+
+| Symptom | Frequency / Pattern | Comments |
+|---------|---------------------|----------|
+| **Repeated UFW BLOCK entries** (UDP 2055) | ~1 per 20 s (total 9 blocks within 3 min) | The source IP is constant (`197.248.225.61`). Suggests automated tool or mis‑routed service. |
+| **SSH “Connection closed by authenticating user root”** (pre‑auth) | 2 occurrences (45.148.10.121 and 51.159.105.145) | The first close (`45.148.10.121`) may be a legitimate admin session; the second (`51.159.105.145`) is part of the failed login stream. |
+| **SignalR retry back‑off** (0 s → 2 s → 5 s → 10 s) | Expected exponential back‑off, but all retries hit `502`. | Indicates a persistent upstream fault rather than a transient network glitch. |
+| **Cron session close** | Single line, normal operation | No issue. |
+
+No CPU / memory metrics appear in the snippet, so performance impact cannot be quantified from these logs alone.
+
+---
+
+## 4. TIMELINE OF KEY EVENTS  
+
+| Time (UTC) | Event | Service / Component |
+|------------|-------|----------------------|
+| **11:25:01** | CRON session closed (root) | `cron` |
+| **11:25:19** | SSH connection closed (root) – source `45.148.10.121` | `sshd` |
+| **11:25:21** | First **UFW BLOCK** (UDP 2055) | Kernel / UFW |
+| **11:25:37** | SignalR **Retry #1** – remote party closed WebSocket | `bhb‑worker` |
+| **11:25:37** | SignalR **Retry #2** – `502` received | `bhb‑worker` |
+| **11:25:39** | SignalR **Retry #3** – `502` | `bhb‑worker` |
+| **11:25:41** | UFW BLOCK (second occurrence) | Kernel / UFW |
+| **11:25:44** | SignalR **Retry #4** – `502` | `bhb‑worker` |
+| **11:25:47** | **SSH auth failure** for `root` from `51.159.105.145` | `sshd` |
+| **11:25:49** | Failed password + connection close (root) – same IP | `sshd` |
+| **11:25:55** | **SignalR reconnection succeeded** – connection re‑established | `bhb‑worker` |
+| **11:26:01 – 11:28:01** | **Continuous UFW BLOCK** events every ~20 s (total 7 more) | Kernel / UFW |
+| **11:26:56** | BHBWorker starts **LiveLog** streaming (`journalctl://system`) | `bhb‑worker` |
+| **11:27:01 – 11:27:41** | Additional UFW BLOCKs (4 more) | Kernel / UFW |
+
+*Pattern:* The UDP flood starts **before** the SSH attack and persists throughout. The SignalR failures cluster between 11:25:37‑11:25:55, resolving shortly after the SSH brute‑force attempt begins.
+
+---
+
+## 5. SYSTEM HEALTH INDICATORS  
+
+| Indicator | Observation |
+|-----------|-------------|
+| **Network inbound traffic** | High‑frequency UDP packets (≈ 1.5 KB each) from a single external IP being dropped. Potential bandwidth waste. |
+| **Authentication events** | Two distinct root‑login sources; one successful close, one failure. Password authentication for `root` is enabled – a security risk. |
+| **Application connectivity** | `BHBWorker` suffered 4 consecutive WebSocket failures (502) before reconnection, indicating upstream proxy instability. |
+| **Log pipeline health** | After reconnection at 11:25:55, live log streaming resumes (no further errors reported in snippet). |
+| **Resource metrics** | Not present in provided logs (CPU, RAM, NIC utilization). |
+
+---
+
+## 6. REMEDIATION PLAN  
+
+### Issue 1 – SSH brute‑force on `root`  
+| Step | Action |
+|------|--------|
+| **Immediate** | **Lock down `root` login**: `PermitRootLogin no` in `/etc/ssh/sshd_config`; reload `sshd`. |
+| **Short‑term** | Deploy **fail2ban** or **SSHGuard** with a rule to ban IPs after 3 failed attempts. |
+| **Long‑term** | Enforce **key‑based authentication only**; disable password auth (`PasswordAuthentication no`). Rotate any existing root keys. |
+| **Code/Config** | ```bash\n# /etc/ssh/sshd_config\nPermitRootLogin no\nPasswordAuthentication no\n``` |
+| **Monitoring** | Alert on **`sshd` failed password** > 5 per 5 min, and on **new IPs** hitting port 22. |
+
+### Issue 2 – UDP flood (port 2055)  
+| Step | Action |
+|------|--------|
+| **Immediate** | Verify if the server *should* listen on UDP 2055. If not, **drop** traffic at the firewall (`ufw deny in to any port 2055`). |
+| **Short‑term** | Add a **rate‑limit** rule: `ufw limit proto udp from 197.248.225.61 to any port 2055`. |
+| **Long‑term** | Identify the source (owner of `197.248.225.61`). If malicious, **report to upstream provider** and consider **black‑hole routing** or **BGP filtering**. |
+| **Code/Config** | ```bash\nufw deny in proto udp to any port 2055\n# optional rate‑limit\nufw limit proto udp from 197.248.225.61 to any port 2055\n``` |
+| **Monitoring** | - Netflow / sFlow to detect spikes on UDP 2055.<br>- Alert on **`kernel: [UFW BLOCK]`** count > 10 per minute for the same source. |
+
+### Issue 3 – SignalR/WebSocket 502 errors  
+| Step | Action |
+|------|--------|
+| **Immediate** | Check **upstream proxy / load balancer** (NGINX, HAProxy, Azure Front Door, etc.) for mis‑configuration that returns 502 on the `/hub` endpoint. Restart the proxy service. |
+| **Short‑term** | Enable **detailed proxy logs** (e.g., `error_log` at `info` level) to capture why 502 is returned. |
+| **Long‑term** | Implement **health checks** on the SignalR service; configure the proxy to route only to healthy back‑ends. Consider adding **circuit‑breaker** logic in the client. |
+| **Code/Config** | Example NGINX fix: ```nginx\nlocation /signalr {\n    proxy_pass http://localhost:5000;\n    proxy_http_version 1.1;\n    proxy_set_header Upgrade $http_upgrade;\n    proxy_set_header Connection \"Upgrade\";\n    proxy_read_timeout 60s;\n}\n``` |
+| **Monitoring** | - Alert on **HTTP 502** responses from the proxy for `/hub` > 5 per minute.<br>- Alert on **SignalR client reconnection attempts** > 3 within 1 min. |
+
+---
+
+## 7. PREVENTIVE MEASURES  
+
+1. **Zero‑trust SSH**  
+   - Disable password auth globally; enforce MFA for privileged accounts.  
+   - Deploy **jump host / bastion** with MFA and IP allow‑list.  
+
+2. **Network hardening**  
+   - Maintain an **ingress ACL** that denies any traffic to unused ports (e.g., UDP 2055).  
+   - Enable **connection tracking** limits (`conntrack -C`) to guard against flood attacks.  
+
+3. **Observability uplift**  
+   - Collect **full packet capture** (or at least flow logs) for the offending source IP to aid forensic## 1. EXECUTIVE SUMMARY
+- **Overall health:** The 3‑minute window shows **multiple concurrent issues** – a flood of UDP packets being blocked by the host firewall, repeated **failed root‑SSH login attempts**, and an **unstable SignalR/WebSocket connection** for the `BHBWorker` service.  
+- **Criticality:** The most urgent problem is the **potential brute‑force SSH attack** combined with the **persistent UDP flood**, both of which could indicate a probing or denial‑of‑service (DoS) campaign.  
+- **Time range covered:** `2026‑01‑26 11:25:01` → `2026‑01‑26 11:28:01` (≈ 3 min).
+
+---
+
+## 2. CRITICAL ISSUES  
+
+| # | Issue | Root Cause (inferred) | Evidence (log excerpt) | Impact | Severity | First Occurrence |
+|---|-------|-----------------------|------------------------|--------|----------|------------------|
+| 1 | **Brute‑force SSH login attempts for `root`** | External attacker trying password‑auth on `root` (password auth is enabled). | ``` Jan 26 11:25:47 vmi3002731 sshd[181833]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=51.159.105.145  user=root Jan 26 11:25:49 vmi3002731 sshd[181833]: Failed password for root from 51.159.105.145 port 28586 ssh2 ``` | Successful breach would give full system control. Even failed attempts increase audit noise and can lock accounts if lockout policies are in place. | **Critical** | 11:25:47 |
+| 2 | **Persistent UDP flood blocked by UFW** | Malicious or mis‑configured external host (197.248.225.61) repeatedly sending large UDP packets to port 2055 on the server (likely a DoS attempt or an improperly routed service). | ``` Jan 26 11:25:21 vmi3002731 kernel: [UFW BLOCK] IN=eth0 OUT= MAC=... SRC=197.248.225.61 DST=38.242.153.42 LEN=1492 PROTO=UDP SPT=2055 DPT=2055 LEN=1472 ``` (repeated ~every 20 s until 11:28:01) | Consumes network bandwidth and CPU for packet filtering; could saturate the NIC if volume increases. | **High** | 11:25:21 |
+| 3 | **SignalR / WebSocket instability for BHBWorker** | Upstream proxy or load‑balancer returning `502 Bad Gateway` instead of the expected `101 Switching Protocols`, causing the client to retry and briefly lose connectivity. | ``` Jan 26 11:25:37 vmi3002731 bhb-worker[97389]: [SignalR Retry] Attempt #1 … Error: The remote party closed the WebSocket connection … Jan 26 11:25:37 vmi3002731 bhb-worker[97389]: [SignalR Retry] Attempt #2 … Error: The server returned status code '502' when status code '101' was expected. ``` (Attempts 1‑4, reconnection succeeds at 11:25:55) | Temporary loss of log streaming; if prolonged, downstream services lose telemetry and may miss critical alerts. | **Medium** | 11:25:37 |
+
+---
+
+## 3. WARNINGS & ANOMALIES  
+
+| Symptom | Frequency / Pattern | Comments |
+|---------|---------------------|----------|
+| **Repeated UFW BLOCK entries** (UDP 2055) | ~1 per 20 s (total 9 blocks within 3 min) | The source IP is constant (`197.248.225.61`). Suggests automated tool or mis‑routed service. |
+| **SSH “Connection closed by authenticating user root”** (pre‑auth) | 2 occurrences (45.148.10.121 and 51.159.105.145) | The first close (`45.148.10.121`) may be a legitimate admin session; the second (`51.159.105.145`) is part of the failed login stream. |
+| **SignalR retry back‑off** (0 s → 2 s → 5 s → 10 s) | Expected exponential back‑off, but all retries hit `502`. | Indicates a persistent upstream fault rather than a transient network glitch. |
+| **Cron session close** | Single line, normal operation | No issue. |
+
+No CPU / memory metrics appear in the snippet, so performance impact cannot be quantified from these logs alone.
+
+---
+
+## 4. TIMELINE OF KEY EVENTS  
+
+| Time (UTC) | Event | Service / Component |
+|------------|-------|----------------------|
+| **11:25:01** | CRON session closed (root) | `cron` |
+| **11:25:19** | SSH connection closed (root) – source `45.148.10.121` | `sshd` |
+| **11:25:21** | First **UFW BLOCK** (UDP 2055) | Kernel / UFW |
+| **11:25:37** | SignalR **Retry #1** – remote party closed WebSocket | `bhb‑worker` |
+| **11:25:37** | SignalR **Retry #2** – `502` received | `bhb‑worker` |
+| **11:25:39** | SignalR **Retry #3** – `502` | `bhb‑worker` |
+| **11:25:41** | UFW BLOCK (second occurrence) | Kernel / UFW |
+| **11:25:44** | SignalR **Retry #4** – `502` | `bhb‑worker` |
+| **11:25:47** | **SSH auth failure** for `root` from `51.159.105.145` | `sshd` |
+| **11:25:49** | Failed password + connection close (root) – same IP | `sshd` |
+| **11:25:55** | **SignalR reconnection succeeded** – connection re‑established | `bhb‑worker` |
+| **11:26:01 – 11:28:01** | **Continuous UFW BLOCK** events every ~20 s (total 7 more) | Kernel / UFW |
+| **11:26:56** | BHBWorker starts **LiveLog** streaming (`journalctl://system`) | `bhb‑worker` |
+| **11:27:01 – 11:27:41** | Additional UFW BLOCKs (4 more) | Kernel / UFW |
+
+*Pattern:* The UDP flood starts **before** the SSH attack and persists throughout. The SignalR failures cluster between 11:25:37‑11:25:55, resolving shortly after the SSH brute‑force attempt begins.
+
+---
+
+## 5. SYSTEM HEALTH INDICATORS  
+
+| Indicator | Observation |
+|-----------|-------------|
+| **Network inbound traffic** | High‑frequency UDP packets (≈ 1.5 KB each) from a single external IP being dropped. Potential bandwidth waste. |
+| **Authentication events** | Two distinct root‑login sources; one successful close, one failure. Password authentication for `root` is enabled – a security risk. |
+| **Application connectivity** | `BHBWorker` suffered 4 consecutive WebSocket failures (502) before reconnection, indicating upstream proxy instability. |
+| **Log pipeline health** | After reconnection at 11:25:55, live log streaming resumes (no further errors reported in snippet). |
+| **Resource metrics** | Not present in provided logs (CPU, RAM, NIC utilization). |
+
+---
+
+## 6. REMEDIATION PLAN  
+
+### Issue 1 – SSH brute‑force on `root`  
+| Step | Action |
+|------|--------|
+| **Immediate** | **Lock down `root` login**: `PermitRootLogin no` in `/etc/ssh/sshd_config`; reload `sshd`. |
+| **Short‑term** | Deploy **fail2ban** or **SSHGuard** with a rule to ban IPs after 3 failed attempts. |
+| **Long‑term** | Enforce **key‑based authentication only**; disable password auth (`PasswordAuthentication no`). Rotate any existing root keys. |
+| **Code/Config** | ```bash\n# /etc/ssh/sshd_config\nPermitRootLogin no\nPasswordAuthentication no\n``` |
+| **Monitoring** | Alert on **`sshd` failed password** > 5 per 5 min, and on **new IPs** hitting port 22. |
+
+### Issue 2 – UDP flood (port 2055)  
+| Step | Action |
+|------|--------|
+| **Immediate** | Verify if the server *should* listen on UDP 2055. If not, **drop** traffic at the firewall (`ufw deny in to any port 2055`). |
+| **Short‑term** | Add a **rate‑limit** rule: `ufw limit proto udp from 197.248.225.61 to any port 2055`. |
+| **Long‑term** | Identify the source (owner of `197.248.225.61`). If malicious, **report to upstream provider** and consider **black‑hole routing** or **BGP filtering**. |
+| **Code/Config** | ```bash\nufw deny in proto udp to any port 2055\n# optional rate‑limit\nufw limit proto udp from 197.248.225.61 to any port 2055\n``` |
+| **Monitoring** | - Netflow / sFlow to detect spikes on UDP 2055.<br>- Alert on **`kernel: [UFW BLOCK]`** count > 10 per minute for the same source. |
+
+### Issue 3 – SignalR/WebSocket 502 errors  
+| Step | Action |
+|------|--------|
+| **Immediate** | Check **upstream proxy / load balancer** (NGINX, HAProxy, Azure Front Door, etc.) for mis‑configuration that returns 502 on the `/hub` endpoint. Restart the proxy service. |
+| **Short‑term** | Enable **detailed proxy logs** (e.g., `error_log` at `info` level) to capture why 502 is returned. |
+| **Long‑term** | Implement **health checks** on the SignalR service; configure the proxy to route only to healthy back‑ends. Consider adding **circuit‑breaker** logic in the client. |
+| **Code/Config** | Example NGINX fix: ```nginx\nlocation /signalr {\n    proxy_pass http://localhost:5000;\n    proxy_http_version 1.1;\n    proxy_set_header Upgrade $http_upgrade;\n    proxy_set_header Connection \"Upgrade\";\n    proxy_read_timeout 60s;\n}\n``` |
+| **Monitoring** | - Alert on **HTTP 502** responses from the proxy for `/hub` > 5 per minute.<br>- Alert on **SignalR client reconnection attempts** > 3 within 1 min. |
+
+---
+
+## 7. PREVENTIVE MEASURES  
+
+1. **Zero‑trust SSH**  
+   - Disable password auth globally; enforce MFA for privileged accounts.  
+   - Deploy **jump host / bastion** with MFA and IP allow‑list.  
+
+2. **Network hardening**  
+   - Maintain an **ingress ACL** that denies any traffic to unused ports (e.g., UDP 2055).  
+   - Enable **connection tracking** limits (`conntrack -C`) to guard against flood attacks.  
+
+3. **Observability uplift**  
+   - Collect **full packet capture** (or at least flow logs) for the offending source IP to aid forensic analysis.  
+   - Centralize **UFW kernel messages** into a SIEM with threshold alerts.  
+
+4. **Application resiliency**  
+   - Add **automatic retry with jitter** in SignalR clients; expose reconnection metrics to monitoring.  
+   - Use **helm / Docker health‑checks** to restart the SignalR service automatically if it becomes unhealthy.  
+
+5. **Regular security audits**  
+   - Run **`ssh-audit`** and **`nmap`** scans quarterly.  
+   - Verify that **root login** is disabled on all production nodes.  
+
+---
+
+## 8. MISSING INFORMATION  
+
+| Needed data | Why it matters |
+|-------------|----------------|
+| **CPU / memory / NIC utilization** (e.g., `top`, `sar`, `ifstat`) | To measure whether the UDP flood or SSH attempts are causing resource saturation. |
+| **Full firewall rule set (`ufw status numbered`)** | To confirm whether port 2055 is intentionally open and to see existing rate‑limit rules. |
+| **SignalR upstream proxy logs** (NGINX/HAProxy) | To pinpoint the exact cause of the `502 Bad Gateway` responses. |
+| **Authentication method list** (`/etc/ssh/sshd_config` dump) | To confirm that password authentication for root is indeed enabled. |
+| **Network flow data (NetFlow/sFlow)** | To gauge the volume and pattern of the UDP traffic beyond the occasional blocked log line. |
+| **Systemd journal for the whole host** (not just the snippet) | To see if additional errors (e.g., kernel OOM, disk I/O) occurred concurrently. |
+
+*Collecting these data points will enable a more quantitative assessment of the impact and guide precise capacity‑planning.*  
+
+---  
+
+### Bottom‑line
+- **Lock down root SSH immediately** and enforce key‑based auth.  
+- **Block or rate‑limit** the unwanted UDP traffic; investigate the source.  
+- **Fix the upstream proxy** that is returning 502 to restore stable SignalR connectivity.  
+
+Implement the above actions promptly, then reinforce the environment with the recommended hardening, monitoring, and observability improvements.

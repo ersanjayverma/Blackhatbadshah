@@ -14,7 +14,9 @@
       "Bash(sudo bash:*)",
       "Bash(bash:*)",
       "Bash(dpkg-deb:*)",
-      "Bash(tar:*)"
+      "Bash(tar:*)",
+      "Bash(grep:*)",
+      "Bash(dotnet ef migrations add:*)"
     ]
   }
 }

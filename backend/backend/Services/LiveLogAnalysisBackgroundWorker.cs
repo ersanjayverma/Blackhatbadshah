@@ -80,29 +80,52 @@ public class LiveLogAnalysisBackgroundWorker : BackgroundService
             ?? throw new InvalidOperationException("Storage:RootPath not configured");
 
         Guid reportId = Guid.NewGuid();
+        Guid logId = Guid.NewGuid();
 
         try
         {
             // Notify frontend that analysis started
             await _hubNotification.NotifyLiveLogAnalysisStartedAsync(job.WorkerId, reportId, job.ChunkNumber);
 
-            // Create directories for live log reports
+            // Create directories for logs and reports
+            var logsDir = Path.Combine(storageRoot, "logs");
             var liveLogDir = Path.Combine(storageRoot, "livelog-reports", job.UserId);
             var chartDir = Path.Combine(storageRoot, "livelog-charts", job.UserId);
 
+            Directory.CreateDirectory(logsDir);
             Directory.CreateDirectory(liveLogDir);
             Directory.CreateDirectory(chartDir);
+
+            // Save the live log content as a Log entity (like uploaded logs)
+            var logPath = Path.Combine(logsDir, $"{logId}.txt");
+            await File.WriteAllTextAsync(logPath, job.LogContent, Encoding.UTF8, cancellationToken);
+
+            var logEntity = new Log
+            {
+                Id = logId,
+                UserId = job.UserId,
+                FileName = $"livelog-{job.WorkerId}-{DateTime.UtcNow:yyyyMMdd-HHmmss}.log",
+                ContentType = "text/plain",
+                SizeBytes = job.LogContent.Length,
+                StoragePath = logPath,
+                CreatedAt = DateTime.UtcNow
+            };
+            db.Logs.Add(logEntity);
+            await db.SaveChangesAsync(cancellationToken);
+
+            // Notify log created
+            await _hubNotification.NotifyLogCreatedAsync(job.UserId, logId, logEntity.FileName);
 
             var reportPath = Path.Combine(liveLogDir, $"{reportId}.txt");
             var chartPath = Path.Combine(chartDir, $"{reportId}.json");
 
-            // Create report record
+            // Create report record linked to the saved log
             var report = new Report
             {
                 Id = reportId,
-                LogId = null, // Live logs don't have a persistent log file
+                LogId = logId, // Now linked to the saved log
                 UserId = job.UserId,
-                Title = $"Live Log Analysis – Chunk {job.ChunkNumber}",
+                Title = $"Live Log Analysis – {logEntity.FileName}",
                 Summary = "Analysis in progress...",
                 ReportPath = reportPath,
                 ChartPath = chartPath,
@@ -174,13 +197,26 @@ public class LiveLogAnalysisBackgroundWorker : BackgroundService
                 await planEnforcement.RecordAnalysisAsync(job.UserId, job.Model);
             }
 
-            // Notify frontend of completion
+            // Notify frontend of completion (to worker group for live log UI)
             await _hubNotification.NotifyLiveLogAnalysisCompletedAsync(
                 job.WorkerId, reportId, job.ChunkNumber, report.Status.ToString(), report.Summary);
 
+            // Also notify user group for Analysis Dashboard (ReportCreated event)
+            await _hubNotification.NotifyReportCreatedAsync(job.UserId, new ReportListItem
+            {
+                Id = report.Id,
+                Title = report.Title,
+                FileName = logEntity.FileName,
+                CreatedAtUtc = report.CreatedAtUtc,
+                Status = report.Status
+            });
+
+            // Notify dashboard update
+            await _hubNotification.NotifyDashboardUpdateAsync(job.UserId);
+
             _logger.LogInformation(
-                "Completed live log analysis for Session {SessionId}, Worker {WorkerId}, Chunk {ChunkNumber}, ReportId {ReportId}",
-                job.SessionId, job.WorkerId, job.ChunkNumber, reportId);
+                "Completed live log analysis for Session {SessionId}, Worker {WorkerId}, Chunk {ChunkNumber}, ReportId {ReportId}, LogId {LogId}",
+                job.SessionId, job.WorkerId, job.ChunkNumber, reportId, logId);
         }
         catch (Exception ex)
         {

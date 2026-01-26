@@ -16,6 +16,14 @@ public class AppDbContext : DbContext
     public DbSet<WorkerAgent> WorkerAgents => Set<WorkerAgent>();
     public DbSet<UserWorkerConfig> UserWorkerConfigs => Set<UserWorkerConfig>();
 
+    // New feature entities
+    public DbSet<LogTag> LogTags => Set<LogTag>();
+    public DbSet<LogTagMapping> LogTagMappings => Set<LogTagMapping>();
+    public DbSet<ShareableLink> ShareableLinks => Set<ShareableLink>();
+    public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
+    public DbSet<LogBookmark> LogBookmarks => Set<LogBookmark>();
+    public DbSet<NotificationPreference> NotificationPreferences => Set<NotificationPreference>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -83,6 +91,65 @@ public class AppDbContext : DbContext
         // Configure UserWorkerConfig
         modelBuilder.Entity<UserWorkerConfig>()
             .HasIndex(c => c.UserId)
+            .IsUnique();
+
+        // Configure LogTag
+        modelBuilder.Entity<LogTag>()
+            .HasIndex(t => new { t.UserId, t.Name })
+            .IsUnique();
+
+        // Configure LogTagMapping
+        modelBuilder.Entity<LogTagMapping>()
+            .HasOne(m => m.Log)
+            .WithMany()
+            .HasForeignKey(m => m.LogId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<LogTagMapping>()
+            .HasOne(m => m.Tag)
+            .WithMany()
+            .HasForeignKey(m => m.TagId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<LogTagMapping>()
+            .HasIndex(m => new { m.LogId, m.TagId })
+            .IsUnique();
+
+        // Configure ShareableLink
+        modelBuilder.Entity<ShareableLink>()
+            .HasIndex(s => s.Token)
+            .IsUnique();
+
+        modelBuilder.Entity<ShareableLink>()
+            .HasOne(s => s.Report)
+            .WithMany()
+            .HasForeignKey(s => s.ReportId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Configure ActivityLog
+        modelBuilder.Entity<ActivityLog>()
+            .HasIndex(a => a.UserId);
+
+        modelBuilder.Entity<ActivityLog>()
+            .HasIndex(a => a.CreatedAt);
+
+        modelBuilder.Entity<ActivityLog>()
+            .HasIndex(a => new { a.UserId, a.ActivityType });
+
+        // Configure LogBookmark
+        modelBuilder.Entity<LogBookmark>()
+            .HasIndex(b => new { b.UserId, b.LogId })
+            .IsUnique();
+
+        modelBuilder.Entity<LogBookmark>()
+            .HasOne(b => b.Log)
+            .WithMany()
+            .HasForeignKey(b => b.LogId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Configure NotificationPreference
+        modelBuilder.Entity<NotificationPreference>()
+            .HasIndex(n => n.UserId)
             .IsUnique();
 
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);

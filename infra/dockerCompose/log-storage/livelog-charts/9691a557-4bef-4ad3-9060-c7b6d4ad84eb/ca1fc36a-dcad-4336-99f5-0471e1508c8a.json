@@ -1,0 +1,13 @@
+﻿{
+  "chartType": "ColumnChart",
+  "title": "Attack Types Count",
+  "xAxis": {
+    "labels": ["RCE", "Recon", "Brute", "Proxy"]
+  },
+  "series": [
+    {
+      "name": "Attempts",
+      "values": [5, 6, 4, 1]
+    }
+  ]
+}

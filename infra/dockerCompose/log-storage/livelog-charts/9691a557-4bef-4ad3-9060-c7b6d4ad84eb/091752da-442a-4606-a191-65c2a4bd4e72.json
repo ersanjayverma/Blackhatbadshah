@@ -1,0 +1,13 @@
+﻿{
+  "chartType": "ColumnChart",
+  "title": "Deployment Frequency",
+  "xAxis": {
+    "labels": ["Jan 22 21:53", "Jan 22 22:38", "Jan 23 05:02", "Jan 23 05:42", "Jan 23 13:24"]
+  },
+  "series": [
+    {
+      "name": "Deployments",
+      "values": [1, 1, 3, 1, 1]
+    }
+  ]
+}

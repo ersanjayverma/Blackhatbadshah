@@ -115,7 +115,7 @@
                                            class="form-control form-control-lg" />
                                 <small class="d-block mt-3 text-center">
                                     <i class="bi bi-info-circle me-1"></i>
-                                    Max size: <strong>2 MB</strong> — Supported: .txt .log .json .xml .csv .pdf + images
+                                    Max size: <strong>2 MB</strong> ï¿½ Supported: .txt .log .json .xml .csv .pdf + images
                                 </small>
                             </div>
                         </div>
@@ -620,6 +620,9 @@
     private IDisposable? _liveLogUpdateSub;
     private IDisposable? _sessionConnectedSub;
     private IDisposable? _sessionDisconnectedSub;
+    private IDisposable? _analysisCompletedSub;
+    private IDisposable? _analysisFailedSub;
+    private IDisposable? _analysisStartedSub;
 
     private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -1139,6 +1142,34 @@
                 await InvokeAsync(StateHasChanged);
                 Toast.ShowWarning("Worker disconnected.");
             });
+
+            // Live log analysis notifications
+            _analysisStartedSub = HubService.On<object>("AnalysisStarted", async (data) =>
+            {
+                await InvokeAsync(() =>
+                {
+                    Toast.ShowInfo("Analysis started - processing your live logs...");
+                    StateHasChanged();
+                });
+            });
+
+            _analysisCompletedSub = HubService.On<object>("AnalysisCompleted", async (data) =>
+            {
+                await InvokeAsync(() =>
+                {
+                    Toast.ShowSuccess("Analysis completed! View the report in Analysis Dashboard.");
+                    StateHasChanged();
+                });
+            });
+
+            _analysisFailedSub = HubService.On<object>("AnalysisFailed", async (data) =>
+            {
+                await InvokeAsync(() =>
+                {
+                    Toast.ShowError("Analysis failed. Please try again.");
+                    StateHasChanged();
+                });
+            });
         }
         catch (Exception ex)
         {
@@ -1203,6 +1234,9 @@
         _liveLogUpdateSub?.Dispose();
         _sessionConnectedSub?.Dispose();
         _sessionDisconnectedSub?.Dispose();
+        _analysisStartedSub?.Dispose();
+        _analysisCompletedSub?.Dispose();
+        _analysisFailedSub?.Dispose();
 
         await SafeStopStream();
         if (_isSubscribed && !string.IsNullOrEmpty(_subscribedWorkerId))

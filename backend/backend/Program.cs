@@ -76,6 +76,10 @@ builder.Services.AddScoped<IQueryHandler<GetCurrentMonthUsageQuery, CurrentMonth
 // Plan & Model Configuration
 builder.Services.Configure<PlansConfiguration>(builder.Configuration.GetSection("Plans"));
 builder.Services.Configure<ModelsConfig>(builder.Configuration.GetSection("Models"));
+builder.Services.Configure<EmailConfiguration>(builder.Configuration.GetSection("Email"));
+
+// Email Service
+builder.Services.AddSingleton<IEmailService, EmailService>();
 
 // SignalR Query Token config (default false for security - prefer Authorization header)
 var allowSignalRQueryToken = builder.Configuration.GetValue<bool>("SignalR:AllowQueryToken", false);
@@ -154,6 +158,9 @@ builder.Services.AddSingleton<IWorkerRegistry, WorkerRegistry>();
 builder.Services.AddHostedService<LiveLogAnalysisBackgroundWorker>();
 builder.Services.AddHostedService<WorkerCleanupBackgroundService>();
 builder.Services.AddHttpContextAccessor();
+
+// Activity Logging Service
+builder.Services.AddScoped<IActivityLoggingService, ActivityLoggingService>();
 
 // Subscription & Payment Services
 builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();

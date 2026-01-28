@@ -3,6 +3,7 @@ using backend.Data;
 using backend.Data.Entities;
 using backend.Hubs;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using shared.Dto;
 using System.Text;
@@ -16,19 +17,25 @@ public class LiveLogAnalysisBackgroundWorker : BackgroundService
     private readonly IHubNotificationService _hubNotification;
     private readonly ModelsConfig _modelsConfig;
     private readonly ILogger<LiveLogAnalysisBackgroundWorker> _logger;
+    private readonly IEmailService _emailService;
+    private readonly IKeycloakAdminService _keycloakService;
 
     public LiveLogAnalysisBackgroundWorker(
         IServiceProvider serviceProvider,
         ILiveLogAnalysisQueue queue,
         IHubNotificationService hubNotification,
         IOptions<ModelsConfig> modelsConfig,
-        ILogger<LiveLogAnalysisBackgroundWorker> logger)
+        ILogger<LiveLogAnalysisBackgroundWorker> logger,
+        IEmailService emailService,
+        IKeycloakAdminService keycloakService)
     {
         _serviceProvider = serviceProvider;
         _queue = queue;
         _hubNotification = hubNotification;
         _modelsConfig = modelsConfig.Value;
         _logger = logger;
+        _emailService = emailService;
+        _keycloakService = keycloakService;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -214,6 +221,9 @@ public class LiveLogAnalysisBackgroundWorker : BackgroundService
             // Notify dashboard update
             await _hubNotification.NotifyDashboardUpdateAsync(job.UserId);
 
+            // Send email notification if configured
+            await SendEmailNotificationAsync(db, job.UserId, logEntity.FileName, reportId, report.Status, report.Summary);
+
             _logger.LogInformation(
                 "Completed live log analysis for Session {SessionId}, Worker {WorkerId}, Chunk {ChunkNumber}, ReportId {ReportId}, LogId {LogId}",
                 job.SessionId, job.WorkerId, job.ChunkNumber, reportId, logId);
@@ -277,6 +287,65 @@ public class LiveLogAnalysisBackgroundWorker : BackgroundService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to update report and notify for ReportId {ReportId}", reportId);
+        }
+    }
+
+    private async Task SendEmailNotificationAsync(
+        AppDbContext db,
+        string userId,
+        string fileName,
+        Guid reportId,
+        ReportStatus status,
+        string summary)
+    {
+        try
+        {
+            if (!_emailService.IsConfigured())
+                return;
+
+            var prefs = await db.NotificationPreferences.FirstOrDefaultAsync(p => p.UserId == userId);
+
+            var shouldSend = status switch
+            {
+                ReportStatus.Completed => prefs?.EmailOnAnalysisComplete ?? true,
+                ReportStatus.Failed => prefs?.EmailOnAnalysisFailed ?? true,
+                _ => false
+            };
+
+            if (!shouldSend)
+                return;
+
+            if (prefs?.QuietHoursStart != null && prefs?.QuietHoursEnd != null)
+            {
+                var now = DateTime.UtcNow.TimeOfDay;
+                if (now >= prefs.QuietHoursStart && now <= prefs.QuietHoursEnd)
+                    return;
+            }
+
+            var userEmail = await _keycloakService.GetUserEmailAsync(userId);
+            if (string.IsNullOrEmpty(userEmail))
+                return;
+
+            var subject = status == ReportStatus.Completed
+                ? $"Live Log Analysis Complete: {fileName}"
+                : $"Live Log Analysis Failed: {fileName}";
+
+            var htmlBody = status == ReportStatus.Completed
+                ? $@"<h2>Live Log Analysis Completed</h2>
+                    <p>Your live log <strong>{fileName}</strong> has been analyzed successfully.</p>
+                    <h3>Summary</h3>
+                    <p>{summary}</p>
+                    <p><a href=""https://app.blackhatbadshah.com/reports/{reportId}"">View Full Report</a></p>"
+                : $@"<h2>Live Log Analysis Failed</h2>
+                    <p>The analysis of live log <strong>{fileName}</strong> failed.</p>
+                    <p><strong>Error:</strong> {summary}</p>";
+
+            await _emailService.SendEmailAsync(userEmail, subject, htmlBody);
+            _logger.LogInformation("Email notification sent to {Email} for live log report {ReportId}", userEmail, reportId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to send email notification for live log report {ReportId}", reportId);
         }
     }
 }

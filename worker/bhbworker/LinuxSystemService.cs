@@ -499,21 +499,86 @@ public class LinuxSystemService
                 var sshConfig = await File.ReadAllTextAsync("/etc/ssh/sshd_config", ct);
                 audit.SshPasswordAuthEnabled = !sshConfig.Contains("PasswordAuthentication no");
                 audit.SshRootLoginEnabled = !sshConfig.Contains("PermitRootLogin no");
+                audit.SshKeyAuthEnabled = sshConfig.Contains("PubkeyAuthentication yes") || !sshConfig.Contains("PubkeyAuthentication no");
+                audit.SshX11ForwardingEnabled = sshConfig.Contains("X11Forwarding yes");
+
+                // Parse SSH idle timeout
+                var clientAliveMatch = System.Text.RegularExpressions.Regex.Match(sshConfig, @"ClientAliveInterval\s+(\d+)");
+                if (clientAliveMatch.Success && int.TryParse(clientAliveMatch.Groups[1].Value, out var interval))
+                    audit.SshIdleTimeout = interval;
             }
 
             // Check firewall
             var fwStatus = await GetFirewallStatusAsync(ct);
             audit.FirewallActive = fwStatus.IsActive;
 
+            // Get firewall rules count
+            var fwRules = await ExecuteCommandAsync("sudo iptables -L -n 2>/dev/null | grep -c '^[A-Z]' || echo 0", ct);
+            int.TryParse(fwRules.StdOut.Trim(), out var rulesCount);
+            audit.FirewallRulesCount = rulesCount;
+
+            // Check IPv6 status
+            var ipv6Check = await ExecuteCommandAsync("cat /proc/sys/net/ipv6/conf/all/disable_ipv6 2>/dev/null || echo 0", ct);
+            audit.Ipv6Enabled = ipv6Check.StdOut.Trim() == "0";
+
             // Check SELinux
             var selinuxCheck = await ExecuteCommandAsync("getenforce 2>/dev/null || echo Disabled", ct);
             audit.SeLinuxMode = selinuxCheck.StdOut.Trim();
             audit.SeLinuxEnabled = audit.SeLinuxMode != "Disabled";
 
+            // Check AppArmor
+            var apparmorCheck = await ExecuteCommandAsync("aa-status --enabled 2>/dev/null && echo Enabled || echo Disabled", ct);
+            audit.AppArmorEnabled = apparmorCheck.StdOut.Contains("Enabled");
+            if (audit.AppArmorEnabled)
+            {
+                var apparmorMode = await ExecuteCommandAsync("aa-status 2>/dev/null | head -1", ct);
+                audit.AppArmorMode = apparmorMode.StdOut.Trim();
+            }
+
+            // Check Fail2Ban - systemctl is-active returns exit code 0 only when service is active
+            var fail2banCheck = await ExecuteCommandAsync("systemctl is-active fail2ban 2>/dev/null", ct);
+            audit.Fail2BanActive = fail2banCheck.Success;
+            if (audit.Fail2BanActive)
+            {
+                var jailCount = await ExecuteCommandAsync("sudo fail2ban-client status 2>/dev/null | grep 'Number of jail' | awk '{print $NF}' || echo 0", ct);
+                int.TryParse(jailCount.StdOut.Trim(), out var jails);
+                audit.Fail2BanJailsActive = jails;
+            }
+
+            // Check Auditd
+            var auditdCheck = await ExecuteCommandAsync("systemctl is-active auditd 2>/dev/null || echo inactive", ct);
+            audit.AuditdActive = auditdCheck.StdOut.Trim() == "active";
+
             // Get failed login attempts
             var failedLogins = await ExecuteCommandAsync("sudo grep 'Failed password' /var/log/auth.log 2>/dev/null | wc -l || echo 0", ct);
             int.TryParse(failedLogins.StdOut.Trim(), out var failedCount);
             audit.FailedLoginAttempts24h = failedCount;
+
+            // Check users with empty passwords
+            var emptyPasswd = await ExecuteCommandAsync("sudo awk -F: '($2 == \"\" ) { print $1 }' /etc/shadow 2>/dev/null | wc -l || echo 0", ct);
+            int.TryParse(emptyPasswd.StdOut.Trim(), out var emptyCount);
+            audit.UsersWithEmptyPassword = emptyCount;
+
+            // Check NOPASSWD in sudoers
+            var sudoNoPasswd = await ExecuteCommandAsync("sudo grep -r 'NOPASSWD' /etc/sudoers /etc/sudoers.d/ 2>/dev/null | grep -v '^#' | awk -F: '{print $2}' | awk '{print $1}'", ct);
+            if (sudoNoPasswd.Success && !string.IsNullOrWhiteSpace(sudoNoPasswd.StdOut))
+            {
+                audit.SudoNoPasswordUsers = sudoNoPasswd.StdOut.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                    .Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().ToList();
+            }
+
+            // Get password policy settings
+            if (File.Exists("/etc/login.defs"))
+            {
+                var loginDefs = await File.ReadAllTextAsync("/etc/login.defs", ct);
+                var maxAgeMatch = System.Text.RegularExpressions.Regex.Match(loginDefs, @"PASS_MAX_DAYS\s+(\d+)");
+                if (maxAgeMatch.Success && int.TryParse(maxAgeMatch.Groups[1].Value, out var maxAge))
+                    audit.PasswordMaxAgeDays = maxAge;
+
+                var minLenMatch = System.Text.RegularExpressions.Regex.Match(loginDefs, @"PASS_MIN_LEN\s+(\d+)");
+                if (minLenMatch.Success && int.TryParse(minLenMatch.Groups[1].Value, out var minLen))
+                    audit.PasswordMinLength = minLen;
+            }
 
             // Get listening ports
             var listenPorts = await ExecuteCommandAsync("ss -tlnp 2>/dev/null | grep LISTEN | awk '{print $4}'", ct);
@@ -525,6 +590,33 @@ public class LinuxSystemService
 
             // Check unattended upgrades
             audit.UnattendedUpgradesEnabled = File.Exists("/etc/apt/apt.conf.d/50unattended-upgrades");
+
+            // Get last system update time
+            var lastUpdate = await ExecuteCommandAsync("stat -c %Y /var/lib/apt/periodic/update-success-stamp 2>/dev/null || echo 0", ct);
+            if (long.TryParse(lastUpdate.StdOut.Trim(), out var updateTs) && updateTs > 0)
+                audit.LastSystemUpdate = DateTimeOffset.FromUnixTimeSeconds(updateTs).UtcDateTime;
+
+            // Check /tmp mount options
+            var tmpMount = await ExecuteCommandAsync("mount | grep ' /tmp ' 2>/dev/null", ct);
+            audit.TmpNoExec = tmpMount.StdOut.Contains("noexec");
+
+            // Get umask value
+            var umaskCheck = await ExecuteCommandAsync("umask", ct);
+            audit.UmaskValue = umaskCheck.StdOut.Trim();
+
+            // Count loaded kernel modules
+            var kmodCount = await ExecuteCommandAsync("lsmod 2>/dev/null | wc -l || echo 0", ct);
+            int.TryParse(kmodCount.StdOut.Trim(), out var modCount);
+            audit.LoadedKernelModules = Math.Max(0, modCount - 1); // Subtract header line
+
+            // Count cron jobs
+            var cronCount = await ExecuteCommandAsync("ls /etc/cron.d/ /var/spool/cron/crontabs/ 2>/dev/null | wc -l || echo 0", ct);
+            int.TryParse(cronCount.StdOut.Trim(), out var crons);
+            audit.CronJobsCount = crons;
+
+            // Check core dumps disabled
+            var coreLimit = await ExecuteCommandAsync("cat /proc/sys/kernel/core_pattern 2>/dev/null", ct);
+            audit.CoreDumpsDisabled = coreLimit.StdOut.Contains("|/bin/false") || coreLimit.StdOut.Trim() == "";
 
             // Calculate security score
             audit.SecurityScore = CalculateSecurityScore(audit);
@@ -546,13 +638,33 @@ public class LinuxSystemService
     {
         var score = 100;
 
-        if (audit.SshPasswordAuthEnabled) score -= 15;
-        if (audit.SshRootLoginEnabled) score -= 20;
-        if (!audit.FirewallActive) score -= 25;
-        if (!audit.SeLinuxEnabled) score -= 10;
-        if (audit.FailedLoginAttempts24h > 100) score -= 10;
-        if (!audit.UnattendedUpgradesEnabled) score -= 10;
-        if (audit.OpenPorts > 10) score -= 10;
+        // SSH Security (-30 max)
+        if (audit.SshPasswordAuthEnabled) score -= 10;
+        if (audit.SshRootLoginEnabled) score -= 15;
+        if (audit.SshX11ForwardingEnabled) score -= 3;
+        if (audit.SshIdleTimeout == 0) score -= 2;
+
+        // Firewall & Network (-20 max)
+        if (!audit.FirewallActive) score -= 15;
+        if (audit.OpenPorts > 10) score -= 5;
+
+        // Security Frameworks (-15 max)
+        if (!audit.SeLinuxEnabled && !audit.AppArmorEnabled) score -= 8;
+        if (!audit.Fail2BanActive) score -= 5;
+        if (!audit.AuditdActive) score -= 2;
+
+        // Authentication (-20 max)
+        if (audit.UsersWithEmptyPassword > 0) score -= 10;
+        if (audit.SudoNoPasswordUsers.Count > 0) score -= 5;
+        if (audit.FailedLoginAttempts24h > 100) score -= 5;
+
+        // Updates (-10 max)
+        if (!audit.UnattendedUpgradesEnabled) score -= 5;
+        if (audit.PendingSecurityUpdates > 10) score -= 5;
+
+        // File System (-5 max)
+        if (!audit.TmpNoExec) score -= 3;
+        if (audit.UmaskValue == "0000" || audit.UmaskValue == "000") score -= 2;
 
         return Math.Max(0, score);
     }
@@ -561,6 +673,7 @@ public class LinuxSystemService
     {
         var recommendations = new List<SecurityRecommendation>();
 
+        // SSH Recommendations
         if (audit.SshRootLoginEnabled)
         {
             recommendations.Add(new SecurityRecommendation
@@ -585,6 +698,31 @@ public class LinuxSystemService
             });
         }
 
+        if (audit.SshX11ForwardingEnabled)
+        {
+            recommendations.Add(new SecurityRecommendation
+            {
+                Category = "SSH",
+                Severity = "low",
+                Title = "Disable X11 forwarding",
+                Description = "X11 forwarding is enabled, which can be a security risk if not needed.",
+                Remediation = "Set 'X11Forwarding no' in /etc/ssh/sshd_config if GUI forwarding is not required."
+            });
+        }
+
+        if (audit.SshIdleTimeout == 0)
+        {
+            recommendations.Add(new SecurityRecommendation
+            {
+                Category = "SSH",
+                Severity = "low",
+                Title = "Configure SSH idle timeout",
+                Description = "No SSH idle timeout configured. Idle sessions stay open indefinitely.",
+                Remediation = "Set 'ClientAliveInterval 300' and 'ClientAliveCountMax 2' in /etc/ssh/sshd_config."
+            });
+        }
+
+        // Firewall Recommendations
         if (!audit.FirewallActive)
         {
             recommendations.Add(new SecurityRecommendation
@@ -597,6 +735,93 @@ public class LinuxSystemService
             });
         }
 
+        if (audit.OpenPorts > 10)
+        {
+            recommendations.Add(new SecurityRecommendation
+            {
+                Category = "Network",
+                Severity = "medium",
+                Title = "Review open ports",
+                Description = $"System has {audit.OpenPorts} open ports. Review if all are necessary.",
+                Remediation = "Run 'ss -tlnp' to review listening ports and close unnecessary services."
+            });
+        }
+
+        // Security Frameworks
+        if (!audit.SeLinuxEnabled && !audit.AppArmorEnabled)
+        {
+            recommendations.Add(new SecurityRecommendation
+            {
+                Category = "Security Framework",
+                Severity = "high",
+                Title = "Enable mandatory access control",
+                Description = "Neither SELinux nor AppArmor is enabled. System lacks MAC protection.",
+                Remediation = "Enable AppArmor: 'sudo apt install apparmor apparmor-utils && sudo systemctl enable apparmor'"
+            });
+        }
+
+        if (!audit.Fail2BanActive)
+        {
+            recommendations.Add(new SecurityRecommendation
+            {
+                Category = "Intrusion Prevention",
+                Severity = "high",
+                Title = "Install and enable Fail2Ban",
+                Description = "Fail2Ban is not active. System is vulnerable to brute-force attacks.",
+                Remediation = "Install Fail2Ban: 'sudo apt install fail2ban && sudo systemctl enable fail2ban --now'"
+            });
+        }
+
+        if (!audit.AuditdActive)
+        {
+            recommendations.Add(new SecurityRecommendation
+            {
+                Category = "Auditing",
+                Severity = "medium",
+                Title = "Enable system auditing",
+                Description = "Auditd is not running. Security events are not being logged.",
+                Remediation = "Install auditd: 'sudo apt install auditd && sudo systemctl enable auditd --now'"
+            });
+        }
+
+        // Authentication
+        if (audit.UsersWithEmptyPassword > 0)
+        {
+            recommendations.Add(new SecurityRecommendation
+            {
+                Category = "Authentication",
+                Severity = "critical",
+                Title = "Remove empty passwords",
+                Description = $"{audit.UsersWithEmptyPassword} user(s) have empty passwords. This is a critical vulnerability.",
+                Remediation = "Check /etc/shadow for users with empty passwords and set proper passwords."
+            });
+        }
+
+        if (audit.SudoNoPasswordUsers.Count > 0)
+        {
+            recommendations.Add(new SecurityRecommendation
+            {
+                Category = "Authentication",
+                Severity = "high",
+                Title = "Review NOPASSWD sudo entries",
+                Description = $"{audit.SudoNoPasswordUsers.Count} user(s) can sudo without password.",
+                Remediation = "Review /etc/sudoers and remove unnecessary NOPASSWD entries."
+            });
+        }
+
+        if (audit.FailedLoginAttempts24h > 100)
+        {
+            recommendations.Add(new SecurityRecommendation
+            {
+                Category = "Authentication",
+                Severity = "high",
+                Title = "High failed login attempts",
+                Description = $"{audit.FailedLoginAttempts24h} failed login attempts in 24h indicates possible brute-force attack.",
+                Remediation = "Review /var/log/auth.log for attack sources and consider blocking IPs or enabling Fail2Ban."
+            });
+        }
+
+        // Updates
         if (!audit.UnattendedUpgradesEnabled)
         {
             recommendations.Add(new SecurityRecommendation
@@ -606,6 +831,43 @@ public class LinuxSystemService
                 Title = "Enable automatic security updates",
                 Description = "Automatic security updates are not configured.",
                 Remediation = "Install unattended-upgrades: 'sudo apt install unattended-upgrades && sudo dpkg-reconfigure unattended-upgrades'"
+            });
+        }
+
+        if (audit.PendingSecurityUpdates > 0)
+        {
+            recommendations.Add(new SecurityRecommendation
+            {
+                Category = "Updates",
+                Severity = audit.PendingSecurityUpdates > 10 ? "high" : "medium",
+                Title = "Apply pending security updates",
+                Description = $"{audit.PendingSecurityUpdates} security updates are pending installation.",
+                Remediation = "Run 'sudo apt update && sudo apt upgrade' to apply pending updates."
+            });
+        }
+
+        // File System
+        if (!audit.TmpNoExec)
+        {
+            recommendations.Add(new SecurityRecommendation
+            {
+                Category = "File System",
+                Severity = "medium",
+                Title = "Mount /tmp with noexec",
+                Description = "/tmp is not mounted with noexec. Malicious scripts could be executed from /tmp.",
+                Remediation = "Add 'noexec,nosuid,nodev' options to /tmp mount in /etc/fstab."
+            });
+        }
+
+        if (!audit.CoreDumpsDisabled)
+        {
+            recommendations.Add(new SecurityRecommendation
+            {
+                Category = "System Hardening",
+                Severity = "low",
+                Title = "Disable core dumps",
+                Description = "Core dumps are enabled. They may contain sensitive data.",
+                Remediation = "Add 'kernel.core_pattern=|/bin/false' to /etc/sysctl.conf and run 'sysctl -p'."
             });
         }
 

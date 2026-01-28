@@ -1017,7 +1017,7 @@
                                     <i class="bi @(_securityAudit.FirewallActive ? "bi-shield-check text-success" : "bi-shield-x text-danger") fs-3 me-2"></i>
                                     <div>
                                         <small class="">Firewall</small>
-                                        <div class="fw-semibold">@(_securityAudit.FirewallActive ? "Active" : "Inactive")</div>
+                                        <div class="fw-semibold">@(_securityAudit.FirewallActive ? $"Active ({_securityAudit.FirewallRulesCount} rules)" : "Inactive")</div>
                                     </div>
                                 </div>
                             </div>
@@ -1045,6 +1045,220 @@
                                     <div>
                                         <small class="">Failed Logins (24h)</small>
                                         <div class="fw-semibold">@_securityAudit.FailedLoginAttempts24h</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-4">
+                                <div class="d-flex align-items-center">
+                                    <i class="bi @(_securityAudit.Fail2BanActive ? "bi-shield-fill-check text-success" : "bi-shield-fill-x text-warning") fs-3 me-2"></i>
+                                    <div>
+                                        <small class="">Fail2Ban</small>
+                                        <div class="fw-semibold">@(_securityAudit.Fail2BanActive ? $"Active ({_securityAudit.Fail2BanJailsActive} jails)" : "Inactive")</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-4">
+                                <div class="d-flex align-items-center">
+                                    <i class="bi @(_securityAudit.AuditdActive ? "bi-journal-check text-success" : "bi-journal-x text-warning") fs-3 me-2"></i>
+                                    <div>
+                                        <small class="">Auditd</small>
+                                        <div class="fw-semibold">@(_securityAudit.AuditdActive ? "Active" : "Inactive")</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Security Frameworks -->
+            <div class="col-md-6">
+                <div class="card shadow-sm h-100">
+                    <div class="card-header">
+                        <h6 class="mb-0"><i class="bi bi-shield-lock me-2"></i>Security Frameworks</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <div class="d-flex align-items-center">
+                                    <i class="bi @(_securityAudit.SeLinuxEnabled ? "bi-check-circle-fill text-success" : "bi-dash-circle text-secondary") me-2"></i>
+                                    <div>
+                                        <small class="d-block text-muted">SELinux</small>
+                                        <span class="fw-semibold">@(_securityAudit.SeLinuxEnabled ? _securityAudit.SeLinuxMode : "Disabled")</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="d-flex align-items-center">
+                                    <i class="bi @(_securityAudit.AppArmorEnabled ? "bi-check-circle-fill text-success" : "bi-dash-circle text-secondary") me-2"></i>
+                                    <div>
+                                        <small class="d-block text-muted">AppArmor</small>
+                                        <span class="fw-semibold">@(_securityAudit.AppArmorEnabled ? "Enabled" : "Disabled")</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="d-flex align-items-center">
+                                    <i class="bi @(_securityAudit.SshKeyAuthEnabled ? "bi-key-fill text-success" : "bi-key text-warning") me-2"></i>
+                                    <div>
+                                        <small class="d-block text-muted">SSH Key Auth</small>
+                                        <span class="fw-semibold">@(_securityAudit.SshKeyAuthEnabled ? "Enabled" : "Disabled")</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="d-flex align-items-center">
+                                    <i class="bi @(_securityAudit.SshPasswordAuthEnabled ? "bi-unlock-fill text-warning" : "bi-lock-fill text-success") me-2"></i>
+                                    <div>
+                                        <small class="d-block text-muted">SSH Password</small>
+                                        <span class="fw-semibold">@(_securityAudit.SshPasswordAuthEnabled ? "Enabled" : "Disabled")</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Authentication & Access -->
+            <div class="col-md-6">
+                <div class="card shadow-sm h-100">
+                    <div class="card-header">
+                        <h6 class="mb-0"><i class="bi bi-person-lock me-2"></i>Authentication & Access</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <div class="d-flex align-items-center">
+                                    <i class="bi @(_securityAudit.UsersWithEmptyPassword > 0 ? "bi-exclamation-triangle-fill text-danger" : "bi-check-circle-fill text-success") me-2"></i>
+                                    <div>
+                                        <small class="d-block text-muted">Empty Passwords</small>
+                                        <span class="fw-semibold @(_securityAudit.UsersWithEmptyPassword > 0 ? "text-danger" : "")">@_securityAudit.UsersWithEmptyPassword users</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="d-flex align-items-center">
+                                    <i class="bi @(_securityAudit.SudoNoPasswordUsers.Count > 0 ? "bi-exclamation-circle text-warning" : "bi-check-circle-fill text-success") me-2"></i>
+                                    <div>
+                                        <small class="d-block text-muted">Sudo NOPASSWD</small>
+                                        <span class="fw-semibold">@_securityAudit.SudoNoPasswordUsers.Count users</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="d-flex align-items-center">
+                                    <i class="bi bi-calendar-check me-2 text-info"></i>
+                                    <div>
+                                        <small class="d-block text-muted">Password Max Age</small>
+                                        <span class="fw-semibold">@(_securityAudit.PasswordMaxAgeDays > 0 ? $"{_securityAudit.PasswordMaxAgeDays} days" : "Not set")</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="d-flex align-items-center">
+                                    <i class="bi bi-key me-2 text-info"></i>
+                                    <div>
+                                        <small class="d-block text-muted">Min Password Length</small>
+                                        <span class="fw-semibold">@(_securityAudit.PasswordMinLength > 0 ? $"{_securityAudit.PasswordMinLength} chars" : "Not set")</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- System Hardening -->
+            <div class="col-md-6">
+                <div class="card shadow-sm h-100">
+                    <div class="card-header">
+                        <h6 class="mb-0"><i class="bi bi-gear-wide-connected me-2"></i>System Hardening</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <div class="d-flex align-items-center">
+                                    <i class="bi @(_securityAudit.TmpNoExec ? "bi-check-circle-fill text-success" : "bi-dash-circle text-warning") me-2"></i>
+                                    <div>
+                                        <small class="d-block text-muted">/tmp noexec</small>
+                                        <span class="fw-semibold">@(_securityAudit.TmpNoExec ? "Enabled" : "Disabled")</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="d-flex align-items-center">
+                                    <i class="bi @(_securityAudit.CoreDumpsDisabled ? "bi-check-circle-fill text-success" : "bi-dash-circle text-secondary") me-2"></i>
+                                    <div>
+                                        <small class="d-block text-muted">Core Dumps</small>
+                                        <span class="fw-semibold">@(_securityAudit.CoreDumpsDisabled ? "Disabled" : "Enabled")</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="d-flex align-items-center">
+                                    <i class="bi bi-cpu me-2 text-info"></i>
+                                    <div>
+                                        <small class="d-block text-muted">Kernel Modules</small>
+                                        <span class="fw-semibold">@_securityAudit.LoadedKernelModules loaded</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="d-flex align-items-center">
+                                    <i class="bi bi-file-binary me-2 text-info"></i>
+                                    <div>
+                                        <small class="d-block text-muted">Umask</small>
+                                        <span class="fw-semibold">@(string.IsNullOrEmpty(_securityAudit.UmaskValue) ? "N/A" : _securityAudit.UmaskValue)</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Updates & Patches -->
+            <div class="col-md-6">
+                <div class="card shadow-sm h-100">
+                    <div class="card-header">
+                        <h6 class="mb-0"><i class="bi bi-cloud-download me-2"></i>Updates & Patches</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <div class="d-flex align-items-center">
+                                    <i class="bi @(_securityAudit.UnattendedUpgradesEnabled ? "bi-check-circle-fill text-success" : "bi-x-circle text-warning") me-2"></i>
+                                    <div>
+                                        <small class="d-block text-muted">Auto Updates</small>
+                                        <span class="fw-semibold">@(_securityAudit.UnattendedUpgradesEnabled ? "Enabled" : "Disabled")</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="d-flex align-items-center">
+                                    <i class="bi @(_securityAudit.PendingSecurityUpdates > 0 ? "bi-exclamation-circle text-warning" : "bi-check-circle-fill text-success") me-2"></i>
+                                    <div>
+                                        <small class="d-block text-muted">Pending Updates</small>
+                                        <span class="fw-semibold @(_securityAudit.PendingSecurityUpdates > 10 ? "text-danger" : "")">@_securityAudit.PendingSecurityUpdates</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="d-flex align-items-center">
+                                    <i class="bi bi-clock-history me-2 text-info"></i>
+                                    <div>
+                                        <small class="d-block text-muted">Last Update</small>
+                                        <span class="fw-semibold">@(_securityAudit.LastSystemUpdate?.ToLocalTime().ToString("MMM dd, HH:mm") ?? "Unknown")</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="d-flex align-items-center">
+                                    <i class="bi bi-clock me-2 text-info"></i>
+                                    <div>
+                                        <small class="d-block text-muted">Cron Jobs</small>
+                                        <span class="fw-semibold">@_securityAudit.CronJobsCount active</span>
                                     </div>
                                 </div>
                             </div>

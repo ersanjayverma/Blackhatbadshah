@@ -325,18 +325,56 @@ public sealed class SshSessionListResponse
 public sealed class SecurityAuditInfo
 {
     public string WorkerId { get; set; } = string.Empty;
+
+    // SSH Security
     public bool SshPasswordAuthEnabled { get; set; }
     public bool SshRootLoginEnabled { get; set; }
+    public bool SshKeyAuthEnabled { get; set; }
+    public int SshIdleTimeout { get; set; }
+    public bool SshX11ForwardingEnabled { get; set; }
+
+    // Firewall & Network
     public bool FirewallActive { get; set; }
-    public bool SeLinuxEnabled { get; set; }
-    public string SeLinuxMode { get; set; } = string.Empty;
-    public int FailedLoginAttempts24h { get; set; }
+    public int FirewallRulesCount { get; set; }
+    public bool Ipv6Enabled { get; set; }
     public int OpenPorts { get; set; }
     public List<string> ListeningPorts { get; set; } = new();
+
+    // Security Frameworks
+    public bool SeLinuxEnabled { get; set; }
+    public string SeLinuxMode { get; set; } = string.Empty;
+    public bool AppArmorEnabled { get; set; }
+    public string AppArmorMode { get; set; } = string.Empty;
+    public bool Fail2BanActive { get; set; }
+    public int Fail2BanJailsActive { get; set; }
+    public bool AuditdActive { get; set; }
+
+    // Authentication & Access
+    public int FailedLoginAttempts24h { get; set; }
+    public int UsersWithEmptyPassword { get; set; }
+    public int UsersWithNoPasswordExpiry { get; set; }
+    public List<string> SudoNoPasswordUsers { get; set; } = new();
+    public int PasswordMaxAgeDays { get; set; }
+    public int PasswordMinLength { get; set; }
+
+    // Updates & Patches
     public bool UnattendedUpgradesEnabled { get; set; }
     public int PendingSecurityUpdates { get; set; }
+    public DateTime? LastSystemUpdate { get; set; }
+
+    // File System Security
     public List<string> SuidBinaries { get; set; } = new();
     public List<string> WorldWritableFiles { get; set; } = new();
+    public bool TmpNoExec { get; set; }
+    public string UmaskValue { get; set; } = string.Empty;
+
+    // System Hardening
+    public int LoadedKernelModules { get; set; }
+    public List<string> SuspiciousProcesses { get; set; } = new();
+    public int CronJobsCount { get; set; }
+    public bool CoreDumpsDisabled { get; set; }
+
+    // Audit Info
     public string PasswordPolicy { get; set; } = string.Empty;
     public DateTime? LastSecurityScan { get; set; }
     public int SecurityScore { get; set; }

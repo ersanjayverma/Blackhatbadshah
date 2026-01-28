@@ -1,0 +1,107 @@
+﻿# Log Analysis Report
+
+## 1. EXECUTIVE SUMMARY
+
+The system shows signs of **active brute-force SSH attacks** from multiple IP addresses targeting various invalid usernames, but **no successful unauthorized access** was detected. The logs cover a period from **Jan 28, 14:40:17 to 14:56:02 UTC**. The most critical finding is the **continuous stream of SSH authentication failures** from numerous external IPs, indicating a potential security threat that needs mitigation. System services like `sysstat-collect` and `fwupd-refresh` are functioning normally, and a custom monitoring agent (`bhb-worker`) was successfully deployed and restarted.
+
+## 2. CRITICAL ISSUES
+
+### Issue: Brute-Force SSH Attack
+- **Root Cause**: Multiple external IPs are attempting to gain SSH access by trying numerous invalid usernames and passwords.
+- **Evidence**: Repeated log lines such as:
+  - `Jan 28 14:55:24 vmi3002731 sshd[223066]: Invalid user bryan from 103.23.198.244 port 40694`
+  - `Jan 28 14:55:26 vmi3002731 sshd[223066]: Failed password for invalid user bryan from 103.23.198.244 port 40694 ssh2`
+  - `Jan 28 14:55:27 vmi3002731 sshd[223066]: Disconnected from invalid user bryan 103.23.198.244 port 40694 [preauth]`
+- **Impact**: Consumes system resources, fills logs, and poses a security risk. Could lead to a successful breach if a weak password exists or if an exploit is found.
+- **Severity**: **High**
+- **First Occurrence**: `Jan 28 13:40:56` (e.g., user `cloud` from `144.2.125.115`)
+
+## 3. WARNINGS & ANOMALIES
+
+- **Frequent SSH Authentication Failures**: Hundreds of `Invalid user ...` and `Failed password for ...` messages are logged, indicating automated attacks.
+- **Repeated Block Events by UFW**: Thousands of lines like `Jan 28 14:56:04 vmi3002731 kernel: [UFW BLOCK] IN=eth0 OUT= ...` suggest constant network probing or attacks, primarily from `197.248.225.61`.
+- **Unusual User Activity**: The user `sj` performs administrative actions like `sudo dpkg -i` and `systemctl restart`. While this might be legitimate, it's worth verifying if this is expected behavior.
+- **Banner Exchange Error**: `Jan 28 14:48:45 vmi3002731 sshd[222618]: banner exchange: Connection from 80.94.95.221 port 64405: invalid format` indicates a potentially misconfigured or malicious client.
+
+## 4. TIMELINE OF KEY EVENTS
+
+| Time (UTC)          | Event                                                                 | Type        |
+|---------------------|-----------------------------------------------------------------------|-------------|
+| 13:40:17 - 14:50:13 | **Repeated** `sysstat-collect.service` and `fwupd-refresh.service` start/finish cycles | Info        |
+| 13:40:56 onwards    | **Repeated** `sshd` "Invalid user" and "Failed password" messages from various IPs | **Security** |
+| 13:40:24 onwards    | **Repeated** `UFW BLOCK` messages, primarily from `197.248.225.61`     | **Security** |
+| 14:03:48            | `sshd` accepts password for valid user `sj` from `14.194.21.154`       | Auth        |
+| 14:46:27            | `sshd` accepts password for valid user `sj` from `14.194.21.154`       | Auth        |
+| 14:54:23            | `sshd` accepts password for valid user `sj` from `38.242.148.32`       | Auth        |
+| 14:54:45            | `sshd` accepts password for valid user `sj` from `38.242.148.32`       | Auth        |
+| 14:55:12            | User `sj` runs `sudo dpkg -i bhb-worker_1.0.0_amd64.deb`              | User Action |
+| 14:55:13            | `bhb-worker.service` stops and starts                                 | Service     |
+| 14:55:15            | `bhb-worker` application logs show successful startup and connection   | App Status  |
+| 14:55:23            | User `sj` runs `sudo systemctl restart bhb-worker`                    | User Action |
+| 14:55:23            | `bhb-worker.service` restarts                                         | Service     |
+| 14:55:24            | `bhb-worker` application logs show successful restart and connection   | App Status  |
+| 14:55:24            | New "Invalid user" SSH attempt logged                                 | **Security** |
+| 14:56:02            | `bhb-worker` requests log pull (`journalctl`)                         | App Action  |
+
+## 5. SYSTEM HEALTH INDICATORS
+
+- **Service Stability**: Core system services (`sysstat-collect`, `fwupd-refresh`, `sshd`, `cron`) are starting and stopping as expected without errors.
+- **Authentication**: Valid user `sj` successfully authenticates multiple times, indicating the SSH service is functional for legitimate users.
+- **Custom Agent**: The `bhb-worker` service deploys, starts, and connects to its hub successfully, demonstrating successful installation and operation of new software.
+- **Security Posture**: The system is under active attack. While `UFW` is blocking many connections, the sheer volume of attempts is a concern and indicates a need for more robust security measures.
+
+## 6. REMEDIATION PLAN
+
+### For Brute-Force SSH Attack
+
+- **Immediate Actions**:
+  - Verify that `UFW` rules are correctly configured and actively blocking malicious IPs.
+  - Consider temporarily rate-limiting SSH connections via `UFW` (e.g., `ufw limit ssh`).
+
+- **Short-term Fix**:
+  - Implement `fail2ban` to automatically ban IPs after a few failed attempts. This is the standard and most effective solution.
+  - Review and potentially disable password authentication for SSH, switching to key-based auth only.
+
+- **Long-term Solution**:
+  - Deploy a centralized log management and analysis system (e.g., ELK, Splunk) to automatically detect and alert on such patterns.
+  - Integrate `fail2ban` with a firewall management system for dynamic rule updates.
+  - Regularly review and update security policies and firewall rules.
+
+- **Code/Config Changes**:
+  - Install and configure `fail2ban`:
+    ```bash
+    sudo apt update
+    sudo apt install fail2ban
+    sudo cp /etc/fail2ban/jail.conf /etc/fail2ban/jail.local
+    # Edit /etc/fail2ban/jail.local to configure [sshd] jail
+    sudo systemctl enable fail2ban
+    sudo systemctl start fail2ban
+    ```
+  - Modify `/etc/ssh/sshd_config`:
+    ```bash
+    PasswordAuthentication no
+    PubkeyAuthentication yes
+    ```
+    Then restart SSH: `sudo systemctl restart sshd`.
+
+- **Monitoring Recommendations**:
+  - Set up alerts for a high rate of `sshd` authentication failures (e.g., > 5 failures/minute).
+  - Monitor `fail2ban` logs for banned IPs.
+  - Create a dashboard to visualize blocked IPs and attack frequency.
+
+## 7. PREVENTIVE MEASURES
+
+- **Architectural Improvements**:
+  - Place the server behind a VPN or use a bastion host for SSH access.
+  - Use a cloud provider's security groups or network ACLs to restrict SSH access to known IP ranges.
+- **Additional Logging/Monitoring**:
+  - Enable detailed logging for `fail2ban`.
+  - Use a SIEM (Security Information and Event Management) tool to correlate security events.
+- **Testing Gaps**:
+  - Regular penetration testing or vulnerability scanning to identify potential entry points.
+  - Simulate brute-force attacks to test the responsiveness of `fail2ban` and alerting systems.
+
+## 8. MISSING INFORMATION
+
+- **Detailed System Metrics**: Logs do not contain CPU, memory, or disk I/O usage data, which would be helpful to determine if the SSH attacks are impacting performance.
+- **`fail2ban` or Similar Tool Logs**: There is no evidence of an automated banning system in place. Logs from such a tool

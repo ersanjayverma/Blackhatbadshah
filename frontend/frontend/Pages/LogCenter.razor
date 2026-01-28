@@ -134,6 +134,134 @@
                     </div>
                 </div>
 
+                <!-- PULL LOGS FROM WORKER SECTION -->
+                <div class="card modern-card shadow-lg mb-4">
+                    <div class="card-header gradient-header">
+                        <h5 class="mb-0"><i class="bi bi-download me-2"></i>Pull Logs from Worker</h5>
+                    </div>
+                    <div class="card-body p-4">
+                        <div class="row g-3">
+                            <!-- Worker Selection -->
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold text-dark">
+                                    <i class="bi bi-hdd-network me-2"></i>Select Worker
+                                </label>
+                                <div class="input-group">
+                                    <select class="form-select" @bind="_selectedPullWorkerId" disabled="@_pulling">
+                                        <option value="">-- Select a worker --</option>
+                                        @foreach (var worker in _availableWorkers.Where(w => w.IsOnline))
+                                        {
+                                            <option value="@worker.WorkerId">@worker.Hostname (@worker.WorkerId)</option>
+                                        }
+                                    </select>
+                                    <button class="btn btn-outline-secondary" @onclick="RefreshWorkers" disabled="@_loadingWorkers" title="Refresh workers">
+                                        @if (_loadingWorkers)
+                                        { <span class="spinner-border spinner-border-sm"></span> }
+                                        else
+                                        { <i class="bi bi-arrow-clockwise"></i> }
+                                    </button>
+                                </div>
+                                <small class="d-block mt-1">
+                                    <span class="badge bg-success">@_availableWorkers.Count(w => w.IsOnline) Online</span>
+                                </small>
+                            </div>
+
+                            <!-- Log Path Selection -->
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold text-dark">
+                                    <i class="bi bi-file-earmark-text me-2"></i>Select Log File
+                                </label>
+                                <select class="form-select" @bind="_pullLogPath" disabled="@(SelectedPullWorker == null || _pulling)">
+                                    <option value="">-- Select a log file --</option>
+                                    @if (SelectedPullWorker != null)
+                                    {
+                                        @foreach (var path in SelectedPullWorker.AvailableLogPaths)
+                                        {
+                                            <option value="@path">@path</option>
+                                        }
+                                    }
+                                </select>
+                            </div>
+
+                            <!-- Number of Lines -->
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold text-dark">Number of Lines</label>
+                                <input type="number" class="form-control" @bind="_pullLines" min="10" max="1000" disabled="@_pulling" />
+                            </div>
+
+                            <!-- Read Direction -->
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold text-dark">Read From</label>
+                                <select class="form-select" @bind="_pullFromEnd" disabled="@_pulling">
+                                    <option value="@true">End (tail)</option>
+                                    <option value="@false">Beginning (head)</option>
+                                </select>
+                            </div>
+
+                            <!-- Pull Button -->
+                            <div class="col-md-4 d-flex align-items-end">
+                                @if (_pulling)
+                                {
+                                    <button class="btn btn-warning w-100" @onclick="CancelPullLogs">
+                                        <span class="spinner-border spinner-border-sm me-1"></span>Cancel
+                                    </button>
+                                }
+                                else
+                                {
+                                    <button class="btn btn-primary w-100" @onclick="PullLogs"
+                                            disabled="@(SelectedPullWorker == null || string.IsNullOrEmpty(_pullLogPath))">
+                                        <i class="bi bi-download me-1"></i>Pull Logs
+                                    </button>
+                                }
+                            </div>
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(_pullError))
+                        {
+                            <div class="alert alert-danger mt-3 mb-0">
+                                <i class="bi bi-exclamation-triangle me-2"></i>@_pullError
+                            </div>
+                        }
+
+                        @if (_pulledLogs.Count > 0)
+                        {
+                            <div class="mt-4">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <label class="form-label fw-bold mb-0">
+                                        <i class="bi bi-file-text me-1"></i>Pulled Logs (@_pulledLogs.Count lines)
+                                    </label>
+                                    <div class="btn-group">
+                                        <button class="btn btn-sm btn-outline-secondary" @onclick="CopyPulledLogs">
+                                            <i class="bi bi-clipboard me-1"></i>Copy
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-secondary" @onclick="ClearPulledLogs">
+                                            <i class="bi bi-x-lg me-1"></i>Clear
+                                        </button>
+                                        <button class="btn btn-sm btn-primary" @onclick="AnalyzePulledLogs"
+                                                disabled="@_analyzingPulledLogs">
+                                            @if (_analyzingPulledLogs)
+                                            {
+                                                <span class="spinner-border spinner-border-sm me-1"></span>
+                                            }
+                                            else
+                                            {
+                                                <i class="bi bi-cpu me-1"></i>
+                                            }
+                                            Analyze
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="log-output-container border rounded p-2 bg-dark text-light">
+                                    @foreach (var line in _pulledLogs)
+                                    {
+                                        <div class="log-line">@line</div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+
                 <!-- LOGS LIST -->
                 <div class="card modern-card shadow-lg">
                     <div class="card-header gradient-header-dark d-flex justify-content-between align-items-center">
@@ -559,6 +687,8 @@
 
 <style>
     .log-stream-container { max-height: 500px; overflow-y: auto; font-family: 'Consolas', 'Monaco', monospace; font-size: 0.85rem; }
+    .log-output-container { max-height: 300px; overflow-y: auto; font-family: 'Consolas', 'Monaco', monospace; font-size: 0.8rem; }
+    .log-line { white-space: pre-wrap; word-break: break-all; }
     .log-table { table-layout: fixed; }
     .log-table tbody tr { cursor: pointer; }
     .log-table tbody tr:hover { background-color: rgba(var(--bs-primary-rgb), 0.1) !important; }
@@ -608,6 +738,18 @@
     private string _selectedLogPath = "";
     private List<string> _selectedWorkerLogPaths = new();
 
+    // Pull Log State
+    private string _selectedPullWorkerId = "";
+    private WorkerRegistration? SelectedPullWorker => _availableWorkers.FirstOrDefault(w => w.WorkerId == _selectedPullWorkerId);
+    private string _pullLogPath = "";
+    private int _pullLines = 100;
+    private bool _pullFromEnd = true;
+    private bool _pulling = false;
+    private List<string> _pulledLogs = new();
+    private string _pullError = "";
+    private bool _analyzingPulledLogs = false;
+    private CancellationTokenSource? _pullCts;
+
     private const string WorkerIdStorageKey = "bhb_livelog_worker_id";
     private const string LogPathStorageKey = "bhb_livelog_log_path";
 
@@ -615,6 +757,7 @@
     private IDisposable? _logCreatedSub;
     private IDisposable? _logDeletedSub;
     private IDisposable? _allLogsDeletedSub;
+    private IDisposable? _logPullResponseSub;
     private IDisposable? _liveLogReceivedSub;
     private IDisposable? _liveLogBatchSub;
     private IDisposable? _liveLogUpdateSub;
@@ -805,6 +948,123 @@
         catch (Exception ex)
         {
             Toast.ShowError($"Delete all failed: {ex.Message}");
+        }
+    }
+
+    // ==================== PULL LOG METHODS ====================
+
+    private async Task PullLogs()
+    {
+        var worker = SelectedPullWorker;
+        if (worker == null || string.IsNullOrEmpty(_pullLogPath)) return;
+
+        _pulling = true;
+        _pullError = "";
+        _pulledLogs.Clear();
+        _pullCts = new CancellationTokenSource();
+        StateHasChanged();
+
+        try
+        {
+            await HubService.Connection.SendAsync("SubscribeToWorker", worker.WorkerId);
+
+            var success = await WorkerApi.PullLogsAsync(
+                worker.WorkerId,
+                _pullLogPath,
+                _pullLines,
+                _pullFromEnd);
+
+            if (!success)
+            {
+                _pulling = false;
+                _pullError = "Failed to send pull request";
+                Toast.ShowError(_pullError);
+                return;
+            }
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(30000, _pullCts.Token);
+                    if (_pulling)
+                    {
+                        _pulling = false;
+                        _pullError = "Request timed out after 30 seconds";
+                        await InvokeAsync(StateHasChanged);
+                    }
+                }
+                catch (OperationCanceledException) { }
+            });
+        }
+        catch (Exception ex)
+        {
+            _pulling = false;
+            _pullError = ex.Message;
+            Toast.ShowError($"Failed to pull logs: {ex.Message}");
+        }
+        StateHasChanged();
+    }
+
+    private void CancelPullLogs()
+    {
+        _pullCts?.Cancel();
+        _pulling = false;
+        _pullError = "Request cancelled";
+        StateHasChanged();
+    }
+
+    private void ClearPulledLogs()
+    {
+        _pulledLogs.Clear();
+        _pullError = "";
+        StateHasChanged();
+    }
+
+    private async Task CopyPulledLogs()
+    {
+        if (_pulledLogs.Count == 0) return;
+
+        try
+        {
+            var content = string.Join("\n", _pulledLogs);
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", content);
+            Toast.ShowSuccess($"Copied {_pulledLogs.Count} lines to clipboard");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to copy: {ex.Message}");
+        }
+    }
+
+    private async Task AnalyzePulledLogs()
+    {
+        if (_pulledLogs.Count == 0)
+        {
+            Toast.ShowWarning("No logs to analyze");
+            return;
+        }
+
+        _analyzingPulledLogs = true;
+        StateHasChanged();
+
+        try
+        {
+            var content = string.Join("\n", _pulledLogs);
+            var workerId = SelectedPullWorker?.WorkerId;
+
+            await LiveLogApi.AnalyzeContentAsync(content, null, workerId, _selectedModel);
+
+            Toast.ShowSuccess($"Analysis queued for {_pulledLogs.Count} log lines! Check Analysis Dashboard.");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to queue analysis: {ex.Message}");
+        }
+        finally
+        {
+            _analyzingPulledLogs = false;
+            StateHasChanged();
         }
     }
 
@@ -1072,6 +1332,26 @@
                 await InvokeAsync(StateHasChanged);
             });
 
+            // Pull log response subscription
+            _logPullResponseSub = HubService.On<LogPullResponse>("LogPullResponse", async (response) =>
+            {
+                _pullCts?.Cancel();
+                _pulling = false;
+
+                if (response.Success)
+                {
+                    _pulledLogs = response.Lines;
+                    _pullError = "";
+                    Toast.ShowSuccess($"Pulled {response.Lines.Count} lines from {response.LogPath}");
+                }
+                else
+                {
+                    _pullError = response.Error ?? "Failed to pull logs";
+                    Toast.ShowError(_pullError);
+                }
+                await InvokeAsync(StateHasChanged);
+            });
+
             // Live streaming subscriptions
             _liveLogReceivedSub = HubService.On<LiveLogEntry>("LiveLogReceived", async (entry) =>
             {
@@ -1229,6 +1509,7 @@
         _logCreatedSub?.Dispose();
         _logDeletedSub?.Dispose();
         _allLogsDeletedSub?.Dispose();
+        _logPullResponseSub?.Dispose();
         _liveLogReceivedSub?.Dispose();
         _liveLogBatchSub?.Dispose();
         _liveLogUpdateSub?.Dispose();
@@ -1237,6 +1518,8 @@
         _analysisStartedSub?.Dispose();
         _analysisCompletedSub?.Dispose();
         _analysisFailedSub?.Dispose();
+        _pullCts?.Cancel();
+        _pullCts?.Dispose();
 
         await SafeStopStream();
         if (_isSubscribed && !string.IsNullOrEmpty(_subscribedWorkerId))

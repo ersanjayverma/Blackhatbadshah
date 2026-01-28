@@ -15,19 +15,25 @@ public class LogAnalysisBackgroundWorker : BackgroundService
     private readonly ModelsConfig _modelsConfig;
     private readonly ILogger<LogAnalysisBackgroundWorker> _logger;
     private readonly ITokenValidationService _tokenValidationService;
+    private readonly IEmailService _emailService;
+    private readonly IKeycloakAdminService _keycloakService;
 
     public LogAnalysisBackgroundWorker(
         IServiceProvider serviceProvider,
         ILogAnalysisQueue queue,
         IOptions<ModelsConfig> modelsConfig,
         ILogger<LogAnalysisBackgroundWorker> logger,
-        ITokenValidationService tokenValidationService)
+        ITokenValidationService tokenValidationService,
+        IEmailService emailService,
+        IKeycloakAdminService keycloakService)
     {
         _serviceProvider = serviceProvider;
         _queue = queue;
         _modelsConfig = modelsConfig.Value;
         _logger = logger;
         _tokenValidationService = tokenValidationService;
+        _emailService = emailService;
+        _keycloakService = keycloakService;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -237,6 +243,9 @@ public class LogAnalysisBackgroundWorker : BackgroundService
             await hubNotification.NotifyReportStatusChangedAsync(
                 userId, report.Id, report.Status);
 
+            // 10. Send email notification if configured
+            await SendEmailNotificationAsync(db, userId, log.FileName, report.Id, report.Status, report.Summary);
+
             _logger.LogInformation(
                 "Completed analysis for LogId {LogId}, ReportId {ReportId}",
                 logId, reportId);
@@ -279,6 +288,68 @@ public class LogAnalysisBackgroundWorker : BackgroundService
         {
             _logger.LogError(ex,
                 "Failed to update report status for ReportId {ReportId}", reportId);
+        }
+    }
+
+    private async Task SendEmailNotificationAsync(
+        AppDbContext db,
+        string userId,
+        string fileName,
+        Guid reportId,
+        ReportStatus status,
+        string summary)
+    {
+        try
+        {
+            if (!_emailService.IsConfigured())
+                return;
+
+            // Check user notification preferences
+            var prefs = await db.NotificationPreferences.FirstOrDefaultAsync(p => p.UserId == userId);
+
+            var shouldSend = status switch
+            {
+                ReportStatus.Completed => prefs?.EmailOnAnalysisComplete ?? true,
+                ReportStatus.Failed => prefs?.EmailOnAnalysisFailed ?? true,
+                _ => false
+            };
+
+            if (!shouldSend)
+                return;
+
+            // Check quiet hours
+            if (prefs?.QuietHoursStart != null && prefs?.QuietHoursEnd != null)
+            {
+                var now = DateTime.UtcNow.TimeOfDay;
+                if (now >= prefs.QuietHoursStart && now <= prefs.QuietHoursEnd)
+                    return;
+            }
+
+            var userEmail = await _keycloakService.GetUserEmailAsync(userId);
+            if (string.IsNullOrEmpty(userEmail))
+                return;
+
+            var subject = status == ReportStatus.Completed
+                ? $"Analysis Complete: {fileName}"
+                : $"Analysis Failed: {fileName}";
+
+            var htmlBody = status == ReportStatus.Completed
+                ? $@"<h2>Log Analysis Completed</h2>
+                    <p>Your log file <strong>{fileName}</strong> has been analyzed successfully.</p>
+                    <h3>Summary</h3>
+                    <p>{summary}</p>
+                    <p><a href=""https://app.blackhatbadshah.com/reports/{reportId}"">View Full Report</a></p>"
+                : $@"<h2>Log Analysis Failed</h2>
+                    <p>The analysis of your log file <strong>{fileName}</strong> failed.</p>
+                    <p><strong>Error:</strong> {summary}</p>
+                    <p>Please try again or contact support if the issue persists.</p>";
+
+            await _emailService.SendEmailAsync(userEmail, subject, htmlBody);
+            _logger.LogInformation("Email notification sent to {Email} for report {ReportId}", userEmail, reportId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to send email notification for report {ReportId}", reportId);
         }
     }
 }

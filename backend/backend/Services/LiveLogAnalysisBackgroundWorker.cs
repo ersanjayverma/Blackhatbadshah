@@ -19,6 +19,7 @@ public class LiveLogAnalysisBackgroundWorker : BackgroundService
     private readonly ILogger<LiveLogAnalysisBackgroundWorker> _logger;
     private readonly IEmailService _emailService;
     private readonly IKeycloakAdminService _keycloakService;
+    private readonly IQdrantService _qdrantService;
 
     public LiveLogAnalysisBackgroundWorker(
         IServiceProvider serviceProvider,
@@ -27,7 +28,8 @@ public class LiveLogAnalysisBackgroundWorker : BackgroundService
         IOptions<ModelsConfig> modelsConfig,
         ILogger<LiveLogAnalysisBackgroundWorker> logger,
         IEmailService emailService,
-        IKeycloakAdminService keycloakService)
+        IKeycloakAdminService keycloakService,
+        IQdrantService qdrantService)
     {
         _serviceProvider = serviceProvider;
         _queue = queue;
@@ -36,6 +38,7 @@ public class LiveLogAnalysisBackgroundWorker : BackgroundService
         _logger = logger;
         _emailService = emailService;
         _keycloakService = keycloakService;
+        _qdrantService = qdrantService;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -144,11 +147,22 @@ public class LiveLogAnalysisBackgroundWorker : BackgroundService
             db.Reports.Add(report);
             await db.SaveChangesAsync(cancellationToken);
 
-            // Analyze the log content
-            var analysis = await analyzer.AnalyzeAsync(
-                reportId,
+            // Fetch historical context from Qdrant for similar past analyses
+            var historicalContext = await _qdrantService.GetHistoricalContextAsync(
+                job.UserId,
+                job.WorkerId,
                 job.LogContent,
-                job.Model);
+                limit: 5,
+                cancellationToken);
+
+            _logger.LogInformation(
+                "Found {Count} historical analyses for context, UserId {UserId}, WorkerId {WorkerId}",
+                historicalContext.Count, job.UserId, job.WorkerId);
+
+            // Analyze the log content with historical context
+            var analysis = historicalContext.Count > 0
+                ? await analyzer.AnalyzeWithHistoryAsync(reportId, job.LogContent, historicalContext, job.Model)
+                : await analyzer.AnalyzeAsync(reportId, job.LogContent, job.Model);
 
             if (analysis == null)
             {
@@ -202,6 +216,26 @@ public class LiveLogAnalysisBackgroundWorker : BackgroundService
             if (report.Status == ReportStatus.Completed)
             {
                 await planEnforcement.RecordAnalysisAsync(job.UserId, job.Model);
+
+                // Store analysis in Qdrant for similarity search and historical context
+                // Uses UserId for data isolation and WorkerId as SystemId
+                var metadata = new Dictionary<string, object>
+                {
+                    ["file_name"] = logEntity.FileName,
+                    ["model"] = job.Model ?? "default",
+                    ["log_id"] = logId.ToString(),
+                    ["session_id"] = job.SessionId,
+                    ["chunk_number"] = job.ChunkNumber,
+                    ["is_live_log"] = true
+                };
+
+                await _qdrantService.StoreAnalysisAsync(
+                    reportId,
+                    job.UserId,
+                    job.WorkerId, // SystemId = WorkerId for live logs
+                    analysisText,
+                    metadata,
+                    cancellationToken);
             }
 
             // Notify frontend of completion (to worker group for live log UI)

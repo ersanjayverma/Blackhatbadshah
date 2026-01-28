@@ -17,6 +17,7 @@ public class LogAnalysisBackgroundWorker : BackgroundService
     private readonly ITokenValidationService _tokenValidationService;
     private readonly IEmailService _emailService;
     private readonly IKeycloakAdminService _keycloakService;
+    private readonly IQdrantService _qdrantService;
 
     public LogAnalysisBackgroundWorker(
         IServiceProvider serviceProvider,
@@ -25,7 +26,8 @@ public class LogAnalysisBackgroundWorker : BackgroundService
         ILogger<LogAnalysisBackgroundWorker> logger,
         ITokenValidationService tokenValidationService,
         IEmailService emailService,
-        IKeycloakAdminService keycloakService)
+        IKeycloakAdminService keycloakService,
+        IQdrantService qdrantService)
     {
         _serviceProvider = serviceProvider;
         _queue = queue;
@@ -34,6 +36,7 @@ public class LogAnalysisBackgroundWorker : BackgroundService
         _tokenValidationService = tokenValidationService;
         _emailService = emailService;
         _keycloakService = keycloakService;
+        _qdrantService = qdrantService;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -184,8 +187,23 @@ public class LogAnalysisBackgroundWorker : BackgroundService
                 return;
             }
 
-            // 5. Analyze
-            var analysis = await analyzer.AnalyzeAsync(log.Id, logContent, model);
+            // 5. Fetch historical context from Qdrant for similar past analyses
+            // For uploaded logs, use "upload" as systemId
+            var historicalContext = await _qdrantService.GetHistoricalContextAsync(
+                userId,
+                "upload",
+                logContent,
+                limit: 5,
+                cancellationToken);
+
+            _logger.LogInformation(
+                "Found {Count} historical analyses for context, UserId {UserId}, LogId {LogId}",
+                historicalContext.Count, userId, logId);
+
+            // 6. Analyze with historical context
+            var analysis = historicalContext.Count > 0
+                ? await analyzer.AnalyzeWithHistoryAsync(log.Id, logContent, historicalContext, model)
+                : await analyzer.AnalyzeAsync(log.Id, logContent, model);
             if (analysis == null)
             {
                 await UpdateReportStatusAsync(
@@ -238,6 +256,24 @@ public class LogAnalysisBackgroundWorker : BackgroundService
             if (report.Status == ReportStatus.Completed)
             {
                 await planEnforcement.RecordAnalysisAsync(userId, model);
+
+                // Store analysis in Qdrant for similarity search and historical context
+                // For uploaded logs, use "upload" as the default systemId (no worker)
+                var metadata = new Dictionary<string, object>
+                {
+                    ["file_name"] = log.FileName,
+                    ["model"] = model ?? "default",
+                    ["log_id"] = log.Id.ToString(),
+                    ["is_live_log"] = false
+                };
+
+                await _qdrantService.StoreAnalysisAsync(
+                    reportId.Value,
+                    userId,
+                    "upload", // SystemId for uploaded logs (not from a worker)
+                    analysisText,
+                    metadata,
+                    cancellationToken);
             }
 
             await hubNotification.NotifyReportStatusChangedAsync(

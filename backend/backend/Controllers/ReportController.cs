@@ -17,16 +17,19 @@ public class ReportsController : ControllerBase
     private readonly AppDbContext _db;
     private readonly IConfiguration _config;
     private readonly IHubNotificationService _hubNotification;
+    private readonly IQdrantService _qdrantService;
     private readonly string _storageRoot;
 
     public ReportsController(
         AppDbContext db,
         IConfiguration config,
-        IHubNotificationService hubNotification)
+        IHubNotificationService hubNotification,
+        IQdrantService qdrantService)
     {
         _db = db;
         _config = config;
         _hubNotification = hubNotification;
+        _qdrantService = qdrantService;
 
         _storageRoot = _config["Storage:RootPath"]
             ?? throw new InvalidOperationException("Storage:RootPath not configured");
@@ -161,6 +164,53 @@ public class ReportsController : ControllerBase
 
 
     // ----------------------------------------------------
+    // GET /api/reports/{id}/similar
+    // ----------------------------------------------------
+    /// <summary>
+    /// Get similar reports based on vector similarity search.
+    /// </summary>
+    [HttpGet("{id:guid}/similar")]
+    public async Task<IActionResult> GetSimilar(Guid id, [FromQuery] int? limit = 5)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                     ?? User.FindFirstValue("sub");
+
+        if (string.IsNullOrEmpty(userId))
+            return Unauthorized();
+
+        var report = await _db.Reports
+            .FirstOrDefaultAsync(r => r.Id == id && r.UserId == userId);
+
+        if (report == null)
+            return NotFound();
+
+        // Read the report content to use as query
+        if (string.IsNullOrEmpty(report.ReportPath) || !System.IO.File.Exists(report.ReportPath))
+            return NotFound("Report content missing");
+
+        var content = await System.IO.File.ReadAllTextAsync(report.ReportPath);
+
+        // Search for similar reports (excluding the current one)
+        var similarResults = await _qdrantService.SearchSimilarAsync(
+            userId,
+            content,
+            systemId: null, // Search across all systems
+            limit: (limit ?? 5) + 1); // Get one extra to filter out self
+
+        // Filter out the current report from results
+        var filteredResults = similarResults
+            .Where(r => r.ReportId != id)
+            .Take(limit ?? 5)
+            .ToList();
+
+        return Ok(new
+        {
+            reportId = id,
+            similarReports = filteredResults
+        });
+    }
+
+    // ----------------------------------------------------
     // DELETE /api/reports/{id}
     // ----------------------------------------------------
     [HttpDelete("{id:guid}")]
@@ -197,6 +247,9 @@ public class ReportsController : ControllerBase
 
             _db.Reports.Remove(report);
             await _db.SaveChangesAsync();
+
+            // Delete vector from Qdrant
+            await _qdrantService.DeleteAnalysisAsync(id);
 
             await _hubNotification.NotifyReportDeletedAsync(userId, id);
 
@@ -479,6 +532,9 @@ public class ReportsController : ControllerBase
 
             _db.Reports.RemoveRange(reports);
             await _db.SaveChangesAsync();
+
+            // Delete all vectors from Qdrant for this user
+            await _qdrantService.DeleteUserDataAsync(userId);
 
             await _hubNotification.NotifyAllReportsDeletedAsync(userId, reports.Count);
 

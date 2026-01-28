@@ -1921,3 +1921,258 @@ input[type="file"].form-control::file-selector-button:hover {
     gap: 1rem;
     justify-content: flex-end;
 }
+
+/* ======================================================
+   COMPACT UI - SITE-WIDE DENSITY IMPROVEMENTS
+====================================================== */
+
+/* Reduced page padding */
+#page-content {
+    padding: 1rem 1.5rem;
+}
+
+.container-fluid.px-4 {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+}
+
+.container-fluid.py-4 {
+    padding-top: 0.75rem !important;
+    padding-bottom: 0.75rem !important;
+}
+
+/* Compact cards */
+.card, .modern-card {
+    border-radius: 8px;
+}
+
+.card-header, .gradient-header, .gradient-header-dark {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
+}
+
+.card-body {
+    padding: 0.75rem;
+}
+
+.card-footer {
+    padding: 0.5rem 0.75rem;
+}
+
+/* Compact form controls */
+.form-control, .form-select {
+    padding: 0.35rem 0.6rem;
+    font-size: 0.85rem;
+}
+
+.form-control-sm, .form-select-sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.8rem;
+}
+
+.input-group-sm > .form-control,
+.input-group-sm > .form-select,
+.input-group-sm > .btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.8rem;
+}
+
+/* Compact buttons */
+.btn {
+    padding: 0.35rem 0.75rem;
+    font-size: 0.85rem;
+}
+
+.btn-sm {
+    padding: 0.2rem 0.5rem;
+    font-size: 0.8rem;
+}
+
+.btn-group-sm > .btn {
+    padding: 0.15rem 0.4rem;
+    font-size: 0.75rem;
+}
+
+/* Compact tables */
+.table thead th {
+    padding: 0.4rem 0.5rem;
+    font-size: 0.8rem;
+}
+
+.table td {
+    padding: 0.35rem 0.5rem;
+    font-size: 0.8rem;
+}
+
+.table-sm td, .table-sm th {
+    padding: 0.25rem 0.4rem;
+}
+
+/* Compact badges */
+.badge {
+    padding: 0.25em 0.5em;
+    font-size: 0.75rem;
+}
+
+/* Compact spacing utilities */
+.mb-2 {
+    margin-bottom: 0.375rem !important;
+}
+
+.mb-3 {
+    margin-bottom: 0.5rem !important;
+}
+
+.py-2 {
+    padding-top: 0.375rem !important;
+    padding-bottom: 0.375rem !important;
+}
+
+.py-3 {
+    padding-top: 0.5rem !important;
+    padding-bottom: 0.5rem !important;
+}
+
+.g-2 {
+    gap: 0.375rem !important;
+}
+
+/* Compact headings */
+h5.fw-bold {
+    font-size: 1rem;
+}
+
+h6 {
+    font-size: 0.875rem;
+}
+
+/* Compact row gaps */
+.row.g-2 {
+    --bs-gutter-x: 0.5rem;
+    --bs-gutter-y: 0.5rem;
+}
+
+.row.g-1 {
+    --bs-gutter-x: 0.25rem;
+    --bs-gutter-y: 0.25rem;
+}
+
+/* Compact alerts */
+.alert {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
+}
+
+/* Compact modals */
+.custom-modal-body {
+    padding: 1rem;
+}
+
+.custom-modal-header,
+.custom-modal-footer {
+    padding: 0.75rem 1rem;
+}
+
+/* Compact navigation */
+.nav-link {
+    padding: 0.4rem 0.75rem;
+    font-size: 0.85rem;
+}
+
+/* Compact sidebar */
+#main-sidebar {
+    width: 240px;
+    padding: 1rem;
+}
+
+#nav-brand-logo {
+    margin-bottom: 1rem;
+    padding: 0.75rem;
+}
+
+/* Compact chart containers */
+.chart-container {
+    min-height: 300px;
+    padding: 1rem;
+}
+
+.dashboard-chart-container {
+    padding: 0.5rem;
+}
+
+/* Smaller icons in buttons */
+.btn i.bi {
+    font-size: 0.9em;
+}
+
+.btn-sm i.bi {
+    font-size: 0.85em;
+}
+
+/* Tighter flex gaps */
+.d-flex.gap-1 {
+    gap: 0.25rem !important;
+}
+
+.d-flex.gap-2 {
+    gap: 0.375rem !important;
+}
+
+.d-flex.gap-3 {
+    gap: 0.5rem !important;
+}
+
+/* ======================================================
+   MODEL SELECTOR & ANALYZE BUTTON ENHANCEMENTS
+====================================================== */
+
+/* Ensure model selector dropdowns show full text */
+.form-select optgroup {
+    font-weight: 600;
+    color: var(--text);
+    background: var(--bg);
+}
+
+.form-select option {
+    padding: 0.5rem;
+    color: var(--text);
+    background: var(--surface);
+}
+
+/* Input group icon styling */
+.input-group-text {
+    background: var(--surface-2);
+    border-color: var(--border);
+    color: var(--accent);
+    padding: 0.25rem 0.5rem;
+    font-size: 0.85rem;
+}
+
+.input-group-sm > .input-group-text {
+    padding: 0.2rem 0.4rem;
+    font-size: 0.8rem;
+}
+
+/* Prominent analyze button */
+.btn-success {
+    background: var(--success);
+    border-color: var(--success);
+    font-weight: 600;
+}
+
+.btn-success:hover {
+    background: #059669;
+    border-color: #059669;
+    transform: translateY(-1px);
+}
+
+.btn-success:disabled {
+    background: var(--surface-2);
+    border-color: var(--border);
+    opacity: 0.6;
+}
+
+/* Analysis button with count */
+.btn-success .bi-cpu {
+    font-size: 1em;
+}

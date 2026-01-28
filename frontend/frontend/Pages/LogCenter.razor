@@ -23,582 +23,340 @@
     <Authorized>
         <div class="container-fluid px-4 py-4">
 
-            <!-- HEADER -->
-            <div class="d-flex justify-content-between align-items-center flex-wrap mb-4">
-                <div>
-                    <h2 class="mb-1 fw-bold text-gradient">
-                        <i class="bi bi-file-earmark-text me-2"></i>Log Center
-                    </h2>
-                    <p class="mb-0">Upload, manage, and stream logs for AI analysis</p>
-                </div>
-                <div class="d-flex gap-2">
-                    @if (_activeTab == "upload" && _logs.Count > 0)
+            <!-- HEADER ROW -->
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h4 class="mb-0 fw-bold"><i class="bi bi-file-earmark-text me-2"></i>Log Center</h4>
+                <div class="d-flex gap-2 align-items-center">
+                    @if (_isSubscribed)
                     {
-                        <button class="btn btn-danger" @onclick="ConfirmDeleteAllLogs">
-                            <i class="bi bi-trash me-2"></i>Clear All Logs
-                        </button>
+                        <span class="badge bg-primary px-3 py-2">
+                            <i class="bi bi-check-circle me-1"></i>Connected: @(_availableWorkers.FirstOrDefault(w => w.WorkerId == _subscribedWorkerId)?.Hostname ?? _subscribedWorkerId)
+                        </span>
                     }
-                    @if (_activeTab == "live")
+                    @if (_isStreaming)
                     {
-                        <button class="btn btn-outline-danger" @onclick="ClearLiveLogs" disabled="@(_liveLogs.Count == 0)">
-                            <i class="bi bi-trash me-1"></i>Clear
-                        </button>
+                        <span class="badge bg-success px-3 py-2"><i class="bi bi-broadcast me-1"></i>Live</span>
                     }
+                    <span class="badge bg-secondary px-3 py-2">@_availableWorkers.Count(w => w.IsOnline) Workers Online</span>
                 </div>
             </div>
 
-            <!-- TAB NAVIGATION -->
-            <ul class="nav nav-tabs mb-4" role="tablist">
-                <li class="nav-item">
-                    <button class="nav-link @(_activeTab == "upload" ? "active" : "")" 
-                            @onclick="@(() => SetActiveTab("upload"))">
-                        <i class="bi bi-cloud-upload me-1"></i>Upload & Analyze
-                    </button>
-                </li>
-                <li class="nav-item">
-                    <button class="nav-link @(_activeTab == "live" ? "active" : "")" 
-                            @onclick="@(() => SetActiveTab("live"))">
-                        <i class="bi bi-broadcast me-1"></i>Live Streaming
-                        @if (_isStreaming)
-                        {
-                            <span class="badge bg-success ms-1">Live</span>
-                        }
-                    </button>
-                </li>
-            </ul>
-
-            <!-- UPLOAD TAB -->
-            @if (_activeTab == "upload")
-            {
-                <!-- UPLOAD SECTION -->
-                <div class="card modern-card shadow-lg mb-4">
-                    <div class="card-header gradient-header">
-                        <h5 class="mb-0"><i class="bi bi-cloud-upload me-2"></i>Upload Logs</h5>
-                    </div>
-                    <div class="card-body p-4">
-                        <!-- MODEL SELECTOR -->
-                        <div class="mb-4">
-                            <label class="form-label fw-bold text-dark mb-3">
-                                <i class="bi bi-cpu me-2"></i>AI Model for Analysis
-                            </label>
-                            <div class="model-selector-wrapper">
-                                <select class="form-select form-select-lg model-selector-log" @bind="_selectedModel">
-                                    <optgroup label="Claude (Anthropic)">
-                                        <option value="claude-sonnet-4-5">Claude Sonnet 4.5 (Recommended)</option>
-                                        <option value="claude-opus-4-5">Claude Opus 4.5 (Most Powerful)</option>
-                                        <option value="claude-sonnet-3-5">Claude Sonnet 3.5</option>
-                                    </optgroup>
-                                    <optgroup label="GPT (OpenAI)">
-                                        <option value="gpt-4o">GPT-4o</option>
-                                        <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                                        <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
-                                    </optgroup>
-                                    <optgroup label="Open Source (TogetherAI)">
-                                        <option value="gpt-oss-120b">openai/gpt-oss-120b</option>
-                                        <option value="together-llama-3.1-405b">Llama 3.1 405B</option>
-                                        <option value="together-mixtral-8x7b">Mixtral 8x7B</option>
-                                        <option value="together-qwen">Qwen</option>
-                                    </optgroup>
-                                </select>
-                                <small class="d-block mt-2">
-                                    <i class="bi bi-info-circle me-1"></i>Selected model will be used for all log analyses
-                                </small>
-                            </div>
+            <!-- CONTROLS ROW -->
+            <div class="card modern-card shadow-sm mb-3">
+                <div class="card-body py-3">
+                    <div class="row g-3 align-items-end">
+                        <div class="col-md-3">
+                            <label class="form-label fw-bold"><i class="bi bi-cpu me-2"></i>AI Model</label>
+                            <select class="form-select" @bind="_selectedModel">
+                                <optgroup label="Claude (Anthropic)">
+                                    <option value="claude-sonnet-4-5">Claude Sonnet 4.5 (Recommended)</option>
+                                    <option value="claude-opus-4-5">Claude Opus 4.5 (Most Powerful)</option>
+                                </optgroup>
+                                <optgroup label="GPT (OpenAI)">
+                                    <option value="gpt-4o">GPT-4o</option>
+                                    <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                                </optgroup>
+                                <optgroup label="Open Source">
+                                    <option value="together-llama-3.1-405b">Llama 3.1 405B</option>
+                                    <option value="together-mixtral-8x7b">Mixtral 8x7B</option>
+                                </optgroup>
+                            </select>
                         </div>
-
-                        <div class="mb-4">
-                            <label class="form-label fw-bold text-dark mb-3">
-                                <i class="bi bi-file-earmark-arrow-up me-2"></i>Upload Log File
-                            </label>
-                            <div class="upload-box">
-                                <InputFile OnChange="OnFileSelected" accept=".txt,.log,.json,.xml,.csv,.png,.jpg,.jpeg,.tiff,.pdf"
-                                           class="form-control form-control-lg" />
-                                <small class="d-block mt-3 text-center">
-                                    <i class="bi bi-info-circle me-1"></i>
-                                    Max size: <strong>2 MB</strong> � Supported: .txt .log .json .xml .csv .pdf + images
-                                </small>
-                            </div>
-                        </div>
-
-                        <div>
-                            <label class="form-label fw-bold text-dark mb-3">
-                                <i class="bi bi-clipboard me-2"></i>Paste Logs Directly
-                            </label>
-                            <textarea class="form-control form-control-lg monospace-textarea mb-3" rows="6"
-                                      placeholder="Paste your log content here..." @bind="_pastedLogs"></textarea>
-                            <button class="btn btn-primary btn-lg w-100 shadow-sm" disabled="@string.IsNullOrWhiteSpace(_pastedLogs)"
-                                    @onclick="UploadPastedLogs">
-                                <i class="bi bi-upload me-2"></i>Upload Pasted Logs
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- PULL LOGS FROM WORKER SECTION -->
-                <div class="card modern-card shadow-lg mb-4">
-                    <div class="card-header gradient-header">
-                        <h5 class="mb-0"><i class="bi bi-download me-2"></i>Pull Logs from Worker</h5>
-                    </div>
-                    <div class="card-body p-4">
-                        <div class="row g-3">
-                            <!-- Worker Selection -->
-                            <div class="col-md-6">
-                                <label class="form-label fw-bold text-dark">
-                                    <i class="bi bi-hdd-network me-2"></i>Select Worker
-                                </label>
-                                <div class="input-group">
-                                    <select class="form-select" @bind="_selectedPullWorkerId" disabled="@_pulling">
-                                        <option value="">-- Select a worker --</option>
-                                        @foreach (var worker in _availableWorkers.Where(w => w.IsOnline))
-                                        {
-                                            <option value="@worker.WorkerId">@worker.Hostname (@worker.WorkerId)</option>
-                                        }
-                                    </select>
-                                    <button class="btn btn-outline-secondary" @onclick="RefreshWorkers" disabled="@_loadingWorkers" title="Refresh workers">
-                                        @if (_loadingWorkers)
-                                        { <span class="spinner-border spinner-border-sm"></span> }
-                                        else
-                                        { <i class="bi bi-arrow-clockwise"></i> }
-                                    </button>
-                                </div>
-                                <small class="d-block mt-1">
-                                    <span class="badge bg-success">@_availableWorkers.Count(w => w.IsOnline) Online</span>
-                                </small>
-                            </div>
-
-                            <!-- Log Path Selection -->
-                            <div class="col-md-6">
-                                <label class="form-label fw-bold text-dark">
-                                    <i class="bi bi-file-earmark-text me-2"></i>Select Log File
-                                </label>
-                                <select class="form-select" @bind="_pullLogPath" disabled="@(SelectedPullWorker == null || _pulling)">
-                                    <option value="">-- Select a log file --</option>
-                                    @if (SelectedPullWorker != null)
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold"><i class="bi bi-hdd-network me-2"></i>Worker Connection</label>
+                            <div class="input-group">
+                                <select class="form-select" @bind="_workerIdInput" disabled="@_isSubscribed">
+                                    <option value="">Select a worker...</option>
+                                    @foreach (var w in _availableWorkers)
                                     {
-                                        @foreach (var path in SelectedPullWorker.AvailableLogPaths)
-                                        {
-                                            <option value="@path">@path</option>
-                                        }
+                                        <option value="@w.WorkerId">@w.Hostname @(w.IsOnline ? "(Online)" : "(Offline)")</option>
                                     }
                                 </select>
-                            </div>
-
-                            <!-- Number of Lines -->
-                            <div class="col-md-4">
-                                <label class="form-label fw-bold text-dark">Number of Lines</label>
-                                <input type="number" class="form-control" @bind="_pullLines" min="10" max="1000" disabled="@_pulling" />
-                            </div>
-
-                            <!-- Read Direction -->
-                            <div class="col-md-4">
-                                <label class="form-label fw-bold text-dark">Read From</label>
-                                <select class="form-select" @bind="_pullFromEnd" disabled="@_pulling">
-                                    <option value="@true">End (tail)</option>
-                                    <option value="@false">Beginning (head)</option>
-                                </select>
-                            </div>
-
-                            <!-- Pull Button -->
-                            <div class="col-md-4 d-flex align-items-end">
-                                @if (_pulling)
-                                {
-                                    <button class="btn btn-warning w-100" @onclick="CancelPullLogs">
-                                        <span class="spinner-border spinner-border-sm me-1"></span>Cancel
-                                    </button>
-                                }
-                                else
-                                {
-                                    <button class="btn btn-primary w-100" @onclick="PullLogs"
-                                            disabled="@(SelectedPullWorker == null || string.IsNullOrEmpty(_pullLogPath))">
-                                        <i class="bi bi-download me-1"></i>Pull Logs
-                                    </button>
-                                }
-                            </div>
-                        </div>
-
-                        @if (!string.IsNullOrEmpty(_pullError))
-                        {
-                            <div class="alert alert-danger mt-3 mb-0">
-                                <i class="bi bi-exclamation-triangle me-2"></i>@_pullError
-                            </div>
-                        }
-
-                        @if (_pulledLogs.Count > 0)
-                        {
-                            <div class="mt-4">
-                                <div class="d-flex justify-content-between align-items-center mb-2">
-                                    <label class="form-label fw-bold mb-0">
-                                        <i class="bi bi-file-text me-1"></i>Pulled Logs (@_pulledLogs.Count lines)
-                                    </label>
-                                    <div class="btn-group">
-                                        <button class="btn btn-sm btn-outline-secondary" @onclick="CopyPulledLogs">
-                                            <i class="bi bi-clipboard me-1"></i>Copy
-                                        </button>
-                                        <button class="btn btn-sm btn-outline-secondary" @onclick="ClearPulledLogs">
-                                            <i class="bi bi-x-lg me-1"></i>Clear
-                                        </button>
-                                        <button class="btn btn-sm btn-primary" @onclick="AnalyzePulledLogs"
-                                                disabled="@_analyzingPulledLogs">
-                                            @if (_analyzingPulledLogs)
-                                            {
-                                                <span class="spinner-border spinner-border-sm me-1"></span>
-                                            }
-                                            else
-                                            {
-                                                <i class="bi bi-cpu me-1"></i>
-                                            }
-                                            Analyze
-                                        </button>
-                                    </div>
-                                </div>
-                                <div class="log-output-container border rounded p-2 bg-dark text-light">
-                                    @foreach (var line in _pulledLogs)
+                                <button class="btn btn-outline-secondary" @onclick="RefreshWorkers" disabled="@_loadingWorkers">
+                                    @if (_loadingWorkers)
                                     {
-                                        <div class="log-line">@line</div>
-                                    }
-                                </div>
-                            </div>
-                        }
-                    </div>
-                </div>
-
-                <!-- LOGS LIST -->
-                <div class="card modern-card shadow-lg">
-                    <div class="card-header gradient-header-dark d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0"><i class="bi bi-list-ul me-2"></i>Your Logs</h5>
-                        <span class="badge bg-light text-dark px-3 py-2 rounded-pill">@_logs.Count Total</span>
-                    </div>
-                    <div class="card-body p-0">
-                        @if (_loadingLogs)
-                        {
-                            <div class="text-center py-5">
-                                <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;"></div>
-                                <p class="fw-semibold">Loading logs...</p>
-                            </div>
-                        }
-                        else if (_logs.Count == 0)
-                        {
-                            <div class="empty-state-box">
-                                <i class="bi bi-inbox display-1 mb-3"></i>
-                                <h5 class="fw-bold">No logs uploaded yet</h5>
-                                <p>Upload your first log file to get started</p>
-                            </div>
-                        }
-                        else
-                        {
-                            <div class="table-responsive">
-                                <table class="table table-hover mb-0 modern-table">
-                                    <thead>
-                                        <tr>
-                                            <th><i class="bi bi-file-earmark me-2"></i>File</th>
-                                            <th><i class="bi bi-hdd me-2"></i>Size</th>
-                                            <th><i class="bi bi-calendar me-2"></i>Created</th>
-                                            <th class="text-center"><i class="bi bi-gear me-2"></i>Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        @foreach (var log in _logs)
-                                        {
-                                            <tr class="table-row-hover">
-                                                <td class="fw-semibold">@log.FileName</td>
-                                                <td><span class="badge badge-custom">@FormatFileSize(log.SizeBytes)</span></td>
-                                                <td>@log.CreatedAt.ToLocalTime().ToString("g")</td>
-                                                <td class="text-center">
-                                                    <div class="btn-group shadow-sm" role="group">
-                                                        <button class="btn btn-sm btn-success" @onclick="() => Analyze(log.Id)" title="Analyze">
-                                                            <i class="bi bi-cpu me-1"></i>Analyze
-                                                        </button>
-                                                        <button class="btn btn-sm btn-info" @onclick="() => ViewLog(log)" title="View">
-                                                            <i class="bi bi-eye me-1"></i>View
-                                                        </button>
-                                                        <button class="btn btn-sm btn-danger" @onclick="() => ConfirmDeleteLog(log.Id, log.FileName)" title="Delete">
-                                                            <i class="bi bi-trash"></i>
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        }
-                                    </tbody>
-                                </table>
-                            </div>
-                        }
-                    </div>
-                </div>
-            }
-
-            <!-- LIVE STREAMING TAB -->
-            @if (_activeTab == "live")
-            {
-                <!-- WORKER SELECTION -->
-                <div class="card modern-card shadow-sm mb-4">
-                    <div class="card-body">
-                        <div class="row g-3 align-items-end">
-                            <!-- Worker -->
-                            <div class="col-md-5">
-                                <label class="form-label fw-bold"><i class="bi bi-hdd-network me-2"></i>Select Worker</label>
-                                <div class="input-group">
-                                    <select class="form-select" @bind="_workerIdInput" disabled="@_isSubscribed">
-                                        <option value="">-- Select a worker --</option>
-                                        @foreach (var worker in _availableWorkers)
-                                        {
-                                            <option value="@worker.WorkerId">
-                                                @worker.Hostname (@worker.WorkerId) - @(worker.IsOnline ? "Online" : "Offline")
-                                            </option>
-                                        }
-                                    </select>
-                                    <button class="btn btn-outline-secondary" @onclick="RefreshWorkers" disabled="@_loadingWorkers" title="Refresh workers">
-                                        @if (_loadingWorkers)
-                                        { <span class="spinner-border spinner-border-sm"></span> }
-                                        else
-                                        { <i class="bi bi-arrow-clockwise"></i> }
-                                    </button>
-                                    @if (_isSubscribed)
-                                    {
-                                        <button class="btn btn-outline-danger" @onclick="Unsubscribe">
-                                            <i class="bi bi-x-circle me-1"></i>Disconnect
-                                        </button>
+                                        <span class="spinner-border spinner-border-sm"></span>
                                     }
                                     else
                                     {
-                                        <button class="btn btn-primary" @onclick="Subscribe" disabled="@string.IsNullOrWhiteSpace(_workerIdInput)">
-                                            <i class="bi bi-link-45deg me-1"></i>Connect
-                                        </button>
+                                        <i class="bi bi-arrow-clockwise me-1"></i><text>Refresh</text>
                                     }
-                                </div>
-                                <div class="mt-2 d-flex gap-2 align-items-center">
-                                    <span class="badge bg-success">@_availableWorkers.Count(w => w.IsOnline) Online</span>
-                                    <span class="badge bg-secondary">@_availableWorkers.Count Total</span>
-                                </div>
-                            </div>
-
-                            <!-- Log path -->
-                            <div class="col-md-4">
-                                <label class="form-label fw-bold"><i class="bi bi-file-earmark-text me-2"></i>Select Log to Stream</label>
-                                <select class="form-select" @bind="_selectedLogPath" disabled="@(!_isSubscribed || !_isConnected || _isStreaming)">
-                                    <option value="">-- Select log path --</option>
-                                    @foreach (var p in _selectedWorkerLogPaths)
-                                    {
-                                        <option value="@p">@p</option>
-                                    }
-                                </select>
-                                <div class="small text-secondary mt-1">
-                                    @if (!_isSubscribed)
-                                    { <span>Connect worker first.</span> }
-                                    else if (_selectedWorkerLogPaths.Count == 0)
-                                    { <span>No log paths received from worker yet.</span> }
-                                    else
-                                    { <span>@_selectedWorkerLogPaths.Count paths available</span> }
-                                </div>
-                            </div>
-
-                            <!-- Start/Stop stream -->
-                            <div class="col-md-3 text-end">
-                                <label class="form-label fw-bold d-block">&nbsp;</label>
-                                <div class="btn-group w-100">
-                                    <button class="btn btn-success" @onclick="StartStream"
-                                            disabled="@(!_isSubscribed || !_isConnected || _isStreaming || string.IsNullOrWhiteSpace(_selectedLogPath))">
-                                        <i class="bi bi-play-fill me-1"></i>Start Stream
-                                    </button>
-                                    <button class="btn btn-outline-danger" @onclick="StopStream" disabled="@(!_isStreaming)">
-                                        <i class="bi bi-stop-fill me-1"></i>Stop
-                                    </button>
-                                </div>
-                                @if (_isStreaming)
-                                {
-                                    <div class="small mt-2 text-success">
-                                        <i class="bi bi-broadcast me-1"></i>Streaming: @_selectedLogPath
-                                    </div>
-                                }
-                            </div>
-
-                            <!-- Selected worker info -->
-                            <div class="col-12">
+                                </button>
                                 @if (_isSubscribed)
                                 {
-                                    var selectedWorker = _availableWorkers.FirstOrDefault(w => w.WorkerId == _subscribedWorkerId);
-                                    <div class="alert alert-success mb-0 py-2">
-                                        <div class="d-flex align-items-center">
-                                            <i class="bi bi-check-circle me-2 fs-5"></i>
-                                            <div>
-                                                <strong>Connected to: @(selectedWorker?.Hostname ?? _subscribedWorkerId)</strong>
-                                                <div class="small">Worker ID: @_subscribedWorkerId</div>
-                                            </div>
-                                        </div>
-                                    </div>
+                                    <button class="btn btn-outline-danger" @onclick="Unsubscribe">
+                                        <i class="bi bi-x-circle me-1"></i>Disconnect
+                                    </button>
                                 }
                                 else
                                 {
-                                    <div class="alert alert-info mb-0 py-2">
-                                        <i class="bi bi-info-circle me-2"></i>Select a worker and click Connect.
-                                    </div>
+                                    <button class="btn btn-primary" @onclick="Subscribe" disabled="@string.IsNullOrWhiteSpace(_workerIdInput)">
+                                        <i class="bi bi-link-45deg me-1"></i>Connect
+                                    </button>
                                 }
                             </div>
                         </div>
-                    </div>
-                </div>
-
-                <!-- STATS ROW -->
-                <div class="row g-3 mb-4">
-                    <div class="col-md-2 col-sm-4 col-6">
-                        <div class="card modern-card shadow-sm text-center py-3">
-                            <div class="fw-bold fs-4">@_liveLogs.Count</div>
-                            <small class="fw-bold">Total Logs</small>
-                        </div>
-                    </div>
-                    <div class="col-md-2 col-sm-4 col-6">
-                        <div class="card modern-card shadow-sm text-center py-3">
-                            <div class="fw-bold fs-4 text-danger">@_liveStats.ErrorCount</div>
-                            <small class="fw-bold">Errors</small>
-                        </div>
-                    </div>
-                    <div class="col-md-2 col-sm-4 col-6">
-                        <div class="card modern-card shadow-sm text-center py-3">
-                            <div class="fw-bold fs-4 text-warning">@_liveStats.WarningCount</div>
-                            <small class="fw-bold">Warnings</small>
-                        </div>
-                    </div>
-                    <div class="col-md-2 col-sm-4 col-6">
-                        <div class="card modern-card shadow-sm text-center py-3">
-                            <div class="fw-bold fs-4 text-info">@_liveStats.InfoCount</div>
-                            <small class="fw-bold">Info</small>
-                        </div>
-                    </div>
-                    <div class="col-md-2 col-sm-4 col-6">
-                        <div class="card modern-card shadow-sm text-center py-3">
-                            <div class="fw-bold fs-4 text-secondary">@_liveStats.DebugCount</div>
-                            <small class="fw-bold">Debug</small>
-                        </div>
-                    </div>
-                    <div class="col-md-2 col-sm-4 col-6">
-                        <div class="card modern-card shadow-sm text-center py-3">
-                            <div class="fw-bold fs-4">@_liveStats.BySource.Count</div>
-                            <small class="fw-bold">Sources</small>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- MODEL SELECTOR & FILTERS -->
-                <div class="card modern-card shadow-sm mb-4">
-                    <div class="card-body">
-                        <div class="row g-3 align-items-end">
-                            <div class="col-md-3">
-                                <label class="form-label fw-bold"><i class="bi bi-cpu me-2"></i>AI Model</label>
-                                <select class="form-select" @bind="_selectedModel">
-                                    <optgroup label="Claude (Anthropic)">
-                                        <option value="claude-sonnet-4-5">Claude Sonnet 4.5 (Recommended)</option>
-                                        <option value="claude-opus-4-5">Claude Opus 4.5 (Most Powerful)</option>
-                                        <option value="claude-sonnet-3-5">Claude Sonnet 3.5</option>
-                                    </optgroup>
-                                    <optgroup label="GPT (OpenAI)">
-                                        <option value="gpt-4o">GPT-4o</option>
-                                        <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                                        <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
-                                    </optgroup>
-                                    <optgroup label="Open Source (TogetherAI)">
-                                        <option value="gpt-oss-120b">gpt-oss-120b</option>
-                                        <option value="together-llama-3.1-405b">Llama 3.1 405B</option>
-                                        <option value="together-mixtral-8x7b">Mixtral 8x7B</option>
-                                        <option value="together-qwen">Qwen</option>
-                                    </optgroup>
+                        <div class="col-md-5">
+                            <label class="form-label fw-bold"><i class="bi bi-broadcast me-2"></i>Live Streaming</label>
+                            <div class="input-group">
+                                <select class="form-select" @bind="_selectedLogPath" disabled="@(!_isSubscribed || _isStreaming)">
+                                    <option value="">Select log path to stream...</option>
+                                    @foreach (var p in _selectedWorkerLogPaths) { <option value="@p">@p</option> }
                                 </select>
+                                <button class="btn btn-success" @onclick="StartStream" disabled="@(!_isSubscribed || _isStreaming || string.IsNullOrWhiteSpace(_selectedLogPath))">
+                                    <i class="bi bi-play-fill me-1"></i>Start
+                                </button>
+                                <button class="btn btn-outline-danger" @onclick="StopStream" disabled="@(!_isStreaming)">
+                                    <i class="bi bi-stop-fill me-1"></i>Stop
+                                </button>
                             </div>
-                            <div class="col-md-2">
-                                <label class="form-label small fw-bold">Level</label>
-                                <select class="form-select" @bind="_filterLevel">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- UPLOAD & PULL ROW -->
+            <div class="row g-3 mb-3">
+                <div class="col-md-5">
+                    <div class="card modern-card shadow-sm h-100">
+                        <div class="card-header py-2">
+                            <span class="fw-bold"><i class="bi bi-cloud-upload me-2"></i>Upload Logs</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label class="form-label">Upload File</label>
+                                <InputFile OnChange="OnFileSelected" accept=".txt,.log,.json,.xml,.csv,.png,.jpg,.jpeg,.tiff,.pdf" class="form-control" />
+                                <small class="text-muted">Max 2MB - .txt .log .json .xml .csv .pdf + images</small>
+                            </div>
+                            <div>
+                                <label class="form-label">Or Paste Logs</label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control" placeholder="Paste log content here..." @bind="_pastedLogs" />
+                                    <button class="btn btn-primary" disabled="@string.IsNullOrWhiteSpace(_pastedLogs)" @onclick="UploadPastedLogs">
+                                        <i class="bi bi-upload me-1"></i>Upload
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-7">
+                    <div class="card modern-card shadow-sm h-100">
+                        <div class="card-header py-2">
+                            <span class="fw-bold"><i class="bi bi-download me-2"></i>Pull Logs from Worker</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="row g-2 align-items-end">
+                                <div class="col-md-3">
+                                    <label class="form-label">Worker</label>
+                                    <select class="form-select" @bind="_selectedPullWorkerId" disabled="@_pulling">
+                                        <option value="">Select...</option>
+                                        @foreach (var w in _availableWorkers.Where(w => w.IsOnline)) { <option value="@w.WorkerId">@w.Hostname</option> }
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">Log File</label>
+                                    <select class="form-select" @bind="_pullLogPath" disabled="@(SelectedPullWorker == null || _pulling)">
+                                        <option value="">Select...</option>
+                                        @if (SelectedPullWorker != null) { @foreach (var p in SelectedPullWorker.AvailableLogPaths) { <option value="@p">@p</option> } }
+                                    </select>
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label">Lines</label>
+                                    <input type="number" class="form-control" @bind="_pullLines" min="10" max="1000" disabled="@_pulling" />
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label">From</label>
+                                    <select class="form-select" @bind="_pullFromEnd" disabled="@_pulling">
+                                        <option value="@true">End (tail)</option>
+                                        <option value="@false">Beginning</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-2">
+                                    @if (_pulling)
+                                    {
+                                        <button class="btn btn-warning w-100" @onclick="CancelPullLogs">
+                                            <span class="spinner-border spinner-border-sm me-1"></span>Cancel
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <button class="btn btn-primary w-100" @onclick="PullLogs" disabled="@(SelectedPullWorker == null || string.IsNullOrEmpty(_pullLogPath))">
+                                            <i class="bi bi-download me-1"></i>Pull
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+                            @if (_pulledLogs.Count > 0)
+                            {
+                                <div class="d-flex justify-content-between align-items-center mt-3 p-2 bg-light rounded">
+                                    <span class="fw-bold">Pulled @_pulledLogs.Count lines</span>
+                                    <div class="btn-group">
+                                        <button class="btn btn-outline-secondary btn-sm" @onclick="CopyPulledLogs">
+                                            <i class="bi bi-clipboard me-1"></i>Copy
+                                        </button>
+                                        <button class="btn btn-outline-secondary btn-sm" @onclick="ClearPulledLogs">
+                                            <i class="bi bi-x-lg me-1"></i>Clear
+                                        </button>
+                                        <button class="btn btn-primary btn-sm" @onclick="AnalyzePulledLogs" disabled="@_analyzingPulledLogs">
+                                            <i class="bi bi-cpu me-1"></i>Analyze
+                                        </button>
+                                    </div>
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(_pullError)) { <div class="alert alert-danger mt-2 mb-0 py-2">@_pullError</div> }
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MAIN CONTENT: STREAM & LOGS -->
+            <div class="row g-3">
+                <!-- LIVE STREAM -->
+                <div class="col-lg-7">
+                    <div class="card modern-card shadow-sm">
+                        <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                            <div class="d-flex align-items-center gap-3">
+                                <span class="fw-bold"><i class="bi bi-terminal me-2"></i>Live Stream (@FilteredLiveLogs.Count)</span>
+                                @if (FilteredLiveLogs.Count > 0)
+                                {
+                                    <div class="form-check mb-0">
+                                        <input class="form-check-input" type="checkbox" id="selectAllLogs" checked="@_selectAll" @onchange="OnSelectAllChanged" />
+                                        <label class="form-check-label" for="selectAllLogs">Select All</label>
+                                    </div>
+                                }
+                            </div>
+                            <div class="d-flex align-items-center gap-2">
+                                <select class="form-select form-select-sm" style="width: 100px;" @bind="_filterLevel">
                                     <option value="">All Levels</option>
                                     <option value="ERROR">Error</option>
                                     <option value="WARN">Warning</option>
                                     <option value="INFO">Info</option>
-                                    <option value="DEBUG">Debug</option>
                                 </select>
-                            </div>
-                            <div class="col-md-2">
-                                <label class="form-label small fw-bold">Source</label>
-                                <select class="form-select" @bind="_filterSource">
-                                    <option value="">All Sources</option>
-                                    @foreach (var source in _liveStats.BySource.Keys.OrderBy(s => s))
-                                    {
-                                        <option value="@source">@source (@_liveStats.BySource[source])</option>
-                                    }
-                                </select>
-                            </div>
-                            <div class="col-md-2">
-                                <label class="form-label small fw-bold">Search</label>
-                                <input type="text" class="form-control" placeholder="Search..." @bind="_searchText" @bind:event="oninput" />
-                            </div>
-                            <div class="col-md-1">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" id="autoScroll" @bind="_autoScroll" />
-                                    <label class="form-check-label" for="autoScroll">Auto-scroll</label>
+                                <input type="text" class="form-control form-control-sm" style="width: 120px;" placeholder="Search..." @bind="_searchText" @bind:event="oninput" />
+                                <button class="btn btn-success btn-sm" @onclick="AnalyzeSelected" disabled="@(_selectedLiveLogs.Count == 0 || _analyzing)">
+                                    <i class="bi bi-cpu me-1"></i>Analyze (@_selectedLiveLogs.Count)
+                                </button>
+                                <div class="form-check mb-0">
+                                    <input class="form-check-input" type="checkbox" id="autoScrollCheck" @bind="_autoScroll" />
+                                    <label class="form-check-label" for="autoScrollCheck">Auto-scroll</label>
                                 </div>
-                            </div>
-                            <div class="col-md-2 text-end">
-                                <div class="btn-group">
-                                    <button class="btn btn-primary" @onclick="AnalyzeSelected" disabled="@(_selectedLiveLogs.Count == 0 || _analyzing)">
-                                        @if (_analyzing)
-                                        { <span class="spinner-border spinner-border-sm me-1"></span> }
-                                        else
-                                        { <i class="bi bi-cpu me-1"></i> }
-                                        Analyze (@_selectedLiveLogs.Count)
+                                @if (_liveLogs.Count > 0)
+                                {
+                                    <button class="btn btn-outline-secondary btn-sm" @onclick="ClearLiveLogs">
+                                        <i class="bi bi-x-lg me-1"></i>Clear
                                     </button>
-                                </div>
+                                }
                             </div>
+                        </div>
+                        <div class="card-body p-0">
+                            @if (_liveLogs.Count == 0)
+                            {
+                                <div class="text-center py-4">
+                                    <i class="bi bi-broadcast display-4 text-muted d-block mb-2"></i>
+                                    <p>Connect to a worker and start streaming to see logs</p>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="log-stream-container" style="max-height: 450px;" @ref="_logContainer">
+                                    <table class="table table-sm mb-0 log-table">
+                                        <thead class="sticky-top bg-dark text-light">
+                                            <tr>
+                                                <th style="width: 30px;"></th>
+                                                <th style="width: 70px;">Level</th>
+                                                <th style="width: 80px;">Time</th>
+                                                <th>Message</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var log in FilteredLiveLogs)
+                                            {
+                                                <tr class="@GetRowClass(log.Level)" @onclick="() => ToggleLiveLogSelection(log.Id)" style="cursor: pointer;">
+                                                    <td><input type="checkbox" class="form-check-input" checked="@_selectedLiveLogs.Contains(log.Id)" @onclick:stopPropagation="true" @onchange="() => ToggleLiveLogSelection(log.Id)" /></td>
+                                                    <td><span class="badge @GetLevelBadgeClass(log.Level)">@log.Level</span></td>
+                                                    <td class="small">@log.Timestamp.ToLocalTime().ToString("HH:mm:ss")</td>
+                                                    <td class="log-message-wrap">@log.Message</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+                        </div>
+                        <div class="card-footer py-2 d-flex gap-4">
+                            <span><strong>@_liveLogs.Count</strong> total</span>
+                            <span class="text-danger"><strong>@_liveStats.ErrorCount</strong> errors</span>
+                            <span class="text-warning"><strong>@_liveStats.WarningCount</strong> warnings</span>
+                            <span class="text-info"><strong>@_liveStats.InfoCount</strong> info</span>
                         </div>
                     </div>
                 </div>
 
-                <!-- LIVE LOG STREAM -->
-                <div class="card modern-card shadow-lg">
-                    <div class="card-header gradient-header-dark d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0"><i class="bi bi-terminal me-2"></i>Log Stream</h5>
-                        <span class="badge bg-light text-dark px-3 py-2">@FilteredLiveLogs.Count / @_liveLogs.Count</span>
-                    </div>
-                    <div class="card-body p-0">
-                        @if (_liveLogs.Count == 0)
-                        {
-                            <div class="empty-state-box">
-                                <i class="bi bi-broadcast display-1 mb-3"></i>
-                                <h5 class="fw-bold">Waiting for logs...</h5>
-                                <p>Click <b>Start Stream</b> after selecting a log file.</p>
-                                <small><i class="bi bi-info-circle me-1"></i>Worker must be online and subscribed.</small>
-                            </div>
-                        }
-                        else
-                        {
-                            <div class="log-stream-container" @ref="_logContainer">
-                                <table class="table table-sm table-hover mb-0 log-table">
-                                    <thead class="sticky-top bg-dark text-light">
-                                        <tr>
-                                            <th style="width: 40px;">
-                                                <input type="checkbox" class="form-check-input" @bind="_selectAll" @bind:after="OnSelectAllChanged" />
-                                            </th>
-                                            <th style="width: 80px;">Level</th>
-                                            <th style="width: 120px;">Source</th>
-                                            <th style="width: 150px;">Time</th>
-                                            <th>Message</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        @foreach (var log in FilteredLiveLogs)
-                                        {
-                                            <tr class="@GetRowClass(log.Level)" @onclick="() => ToggleLiveLogSelection(log.Id)">
-                                                <td>
-                                                    <input type="checkbox" class="form-check-input" checked="@_selectedLiveLogs.Contains(log.Id)"
-                                                           @onclick:stopPropagation="true" @onchange="() => ToggleLiveLogSelection(log.Id)" />
-                                                </td>
-                                                <td><span class="badge @GetLevelBadgeClass(log.Level)">@log.Level</span></td>
-                                                <td class="text-truncate" style="max-width: 120px;" title="@log.Source">@log.Source</td>
-                                                <td class="small">@log.Timestamp.ToLocalTime().ToString("HH:mm:ss.fff")</td>
-                                                <td class="log-message" title="@log.RawLine">@log.Message</td>
+                <!-- UPLOADED LOGS -->
+                <div class="col-lg-5">
+                    <div class="card modern-card shadow-sm">
+                        <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                            <span class="fw-bold"><i class="bi bi-list-ul me-2"></i>Uploaded Logs (@_logs.Count)</span>
+                            @if (_logs.Count > 0)
+                            {
+                                <button class="btn btn-outline-danger btn-sm" @onclick="ConfirmDeleteAllLogs">
+                                    <i class="bi bi-trash me-1"></i>Clear All
+                                </button>
+                            }
+                        </div>
+                        <div class="card-body p-0">
+                            @if (_loadingLogs)
+                            {
+                                <div class="text-center py-4"><div class="spinner-border"></div></div>
+                            }
+                            else if (_logs.Count == 0)
+                            {
+                                <div class="text-center py-4">
+                                    <i class="bi bi-inbox display-4 text-muted d-block mb-2"></i>
+                                    <p>No logs uploaded yet</p>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="table-responsive" style="max-height: 450px; overflow-y: auto;">
+                                    <table class="table table-hover mb-0">
+                                        <thead class="sticky-top bg-light">
+                                            <tr>
+                                                <th>File Name</th>
+                                                <th>Size</th>
+                                                <th class="text-center">Actions</th>
                                             </tr>
-                                        }
-                                    </tbody>
-                                </table>
-                            </div>
-                        }
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var log in _logs)
+                                            {
+                                                <tr>
+                                                    <td class="fw-semibold">@log.FileName</td>
+                                                    <td><span class="badge bg-secondary">@FormatFileSize(log.SizeBytes)</span></td>
+                                                    <td class="text-center">
+                                                        <div class="btn-group">
+                                                            <button class="btn btn-success btn-sm" @onclick="() => Analyze(log.Id)">
+                                                                <i class="bi bi-cpu me-1"></i>Analyze
+                                                            </button>
+                                                            <button class="btn btn-info btn-sm" @onclick="() => ViewLog(log)">
+                                                                <i class="bi bi-eye me-1"></i>View
+                                                            </button>
+                                                            <button class="btn btn-danger btn-sm" @onclick="() => ConfirmDeleteLog(log.Id, log.FileName)">
+                                                                <i class="bi bi-trash me-1"></i>Delete
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+                        </div>
                     </div>
                 </div>
-            }
+            </div>
         </div>
 
         <!-- LOG VIEWER MODAL -->
@@ -686,13 +444,14 @@
 </AuthorizeView>
 
 <style>
-    .log-stream-container { max-height: 500px; overflow-y: auto; font-family: 'Consolas', 'Monaco', monospace; font-size: 0.85rem; }
+    .log-stream-container { max-height: 500px; overflow-y: auto; font-family: 'Consolas', 'Monaco', monospace; font-size: 0.8rem; }
     .log-output-container { max-height: 300px; overflow-y: auto; font-family: 'Consolas', 'Monaco', monospace; font-size: 0.8rem; }
     .log-line { white-space: pre-wrap; word-break: break-all; }
     .log-table { table-layout: fixed; }
     .log-table tbody tr { cursor: pointer; }
     .log-table tbody tr:hover { background-color: rgba(var(--bs-primary-rgb), 0.1) !important; }
     .log-message { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .log-message-wrap { white-space: pre-wrap; word-break: break-word; font-size: 0.75rem; line-height: 1.3; }
     .log-row-error { background-color: rgba(220, 53, 69, 0.1); border-left: 3px solid #dc3545; }
     .log-row-warn { background-color: rgba(255, 193, 7, 0.1); border-left: 3px solid #ffc107; }
     .log-row-info { border-left: 3px solid #0dcaf0; }
@@ -701,7 +460,6 @@
 
 @code {
     // State
-    private string _activeTab = "upload";
     private string _selectedModel = "claude-sonnet-4-5";
 
     // Upload Tab State
@@ -788,13 +546,7 @@
         await LoadSavedWorkerIdAndLogPath();
     }
 
-    private void SetActiveTab(string tab)
-    {
-        _activeTab = tab;
-        StateHasChanged();
-    }
-
-    // ==================== UPLOAD TAB METHODS ====================
+    // ==================== UPLOAD METHODS ====================
 
     private async Task LoadLogs()
     {
@@ -1255,8 +1007,16 @@
 
     private void OnSelectAllChanged()
     {
-        if (_selectAll) foreach (var log in FilteredLiveLogs) _selectedLiveLogs.Add(log.Id);
-        else _selectedLiveLogs.Clear();
+        _selectAll = !_selectAll;
+        if (_selectAll)
+        {
+            foreach (var log in FilteredLiveLogs)
+                _selectedLiveLogs.Add(log.Id);
+        }
+        else
+        {
+            _selectedLiveLogs.Clear();
+        }
     }
 
     private async Task AnalyzeSelected()

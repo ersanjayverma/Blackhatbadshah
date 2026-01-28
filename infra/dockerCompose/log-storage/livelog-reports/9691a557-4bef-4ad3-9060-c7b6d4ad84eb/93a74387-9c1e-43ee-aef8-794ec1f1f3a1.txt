@@ -1,0 +1,123 @@
+﻿# Log Analysis Report
+
+## 1. EXECUTIVE SUMMARY
+
+The system log analysis reveals a **moderately healthy system** with several security concerns that require immediate attention. The logs span from **2026-01-28 16:56:39 to 18:05:01**, covering approximately 1 hour and 9 minutes of system activity.
+
+The primary concerns are **repeated SSH brute force attacks** and **potential unauthorized access attempts**, alongside **comprehensive system enumeration activities** by what appears to be an automated security scanning tool. While no successful breaches are evident, the volume and pattern of attacks indicate a persistent threat.
+
+## 2. CRITICAL ISSUES
+
+### Issue 1: Intensive SSH Brute Force Attacks
+- **Root Cause**: Multiple external IP addresses conducting systematic SSH brute force attacks
+- **Evidence**: 
+  ```
+  2026-01-28T17:10:43.597780+01:00 vmi3002731 sshd[232928]: Failed password for root from 93.42.121.73 port 56944 ssh2
+  2026-01-28T17:29:53.235195+01:00 vmi3002731 sshd[236351]: Failed password for root from 45.249.247.124 port 33272 ssh2
+  2026-01-28T17:33:29.486947+01:00 vmi3002731 sshd[236368]: Failed password for root from 194.60.231.42 port 58856 ssh2
+  ```
+- **Impact**: High risk of unauthorized system access; potential for service disruption and resource exhaustion
+- **Severity**: **High**
+- **First Occurrence**: 2026-01-28T17:08:34.372022+01:00 (Invalid user attempts)
+
+### Issue 2: System Enumeration by Automated Tool
+- **Root Cause**: Automated security scanning tool performing comprehensive system checks
+- **Evidence**: 
+  ```
+  2026-01-28T16:56:39.159616+01:00 vmi3002731 sudo:     root : PWD=/opt/bhb-worker ; USER=root ; COMMAND=/usr/bin/passwd -S pollinate
+  2026-01-28T16:56:39.307772+01:00 vmi3002731 sudo:     root : PWD=/opt/bhb-worker ; USER=root ; COMMAND=/usr/bin/cat /etc/crontab
+  2026-01-28T16:57:49.638244+01:00 vmi3002731 sudo:     root : PWD=/opt/bhb-worker ; USER=root ; COMMAND=/usr/bin/awk -F: '($2 == "" ) { print $1 }' /etc/shadow
+  ```
+- **Impact**: Potential exposure of system configuration details to unauthorized parties
+- **Severity**: **Medium**
+- **First Occurrence**: 2026-01-28T16:56:39.159616+01:00
+
+## 3. WARNINGS & ANOMALIES
+
+### Warning 1: Repeated Invalid User Attempts
+- **Frequency**: 10+ occurrences throughout the log period
+- **Pattern**: Multiple IPs attempting to log in with non-existent users (ospite, tomcat, vbox, solana, cyrus, ubuntu, limpa, ed)
+- **Example**: 
+  ```
+  2026-01-28T17:14:23.761850+01:00 vmi3002731 sshd[232939]: Invalid user tomcat from 194.60.231.42 port 55976
+  2026-01-28T17:18:27.825117+01:00 vmi3002731 sshd[233981]: Failed password for invalid user solana from 92.118.39.87 port 54270 ssh2
+  ```
+
+### Warning 2: Banner Exchange Errors
+- **Frequency**: 7 occurrences
+- **Pattern**: Connection attempts from specific IPs failing banner exchange
+- **Example**: 
+  ```
+  2026-01-28T17:21:09.751307+01:00 vmi3002731 sshd[234499]: banner exchange: Connection from 66.228.53.136 port 19808: invalid format
+  ```
+
+### Warning 3: Systematic Password Checks
+- **Pattern**: Automated checks for empty passwords across all system users
+- **Evidence**: 
+  ```
+  2026-01-28T16:57:49.638244+01:00 vmi3002731 sudo:     root : PWD=/opt/bhb-worker ; USER=root ; COMMAND=/usr/bin/awk -F: '($2 == "" ) { print $1 }' /etc/shadow
+  ```
+
+## 4. TIMELINE OF KEY EVENTS
+
+| Time | Event | Type | Source IP | Details |
+|------|-------|------|-----------|---------|
+| 16:56:39 | System Enumeration | Scan | localhost | Password status checks for all users |
+| 16:57:09 | Auditd Installation | Admin | sj user | Security hardening initiated |
+| 17:08:34 | First Brute Force | Attack | 182.18.161.165 | Invalid user ospite |
+| 17:10:43 | Root Password Attack | Attack | 93.42.121.73 | Failed root login |
+| 17:14:23 | Multiple Invalid Users | Attack | 194.60.231.42 | tomcat, vbox, user attempts |
+| 17:16:13 | Firewall Rules Added | Admin | sj user | IP blocking response |
+| 17:24:47 | AppArmor Status Check | Admin | sj user | Security audit |
+| 17:26:11 | AppArmor Installation | Admin | sj user | System hardening |
+| 17:29:53 | Root Password Attack | Attack | 45.249.247.124 | Failed root login |
+| 18:02:50 | Ubuntu User Attack | Attack | 150.95.85.24 | Invalid user ubuntu |
+
+## 5. SYSTEM HEALTH INDICATORS
+
+- **Authentication Success Rate**: High (no successful unauthorized logins detected)
+- **System Response**: Normal (commands execute successfully)
+- **Resource Utilization**: Not directly visible but implied normal (no timeout errors)
+- **Security Posture**: Improving (active hardening measures implemented)
+- **Attack Volume**: High (15+ distinct attack attempts in 1 hour)
+
+## 6. REMEDIATION PLAN
+
+### Immediate Actions:
+1. **Implement rate limiting** for SSH connections:
+   ```bash
+   sudo ufw limit ssh
+   ```
+2. **Block identified malicious IPs** in firewall:
+   ```bash
+   sudo ufw deny from 93.42.121.73
+   sudo ufw deny from 194.60.231.42
+   sudo ufw deny from 45.249.247.124
+   ```
+
+### Short-term Fix:
+1. **Install and configure fail2ban**:
+   ```bash
+   sudo apt install fail2ban
+   sudo systemctl enable fail2ban
+   sudo systemctl start fail2ban
+   ```
+2. **Review and strengthen SSH configuration**:
+   - Disable root login via SSH
+   - Enforce key-based authentication
+   - Change default SSH port
+
+### Long-term Solution:
+1. **Implement comprehensive intrusion detection system** (IDS)
+2. **Deploy centralized log monitoring** with alerting
+3. **Regular security audits** and penetration testing
+4. **Network segmentation** to limit attack surface
+
+### Code/Config Changes:
+1. **SSH Configuration** (`/etc/ssh/sshd_config`):
+   ```
+   PermitRootLogin no
+   PasswordAuthentication no
+   AllowUsers sj
+   ```
+2. **Fail2Ban Configuration** (`/etc/fail2ban/jail.local

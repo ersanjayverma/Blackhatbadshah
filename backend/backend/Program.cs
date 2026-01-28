@@ -81,6 +81,15 @@ builder.Services.Configure<EmailConfiguration>(builder.Configuration.GetSection(
 // Email Service
 builder.Services.AddSingleton<IEmailService, EmailService>();
 
+// Qdrant Vector Database Service
+builder.Services.Configure<QdrantConfiguration>(builder.Configuration.GetSection("Qdrant"));
+builder.Services.AddHttpClient<IQdrantService, QdrantService>((sp, client) =>
+{
+    var config = builder.Configuration.GetSection("Qdrant").Get<QdrantConfiguration>();
+    client.BaseAddress = new Uri(config?.Url ?? "https://qdrant.blackhatbadshah.com");
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+
 // SignalR Query Token config (default false for security - prefer Authorization header)
 var allowSignalRQueryToken = builder.Configuration.GetValue<bool>("SignalR:AllowQueryToken", false);
 

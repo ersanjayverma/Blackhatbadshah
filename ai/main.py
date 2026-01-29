@@ -638,6 +638,45 @@ async def chat_stream(
 
 
 # =====================================================
+# EMBEDDINGS
+# =====================================================
+class EmbedRequest(BaseModel):
+    text: str
+
+class EmbedResponse(BaseModel):
+    embedding: list[float]
+
+@api.post("/embed", response_model=EmbedResponse)
+async def embed(req: EmbedRequest):
+    """
+    Generate embedding vector from text using OpenAI's embedding API.
+    Returns a 1536-dimensional vector suitable for Qdrant storage.
+    """
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://api.openai.com/v1/embeddings",
+                headers={
+                    "Authorization": f"Bearer {OPENAI_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "text-embedding-3-small",
+                    "input": req.text[:8000]  # Limit text length
+                },
+                timeout=30.0
+            )
+            response.raise_for_status()
+            data = response.json()
+            embedding = data["data"][0]["embedding"]
+            return EmbedResponse(embedding=embedding)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Embedding generation failed: {str(e)}"
+        )
+
+# =====================================================
 # HEALTH
 # =====================================================
 @api.get("/health")

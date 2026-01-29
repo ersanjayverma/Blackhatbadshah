@@ -51,14 +51,19 @@
                                 <optgroup label="Claude (Anthropic)">
                                     <option value="claude-sonnet-4-5">Claude Sonnet 4.5 (Recommended)</option>
                                     <option value="claude-opus-4-5">Claude Opus 4.5 (Most Powerful)</option>
+                                    <option value="claude-sonnet-3-5">Claude Sonnet 3.5</option>
                                 </optgroup>
                                 <optgroup label="GPT (OpenAI)">
                                     <option value="gpt-4o">GPT-4o</option>
                                     <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                                    <option value="gpt-4-turbo-preview">GPT-4 Turbo Preview</option>
+                                    <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
                                 </optgroup>
                                 <optgroup label="Open Source">
                                     <option value="together-llama-3.1-405b">Llama 3.1 405B</option>
                                     <option value="together-mixtral-8x7b">Mixtral 8x7B</option>
+                                    <option value="together-qwen">Qwen 3 Coder 480B</option>
+                                    <option value="gpt-oss-120b">GPT-OSS 120B</option>
                                 </optgroup>
                             </select>
                         </div>
@@ -433,6 +438,99 @@
             </div>
         }
 
+        <!-- LOG ANALYSIS CONFIRMATION MODAL -->
+        @if (_showAnalysisModal)
+        {
+            <div class="custom-modal-backdrop" @onclick="CancelAnalysis"></div>
+            <div class="custom-modal">
+                <div class="custom-modal-dialog">
+                    <div class="custom-modal-content">
+                        <div class="custom-modal-header bg-primary">
+                            <h5 class="custom-modal-title"><i class="bi bi-cpu me-2"></i>Confirm Analysis</h5>
+                            <button class="custom-modal-close" @onclick="CancelAnalysis"><i class="bi bi-x-lg"></i></button>
+                        </div>
+                        <div class="custom-modal-body">
+                            <div class="text-center mb-3">
+                                <i class="bi bi-graph-up-arrow text-primary" style="font-size: 3rem;"></i>
+                            </div>
+
+                            <div class="alert alert-info border-info mb-3">
+                                <div class="d-flex align-items-center">
+                                    <i class="bi bi-info-circle me-2"></i>
+                                    <div>
+                                        <strong>Analysis Summary</strong>
+                                        <p class="mb-0 small">@_analysisDescription</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label fw-bold"><i class="bi bi-cpu me-2"></i>Select AI Model</label>
+                                <select class="form-select" @bind="_analysisModalModel">
+                                    <optgroup label="Claude (Anthropic)">
+                                        <option value="claude-sonnet-4-5">Claude Sonnet 4.5 (Recommended)</option>
+                                        <option value="claude-opus-4-5">Claude Opus 4.5 (Most Powerful)</option>
+                                        <option value="claude-sonnet-3-5">Claude Sonnet 3.5</option>
+                                    </optgroup>
+                                    <optgroup label="GPT (OpenAI)">
+                                        <option value="gpt-4o">GPT-4o</option>
+                                        <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                                        <option value="gpt-4-turbo-preview">GPT-4 Turbo Preview</option>
+                                        <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                                    </optgroup>
+                                    <optgroup label="Open Source">
+                                        <option value="together-llama-3.1-405b">Llama 3.1 405B</option>
+                                        <option value="together-mixtral-8x7b">Mixtral 8x7B</option>
+                                        <option value="together-qwen">Qwen 3 Coder 480B</option>
+                                        <option value="gpt-oss-120b">GPT-OSS 120B</option>
+                                    </optgroup>
+                                </select>
+                            </div>
+
+                            <div class="alert alert-light border">
+                                <div class="row text-center">
+                                    <div class="col-4">
+                                        <i class="bi bi-file-earmark-text text-primary d-block mb-1" style="font-size: 1.5rem;"></i>
+                                        <small class="text-muted">@_analysisLogCount logs</small>
+                                    </div>
+                                    <div class="col-4">
+                                        <i class="bi bi-cpu text-success d-block mb-1" style="font-size: 1.5rem;"></i>
+                                        <small class="text-muted">@GetModelDisplayName(_analysisModalModel)</small>
+                                    </div>
+                                    <div class="col-4">
+                                        <i class="bi bi-clock text-warning d-block mb-1" style="font-size: 1.5rem;"></i>
+                                        <small class="text-muted">Async processing</small>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <p class="small text-muted mb-0">
+                                <i class="bi bi-info-circle me-1"></i>
+                                The analysis report will be available in the Analysis Dashboard once processing is complete.
+                            </p>
+                        </div>
+                        <div class="custom-modal-footer">
+                            <button class="btn btn-light" @onclick="CancelAnalysis">
+                                <i class="bi bi-x-lg me-2"></i>Cancel
+                            </button>
+                            <button class="btn btn-primary" @onclick="ConfirmAnalysis" disabled="@_processingAnalysis">
+                                @if (_processingAnalysis)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-2"></span>
+                                    <text>Processing...</text>
+                                }
+                                else
+                                {
+                                    <i class="bi bi-cpu me-2"></i>
+                                    <text>Start Analysis</text>
+                                }
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
     </Authorized>
     <NotAuthorized>
         <div class="container mt-5">
@@ -461,6 +559,17 @@
 @code {
     // State
     private string _selectedModel = "claude-sonnet-4-5";
+
+    // Analysis Modal State
+    private bool _showAnalysisModal = false;
+    private string _analysisModalModel = "claude-sonnet-4-5";
+    private string _analysisDescription = "";
+    private int _analysisLogCount = 0;
+    private bool _processingAnalysis = false;
+    private AnalysisType _pendingAnalysisType = AnalysisType.None;
+    private Guid _pendingLogId = Guid.Empty;
+
+    private enum AnalysisType { None, UploadedLog, LiveLogs, PulledLogs }
 
     // Upload Tab State
     private List<LogDto> _logs = new();
@@ -639,21 +748,15 @@
         _activeLogName = "";
     }
 
-    private async Task Analyze(Guid id)
+    private void Analyze(Guid id)
     {
-        var confirmed = await JS.InvokeAsync<bool>("confirm",
-            $"Send this log for AI analysis using {GetModelDisplayName(_selectedModel)}?\n\nThe report will be available in the Analysis Dashboard soon.");
-        if (!confirmed) return;
-
-        try
-        {
-            await LogsApi.QueueAnalysisAsync(id, _selectedModel);
-            Toast.ShowSuccess($"Analysis job queued! Check Analysis Dashboard soon.");
-        }
-        catch (Exception ex)
-        {
-            Toast.ShowError($"Failed to queue analysis: {ex.Message}");
-        }
+        var log = _logs.FirstOrDefault(l => l.Id == id);
+        _pendingLogId = id;
+        _pendingAnalysisType = AnalysisType.UploadedLog;
+        _analysisModalModel = _selectedModel;
+        _analysisLogCount = 1;
+        _analysisDescription = log != null ? $"Uploaded log file: {log.FileName}" : "Uploaded log file";
+        _showAnalysisModal = true;
     }
 
     private void ConfirmDeleteLog(Guid id, string fileName)
@@ -789,7 +892,7 @@
         }
     }
 
-    private async Task AnalyzePulledLogs()
+    private void AnalyzePulledLogs()
     {
         if (_pulledLogs.Count == 0)
         {
@@ -797,27 +900,12 @@
             return;
         }
 
-        _analyzingPulledLogs = true;
-        StateHasChanged();
-
-        try
-        {
-            var content = string.Join("\n", _pulledLogs);
-            var workerId = SelectedPullWorker?.WorkerId;
-
-            await LiveLogApi.AnalyzeContentAsync(content, null, workerId, _selectedModel);
-
-            Toast.ShowSuccess($"Analysis queued for {_pulledLogs.Count} log lines! Check Analysis Dashboard.");
-        }
-        catch (Exception ex)
-        {
-            Toast.ShowError($"Failed to queue analysis: {ex.Message}");
-        }
-        finally
-        {
-            _analyzingPulledLogs = false;
-            StateHasChanged();
-        }
+        _pendingAnalysisType = AnalysisType.PulledLogs;
+        _analysisModalModel = _selectedModel;
+        _analysisLogCount = _pulledLogs.Count;
+        var workerName = SelectedPullWorker?.Hostname ?? SelectedPullWorker?.WorkerId ?? "Unknown";
+        _analysisDescription = $"Pulled {_pulledLogs.Count} log lines from worker: {workerName} ({_pullLogPath})";
+        _showAnalysisModal = true;
     }
 
     // ==================== LIVE STREAMING METHODS ====================
@@ -1019,33 +1107,18 @@
         }
     }
 
-    private async Task AnalyzeSelected()
+    private void AnalyzeSelected()
     {
         if (_selectedLiveLogs.Count == 0)
         {
             Toast.ShowWarning("Please select logs to analyze.");
             return;
         }
-        _analyzing = true;
-        StateHasChanged();
-        try
-        {
-            var selectedEntries = _liveLogs.Where(l => _selectedLiveLogs.Contains(l.Id)).ToList();
-            var content = string.Join("\n", selectedEntries.Select(e => e.RawLine));
-            await LiveLogApi.AnalyzeContentAsync(content, _sessionId, _subscribedWorkerId, _selectedModel);
-            Toast.ShowSuccess($"Analysis queued for {_selectedLiveLogs.Count} logs!");
-            _selectedLiveLogs.Clear();
-            _selectAll = false;
-        }
-        catch (Exception ex)
-        {
-            Toast.ShowError($"Failed to queue analysis: {ex.Message}");
-        }
-        finally
-        {
-            _analyzing = false;
-            StateHasChanged();
-        }
+        _pendingAnalysisType = AnalysisType.LiveLogs;
+        _analysisModalModel = _selectedModel;
+        _analysisLogCount = _selectedLiveLogs.Count;
+        _analysisDescription = $"Selected {_selectedLiveLogs.Count} live log entries from worker: {_subscribedWorkerId}";
+        _showAnalysisModal = true;
     }
 
     private void ClearLiveLogs()
@@ -1059,6 +1132,61 @@
     private async Task ScrollToBottom()
     {
         try { await JS.InvokeVoidAsync("scrollToBottom", _logContainer); } catch { }
+    }
+
+    // ==================== ANALYSIS MODAL ====================
+
+    private void CancelAnalysis()
+    {
+        _showAnalysisModal = false;
+        _pendingAnalysisType = AnalysisType.None;
+        _pendingLogId = Guid.Empty;
+        _processingAnalysis = false;
+    }
+
+    private async Task ConfirmAnalysis()
+    {
+        _processingAnalysis = true;
+        StateHasChanged();
+
+        try
+        {
+            switch (_pendingAnalysisType)
+            {
+                case AnalysisType.UploadedLog:
+                    await LogsApi.QueueAnalysisAsync(_pendingLogId, _analysisModalModel);
+                    Toast.ShowSuccess($"Analysis job queued! Check Analysis Dashboard soon.");
+                    break;
+
+                case AnalysisType.LiveLogs:
+                    var selectedEntries = _liveLogs.Where(l => _selectedLiveLogs.Contains(l.Id)).ToList();
+                    var liveContent = string.Join("\n", selectedEntries.Select(e => e.RawLine));
+                    await LiveLogApi.AnalyzeContentAsync(liveContent, _sessionId, _subscribedWorkerId, _analysisModalModel);
+                    Toast.ShowSuccess($"Analysis queued for {_selectedLiveLogs.Count} logs!");
+                    _selectedLiveLogs.Clear();
+                    _selectAll = false;
+                    break;
+
+                case AnalysisType.PulledLogs:
+                    var pulledContent = string.Join("\n", _pulledLogs);
+                    var workerId = SelectedPullWorker?.WorkerId;
+                    await LiveLogApi.AnalyzeContentAsync(pulledContent, null, workerId, _analysisModalModel);
+                    Toast.ShowSuccess($"Analysis queued for {_pulledLogs.Count} log lines! Check Analysis Dashboard.");
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to queue analysis: {ex.Message}");
+        }
+        finally
+        {
+            _processingAnalysis = false;
+            _showAnalysisModal = false;
+            _pendingAnalysisType = AnalysisType.None;
+            _pendingLogId = Guid.Empty;
+            StateHasChanged();
+        }
     }
 
     // ==================== SIGNALR ====================
@@ -1244,9 +1372,12 @@
         "claude-sonnet-3-5" => "Claude Sonnet 3.5",
         "gpt-4o" => "GPT-4o",
         "gpt-4-turbo" => "GPT-4 Turbo",
+        "gpt-4-turbo-preview" => "GPT-4 Turbo Preview",
         "gpt-3.5-turbo" => "GPT-3.5 Turbo",
         "together-llama-3.1-405b" => "Llama 3.1 405B",
         "together-mixtral-8x7b" => "Mixtral 8x7B",
+        "together-qwen" => "Qwen 3 Coder 480B",
+        "gpt-oss-120b" => "GPT-OSS 120B",
         _ => modelValue
     };
 

@@ -1,0 +1,13 @@
+﻿{
+  "chartType": "ColumnChart",
+  "title": "IP Ban Frequency",
+  "xAxis": {
+    "labels": ["194.60.231.42", "12.156.67.18", "45.78.216.212", "Others"]
+  },
+  "series": [
+    {
+      "name": "Appearances",
+      "values": [9, 2, 3, 6]
+    }
+  ]
+}

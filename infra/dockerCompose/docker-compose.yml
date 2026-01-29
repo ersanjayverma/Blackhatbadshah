@@ -17,6 +17,11 @@ services:
 
   blackhat-be:
     image: blackhatbadshah.azurecr.io/vermasj/blackhatbadshahbe
+    hostname: backend.blackhatbadshah.local
+    extra_hosts:
+      - "mx1.blackhatbadshah.com:host-gateway"
+    depends_on:
+      - blackhat-ai
     environment:
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}

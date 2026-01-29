@@ -9,4 +9,5 @@ public class QdrantConfiguration
     public int VectorSize { get; set; } = 1536; // OpenAI embedding size, adjust for your model
     public int SearchLimit { get; set; } = 10;
     public float ScoreThreshold { get; set; } = 0.7f;
+    public string EmbeddingUrl { get; set; } = "https://ai.blackhatbadshah.com/embed";
 }

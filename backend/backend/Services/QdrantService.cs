@@ -395,14 +395,17 @@ public class QdrantService : IQdrantService
         try
         {
             // Call the AI service to generate embeddings
-            // This assumes your ai.blackhatbadshah.com has an /embed endpoint
+            // Use a separate HttpClient without Qdrant auth headers
+            using var aiClient = new HttpClient();
+            aiClient.Timeout = TimeSpan.FromSeconds(30);
+
             var embeddingRequest = new
             {
                 text = text.Length > 8000 ? text[..8000] : text // Limit text length
             };
 
-            var response = await _httpClient.PostAsJsonAsync(
-                "https://ai.blackhatbadshah.com/embed",
+            var response = await aiClient.PostAsJsonAsync(
+                _config.EmbeddingUrl,
                 embeddingRequest,
                 _jsonOptions,
                 cancellationToken);

@@ -14,6 +14,18 @@ public class EmailService : IEmailService
     {
         _config = config.Value;
         _logger = logger;
+
+        // Log configuration status at startup (without sensitive data)
+        if (_config.Enabled)
+        {
+            _logger.LogInformation(
+                "Email service initialized: Host={Host}, Port={Port}, UseSsl={UseSsl}, Username={Username}, FromAddress={FromAddress}",
+                _config.Host, _config.Port, _config.UseSsl, _config.Username, _config.FromAddress);
+        }
+        else
+        {
+            _logger.LogInformation("Email service is disabled in configuration");
+        }
     }
 
     public bool IsConfigured()
@@ -21,7 +33,8 @@ public class EmailService : IEmailService
         return _config.Enabled
             && !string.IsNullOrEmpty(_config.Host)
             && !string.IsNullOrEmpty(_config.Username)
-            && !string.IsNullOrEmpty(_config.Password);
+            && !string.IsNullOrEmpty(_config.Password)
+            && !string.IsNullOrEmpty(_config.FromAddress);
     }
 
     public Task<EmailSendResult> SendEmailAsync(string toAddress, string subject, string htmlBody, CancellationToken cancellationToken = default)
@@ -53,7 +66,9 @@ public class EmailService : IEmailService
                 using var smtpClient = new SmtpClient(_config.Host, _config.Port)
                 {
                     EnableSsl = _config.UseSsl,
+                    UseDefaultCredentials = false,
                     Credentials = new NetworkCredential(_config.Username, _config.Password),
+                    DeliveryMethod = SmtpDeliveryMethod.Network,
                     Timeout = _config.TimeoutMs
                 };
 
@@ -85,6 +100,18 @@ public class EmailService : IEmailService
 
                 _logger.LogInformation("Email sent successfully to {ToAddress}, Subject: {Subject}", message.ToAddress, message.Subject);
                 return EmailSendResult.Succeeded(Guid.NewGuid().ToString());
+            }
+            catch (SmtpException smtpEx)
+            {
+                lastException = smtpEx;
+                _logger.LogWarning(
+                    "Email send attempt {Attempt} failed to {ToAddress}. SMTP Status: {StatusCode}, Message: {Message}",
+                    attempt, message.ToAddress, smtpEx.StatusCode, smtpEx.Message);
+
+                if (attempt < _config.MaxRetries)
+                {
+                    await Task.Delay(1000 * attempt, cancellationToken);
+                }
             }
             catch (Exception ex)
             {

@@ -380,8 +380,16 @@ public class LogAnalysisBackgroundWorker : BackgroundService
                     <p><strong>Error:</strong> {summary}</p>
                     <p>Please try again or contact support if the issue persists.</p>";
 
-            await _emailService.SendEmailAsync(userEmail, subject, htmlBody);
-            _logger.LogInformation("Email notification sent to {Email} for report {ReportId}", userEmail, reportId);
+            var emailResult = await _emailService.SendEmailAsync(userEmail, subject, htmlBody);
+            if (emailResult.Success)
+            {
+                _logger.LogInformation("Email notification sent to {Email} for report {ReportId}", userEmail, reportId);
+            }
+            else
+            {
+                _logger.LogWarning("Failed to send email notification to {Email} for report {ReportId}: {Error}",
+                    userEmail, reportId, emailResult.ErrorMessage);
+            }
         }
         catch (Exception ex)
         {

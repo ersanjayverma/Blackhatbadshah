@@ -374,8 +374,16 @@ public class LiveLogAnalysisBackgroundWorker : BackgroundService
                     <p>The analysis of live log <strong>{fileName}</strong> failed.</p>
                     <p><strong>Error:</strong> {summary}</p>";
 
-            await _emailService.SendEmailAsync(userEmail, subject, htmlBody);
-            _logger.LogInformation("Email notification sent to {Email} for live log report {ReportId}", userEmail, reportId);
+            var emailResult = await _emailService.SendEmailAsync(userEmail, subject, htmlBody);
+            if (emailResult.Success)
+            {
+                _logger.LogInformation("Email notification sent to {Email} for live log report {ReportId}", userEmail, reportId);
+            }
+            else
+            {
+                _logger.LogWarning("Failed to send email notification to {Email} for live log report {ReportId}: {Error}",
+                    userEmail, reportId, emailResult.ErrorMessage);
+            }
         }
         catch (Exception ex)
         {

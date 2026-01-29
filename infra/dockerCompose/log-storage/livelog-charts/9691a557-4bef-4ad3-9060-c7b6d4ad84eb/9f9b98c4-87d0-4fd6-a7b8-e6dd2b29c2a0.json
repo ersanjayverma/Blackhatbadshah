@@ -1,0 +1,21 @@
+﻿{
+  "chartType": "ColumnChart",
+  "title": "Cron Jobs & Security Events",
+  "xAxis": {
+    "labels": ["12:13", "12:20", "12:28", "12:30", "12:40", "12:44", "12:50", "12:55", "13:00", "13:01", "13:03", "13:07", "13:08"]
+  },
+  "series": [
+    {
+      "name": "Cron Executions",
+      "values": [1, 0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0]
+    },
+    {
+      "name": "Fail2ban Actions",
+      "values": [1, 0, 0, 1, 0, 1, 1, 0, 1, 1, 0, 1, 0]
+    },
+    {
+      "name": "Sudo Bursts",
+      "values": [1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0]
+    }
+  ]
+}

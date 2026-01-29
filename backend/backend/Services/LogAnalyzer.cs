@@ -86,6 +86,106 @@ public class LogAnalyzer : ILogAnalyzer
         
     }
 
+    public async Task<ChatResponse> AnalyzeWithHistoryAsync(
+        Guid logId,
+        string logContent,
+        List<SimilarAnalysisResult>? historicalContext,
+        string? model = null)
+    {
+        if (string.IsNullOrWhiteSpace(logContent))
+            return new ChatResponse("Analyzer failed: log content is empty");
+
+        var threadId = $"log-{logId}";
+
+        // Convert log content to Base64 for transmission
+        var contentBytes = Encoding.UTF8.GetBytes(logContent);
+        var base64Content = Convert.ToBase64String(contentBytes);
+
+        var prompt = BuildPromptWithHistory(historicalContext);
+        var selectedModel = model ?? ModelMapping.DefaultModel;
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await _http.PostAsJsonAsync(
+                "chat",
+                new
+                {
+                    thread_id = threadId,
+                    message = prompt,
+                    document_base64 = base64Content,
+                    document_name = $"{logId}.txt",
+                    model = selectedModel
+                });
+        }
+        catch (Exception ex)
+        {
+            return new ChatResponse($"Analyzer failed: connection error ({ex.Message})");
+        }
+
+        if (response.StatusCode == HttpStatusCode.Unauthorized ||
+            response.StatusCode == HttpStatusCode.Forbidden)
+        {
+            var body = await response.Content.ReadAsStringAsync();
+            return new ChatResponse($"Analyzer failed: {body}");
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync();
+            return new ChatResponse($"Analyzer failed: AI Server Error ({body})");
+        }
+
+        ChatResponse? result;
+        try
+        {
+            result = await response.Content.ReadFromJsonAsync<ChatResponse>();
+        }
+        catch (Exception ex)
+        {
+            return new ChatResponse($"Analyzer failed: invalid response ({ex.Message})");
+        }
+
+        if (result == null || string.IsNullOrWhiteSpace(result.reply))
+            return new ChatResponse("Analyzer returned empty response");
+
+        return result;
+    }
+
+    private static string BuildPromptWithHistory(List<SimilarAnalysisResult>? historicalContext)
+    {
+        var basePrompt = BuildPrompt(isChart: false);
+
+        if (historicalContext == null || historicalContext.Count == 0)
+            return basePrompt;
+
+        var historySection = new StringBuilder();
+        historySection.AppendLine();
+        historySection.AppendLine("## HISTORICAL CONTEXT");
+        historySection.AppendLine("The following are summaries of similar past log analyses from this system.");
+        historySection.AppendLine("Use this context to identify recurring patterns, known issues, and established solutions.");
+        historySection.AppendLine();
+
+        for (int i = 0; i < Math.Min(historicalContext.Count, 5); i++)
+        {
+            var history = historicalContext[i];
+            historySection.AppendLine($"### Previous Analysis {i + 1} (Similarity: {history.Score:P0})");
+            if (!string.IsNullOrEmpty(history.FileName))
+                historySection.AppendLine($"- **File**: {history.FileName}");
+            historySection.AppendLine($"- **Date**: {history.CreatedAtUtc:yyyy-MM-dd HH:mm} UTC");
+            historySection.AppendLine($"- **Summary**: {history.Summary}");
+            historySection.AppendLine();
+        }
+
+        historySection.AppendLine("Consider the above historical context when analyzing the current log.");
+        historySection.AppendLine("- Reference recurring issues if they appear again");
+        historySection.AppendLine("- Note if previously identified problems have been resolved");
+        historySection.AppendLine("- Suggest solutions that worked before for similar issues");
+        historySection.AppendLine();
+
+        return basePrompt + historySection.ToString();
+    }
+
     private static string BuildPrompt(bool isChart = false)
     {
         if (isChart)

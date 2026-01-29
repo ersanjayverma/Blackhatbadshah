@@ -1,0 +1,147 @@
+﻿# Log Analysis Report
+
+---
+
+## 1. EXECUTIVE SUMMARY
+
+The log document covers a time range from **2026-01-28T17:27:56** to **2026-01-28T18:21:32** and indicates **moderate security risk** due to **repeated SSH brute-force attempts** from multiple IP addresses and users. No successful unauthorized access is evident, but the frequency and targeting of invalid users and root access attempts warrant attention. Additionally, there are **no critical system failures** or **application-level errors** detected in the logs.
+
+---
+
+## 2. CRITICAL ISSUES
+
+### Issue: Repeated SSH Brute-Force Login Attempts
+
+- **Root Cause**: Automated bots or attackers are attempting to gain unauthorized SSH access by trying common usernames and passwords.
+- **Evidence**:
+  ```
+  2026-01-28T17:29:53.235195+01:00 vmi3002731 sshd[236351]: Failed password for root from 45.249.247.124 port 33272 ssh2
+  2026-01-28T17:36:50.177355+01:00 vmi3002731 sshd[236378]: Failed password for invalid user ubuntu from 27.190.15.128 port 46864 ssh2
+  2026-01-28T17:50:20.359672+01:00 vmi3002731 sshd[236423]: Failed password for root from 47.236.83.35 port 37670 ssh2
+  ```
+- **Impact**: Potential compromise of system access if weak credentials are used. Increased load on SSH service and logs.
+- **Severity**: **High**
+- **First Occurrence**: `2026-01-28T17:29:53`
+
+---
+
+## 3. WARNINGS & ANOMALIES
+
+- **Repeated SSH Connection Attempts from Known IPs**:
+  - IP `194.60.231.42` and `47.236.83.35` appear multiple times attempting to log in as `root`.
+  - IPs `180.76.184.79` and `45.148.10.121` also show repeated attempts with different usernames.
+  - Frequency: **At least 10 failed login attempts** over 1.5 hours.
+
+- **Use of Common/Invalid Usernames**:
+  - Targeted users include: `ubuntu`, `cyrus`, `ed`, `admin`, `songhaixing15`, `limpa`.
+  - These are not standard system users, indicating probing behavior.
+
+- **Banner Exchange Errors**:
+  ```
+  2026-01-28T17:32:40.411841+01:00 vmi3002731 sshd[236366]: banner exchange: Connection from 80.94.95.221 port 65455: invalid format
+  ```
+  - Could indicate malformed or malicious SSH clients.
+
+---
+
+## 4. TIMELINE OF KEY EVENTS
+
+| Timestamp | Event Description | Source IP | User |
+|-----------|-------------------|-----------|------|
+| 17:29:53 | Failed root login | 45.249.247.124 | root |
+| 17:36:50 | Failed login for `ubuntu` | 27.190.15.128 | ubuntu |
+| 17:50:20 | Failed root login | 47.236.83.35 | root |
+| 18:02:50 | Failed login for `ubuntu` | 150.95.85.24 | ubuntu |
+| 18:12:11 | Failed login for `songhaixing15` | 194.60.231.42 | songhaixing15 |
+| 18:12:21 | Failed login for `admin` | 45.148.10.121 | admin |
+
+**Pattern**: Multiple IPs cycling through common usernames and `root`, indicating automated scanning.
+
+---
+
+## 5. SYSTEM HEALTH INDICATORS
+
+- **SSH Service**: Under repeated attack but **not compromised**.
+- **Cron Jobs**: Regular cron activity observed every 10 minutes, functioning normally.
+  ```
+  2026-01-28T17:35:01.079659+01:00 vmi3002731 CRON[236371]: pam_unix(cron:session): session opened for user root(uid=0) by root(uid=0)
+  ```
+- **System Access**: Only one legitimate `sudo` access by user `sj`:
+  ```
+  2026-01-28T17:28:50.041852+01:00 vmi3002731 sudo: sj : TTY=pts/0 ; PWD=/home/sj ; USER=root ; COMMAND=/usr/sbin/aa-logprof
+  ```
+
+---
+
+## 6. REMEDIATION PLAN
+
+### Immediate Actions
+
+- **Block malicious IPs** at the firewall or via `fail2ban`.
+- **Enforce SSH key-based authentication**; disable password-based login.
+- **Limit SSH access** to known IP ranges if possible.
+
+### Short-term Fix
+
+- Install and configure `fail2ban` to automatically block IPs after failed attempts.
+  ```bash
+  sudo apt install fail2ban
+  sudo systemctl enable fail2ban
+  sudo systemctl start fail2ban
+  ```
+
+### Long-term Solution
+
+- **Disable root login over SSH**:
+  ```bash
+  PermitRootLogin no
+  ```
+- **Use non-standard SSH port** (e.g., 2222).
+- **Implement two-factor authentication (2FA)** for SSH.
+
+### Code/Config Changes
+
+- Update `/etc/ssh/sshd_config`:
+  ```bash
+  PasswordAuthentication no
+  PermitRootLogin no
+  Port 2222
+  ```
+
+### Monitoring Recommendations
+
+- Set up alerts for:
+  - More than 5 SSH failed login attempts in 1 minute.
+  - New SSH connections from unknown IPs.
+- Use tools like `fail2ban`, `logwatch`, or centralized logging with **ELK Stack** or **Splunk**.
+
+---
+
+## 7. PREVENTIVE MEASURES
+
+- **Architectural Improvements**:
+  - Place SSH behind a **bastion host** or **VPN**.
+  - Use **cloud security groups** to restrict SSH access.
+
+- **Logging Enhancements**:
+  - Include **GeoIP data** in logs to identify attack origins.
+  - Log **successful logins** with user session details.
+
+- **Testing Gaps**:
+  - Regular **penetration testing** for SSH exposure.
+  - Simulate brute-force attacks to test `fail2ban` rules.
+
+---
+
+## 8. MISSING INFORMATION
+
+- **No audit logs** for file access or privilege escalation.
+- **No performance metrics** (CPU, memory, disk I/O) to assess load from attacks.
+- **No centralized logging or alerting system** is evident from logs.
+- **No indication of system uptime or reboot events**.
+
+---
+
+## Conclusion
+
+While the system is not currently compromised, the logs clearly show **active and persistent SSH brute-force attempts**. Immediate action should be taken to **harden SSH access** and **implement automated blocking mechanisms**. The system is otherwise stable, with normal cron activity and no signs of internal failure or exploitation.

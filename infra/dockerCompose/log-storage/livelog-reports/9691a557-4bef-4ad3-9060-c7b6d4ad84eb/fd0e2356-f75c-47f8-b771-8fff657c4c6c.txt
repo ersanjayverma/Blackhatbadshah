@@ -1,0 +1,92 @@
+﻿# Log Analysis Report
+
+## 1. EXECUTIVE SUMMARY
+
+The analyzed logs from `2026-01-28T20:15:39` to `2026-01-29T01:29:29` reveal a system under **sustained brute-force SSH attack attempts**. There are **no critical system failures or crashes** detected, indicating overall system stability. However, **over 300 unauthorized SSH login attempts** from numerous IP addresses were recorded, targeting both common user accounts and the `root` user. The most concerning pattern is the **repeated targeting of default service accounts** (e.g., `solana`, `msq`, `rustserver`), suggesting automated bot activity. While all attempts were successfully blocked, this represents a **high-risk security exposure** that requires immediate attention.
+
+## 2. CRITICAL ISSUES
+
+### Issue: Sustained Brute-Force SSH Attack
+- **Root Cause**: Automated bots are systematically attempting to gain unauthorized SSH access using common usernames and weak passwords.
+- **Evidence**:
+    - `2026-01-28T20:15:39.171717+01:00 vmi3002731 sshd[240897]: Invalid user solana from 80.94.92.168 port 56874`
+    - `2026-01-28T20:15:40.120988+01:00 vmi3002731 sshd[240899]: Failed password for invalid user msq from 51.255.70.56 port 38140 ssh2`
+    - `2026-01-28T20:15:40.606416+01:00 vmi3002731 sshd[240895]: Failed password for root from 150.95.85.24 port 54050 ssh2`
+    - (This pattern repeats for hundreds of lines with different IPs and usernames).
+- **Impact**: High risk of a security breach if a weak password is used or if an unknown vulnerability is exploited. Consumes system resources and generates noise in logs.
+- **Severity**: High
+- **First Occurrence**: `2026-01-28T20:15:39`
+
+## 3. WARNINGS & ANOMALIES
+
+- **Repeated Targeting of Service Accounts**: Usernames like `solana`, `rustserver`, `gmodserver`, `ts3serv`, `starbound` are frequently targeted, indicating attackers are probing for misconfigured game or blockchain services.
+- **High Volume of Failed Logins**: Over 300 failed login attempts were recorded in a 5-hour period.
+- **Geographically Diverse Attack Sources**: IPs from numerous countries (e.g., China, USA, Russia, France) are involved, suggesting a distributed attack.
+- **Repeated Attempts on `root`**: The `root` user is a direct target in multiple attempts (e.g., `2026-01-28T20:15:40`, `2026-01-28T21:07:13`, `2026-01-29T01:08:30`), which is a critical security concern.
+- **Use of `preauth` Disconnects**: Many connections are closed with `[preauth]`, indicating the system is rejecting connections before they can fully authenticate, which is good but still consumes resources.
+
+## 4. TIMELINE OF KEY EVENTS
+
+| Time (CET) | Event Description | Source IP | Target User |
+| :--- | :--- | :--- | :--- |
+| `2026-01-28T20:15:39` | First invalid user attempt (`solana`) | `80.94.92.168` | `solana` |
+| `2026-01-28T20:15:40` | First `root` login attempt | `150.95.85.24` | `root` |
+| `2026-01-28T20:17:48` | Invalid user `ken` | `122.53.133.167` | `ken` |
+| `2026-01-28T20:26:26` | **Burst Attack**: 5 invalid users from single IP | `62.171.134.145` | `xiongpm25`, `park`, `org`, `svnuser` |
+| `2026-01-28T21:15:09` | Invalid user `prof` | `12.156.67.18` | `prof` |
+| `2026-01-28T22:18:12` | Invalid user `db2inst1` | `45.119.81.249` | `db2inst1` |
+| `2026-01-29T01:11:38` | **Successful Login** | `49.43.106.119` | `sj` |
+| `2026-01-29T01:12:56` | Invalid user `user` | `185.191.141.55` | `user` |
+| `2026-01-29T01:29:27` | Invalid user `sftptest` | `45.78.216.212` | `sftptest` |
+
+## 5. SYSTEM HEALTH INDICATORS
+
+- **Authentication Success Rate**: Very low for external users; one successful login for a valid user (`sj`).
+- **Authentication Failure Rate**: Extremely high for brute-force targets.
+- **Resource Utilization**: Not directly visible in logs, but sustained SSH connection attempts can increase CPU and network load.
+- **Service Availability**: No indication of service disruption; the `sshd` service appears to be handling the load and rejecting invalid attempts correctly.
+
+## 6. REMEDIATION PLAN
+
+### For Brute-Force SSH Attacks:
+- **Immediate Actions**:
+    - Verify the successful login by user `sj` was legitimate.
+    - Review and enforce strong password policies for all users.
+- **Short-term Fix**:
+    - Implement `fail2ban` to automatically block IPs after a few failed attempts.
+    - Configure `ufw` or `iptables` to rate-limit SSH connections (e.g., max 3 connections/minute per IP).
+    - Change the default SSH port (22) to a non-standard port.
+- **Long-term Solution**:
+    - Disable password authentication entirely; use **SSH key-based authentication** only.
+    - Implement multi-factor authentication (MFA) for SSH access if password auth must be used.
+    - Restrict SSH access to specific, trusted IP addresses via firewall rules.
+- **Code/Config Changes**:
+    - Edit `/etc/ssh/sshd_config`:
+        - Set `PasswordAuthentication no`
+        - Set `PermitRootLogin no`
+        - Set `Port <non-standard-port>`
+    - Install and configure `fail2ban` with an `[sshd]` jail.
+- **Monitoring Recommendations**:
+    - Set up alerts for:
+        - Multiple failed SSH login attempts from a single IP within a short time.
+        - Successful logins from new or unusual IP addresses.
+        - Any login by the `root` user.
+
+## 7. PREVENTIVE MEASURES
+
+- **Architectural Improvements**:
+    - Place the server behind a VPN for administrative access.
+    - Use a bastion host or jump server for SSH access.
+- **Additional Logging/Monitoring**:
+    - Integrate logs with a centralized SIEM (e.g., ELK Stack, Splunk) for real-time analysis and correlation.
+    - Monitor for logins during off-hours or from geographically unexpected locations.
+- **Testing Gaps**:
+    - Conduct regular penetration testing to identify and fix potential vulnerabilities.
+    - Perform security audits on user accounts and SSH configurations.
+
+## 8. MISSING INFORMATION
+
+- **Resource Metrics**: Logs do not contain CPU, memory, or network usage data, which would be helpful to determine the performance impact of the attack.
+- **Geolocation Data**: IP address geolocation is not logged, making it harder to assess the geographic distribution of attacks at a glance.
+- **`fail2ban` Logs**: There is no evidence of `fail2ban` being active, which is a common and recommended defense. Its logs would show if IPs were being banned.
+- **User `sj` Activity**: The logs show a successful login for `sj` but provide no details on what actions were taken afterward during that session.

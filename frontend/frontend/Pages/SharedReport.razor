@@ -1,0 +1,289 @@
+@page "/shared/{Token}"
+@using shared.Dto
+@using frontend.Services
+@using Markdig
+@inject ShareService ShareService
+@inject IJSRuntime JS
+
+<div class="container py-5">
+    @if (_loading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;"></div>
+            <p class="fw-semibold">Loading shared report...</p>
+        </div>
+    }
+    else if (_requiresPassword)
+    {
+        <div class="row justify-content-center">
+            <div class="col-md-6">
+                <div class="card modern-card shadow-lg">
+                    <div class="card-header gradient-header">
+                        <h5 class="mb-0"><i class="bi bi-lock me-2"></i>Password Protected Report</h5>
+                    </div>
+                    <div class="card-body p-4">
+                        <p class="mb-3">This report is password protected. Please enter the password to view.</p>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Password</label>
+                            <input type="password" class="form-control" @bind="_password" @onkeyup="HandleKeyPress" placeholder="Enter password" />
+                        </div>
+                        @if (!string.IsNullOrEmpty(_error))
+                        {
+                            <div class="alert alert-danger">
+                                <i class="bi bi-exclamation-triangle me-2"></i>@_error
+                            </div>
+                        }
+                        <button class="btn btn-primary w-100" @onclick="AccessWithPassword" disabled="@_submitting">
+                            @if (_submitting)
+                            {
+                                <span class="spinner-border spinner-border-sm me-2"></span>
+                            }
+                            <i class="bi bi-unlock me-2"></i>Unlock Report
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+    else if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <div class="alert alert-danger shadow-sm">
+                    <h4 class="alert-heading"><i class="bi bi-exclamation-triangle me-2"></i>Unable to Access Report</h4>
+                    <p class="mb-0">@_error</p>
+                </div>
+                <div class="text-center mt-4">
+                    <a href="/" class="btn btn-primary"><i class="bi bi-house me-2"></i>Go to Home</a>
+                </div>
+            </div>
+        </div>
+    }
+    else if (_report != null)
+    {
+        <div class="card modern-card shadow-lg">
+            <div class="card-header gradient-header-dark d-flex justify-content-between align-items-center">
+                <div>
+                    <h4 class="mb-1">@_report.Title</h4>
+                    <small class="text-light">
+                        <i class="bi bi-calendar me-1"></i>@_report.CreatedAtUtc.ToLocalTime().ToString("f")
+                        @if (!string.IsNullOrEmpty(_report.FileName))
+                        {
+                            <span class="ms-3"><i class="bi bi-file-earmark me-1"></i>@_report.FileName</span>
+                        }
+                        @if (!string.IsNullOrEmpty(_report.Model))
+                        {
+                            <span class="ms-3"><i class="bi bi-cpu me-1"></i>@_report.Model</span>
+                        }
+                    </small>
+                </div>
+                <div>
+                    <button class="btn btn-light" @onclick="DownloadPdf" disabled="@_downloading">
+                        @if (_downloading)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2"></span>
+                        }
+                        <i class="bi bi-download me-1"></i>Download PDF
+                    </button>
+                </div>
+            </div>
+            <div class="card-body report-content">
+                @_reportContent
+
+                @if (_chartData != null)
+                {
+                    <div class="mt-4">
+                        <h6 class="fw-bold mb-3"><i class="bi bi-bar-chart me-2"></i>Visualization</h6>
+                        <div class="chart-container">
+                            <canvas id="reportChart"></canvas>
+                        </div>
+                    </div>
+                }
+            </div>
+            <div class="card-footer bg-light text-center text-muted small">
+                <i class="bi bi-shield-check me-1"></i>Shared via BlackHatBadshah Log Analyzer
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .report-content {
+        max-height: 80vh;
+        overflow-y: auto;
+    }
+    .report-content pre {
+        background: #1e1e1e;
+        color: #ddd;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        overflow-x: auto;
+    }
+    .report-content code {
+        background: rgba(0,0,0,0.1);
+        padding: 0.2rem 0.4rem;
+        border-radius: 0.25rem;
+    }
+    .chart-container {
+        min-height: 300px;
+    }
+</style>
+
+@code {
+    [Parameter] public string? Token { get; set; }
+
+    private bool _loading = true;
+    private bool _submitting = false;
+    private bool _downloading = false;
+    private bool _requiresPassword = false;
+    private string _password = "";
+    private string? _error;
+    private ReportDetail? _report;
+    private MarkupString _reportContent;
+    private object? _chartData;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (string.IsNullOrEmpty(Token))
+        {
+            _error = "Invalid share link";
+            _loading = false;
+            return;
+        }
+
+        await LoadReport();
+    }
+
+    private async Task LoadReport(string? password = null)
+    {
+        _loading = true;
+        _error = null;
+        StateHasChanged();
+
+        try
+        {
+            var response = await ShareService.AccessSharedReportAsync(Token!, password);
+
+            if (response.RequiresPassword)
+            {
+                _requiresPassword = true;
+            }
+            else if (!response.Success)
+            {
+                _error = response.Error ?? "Failed to access report";
+            }
+            else if (response.Report != null)
+            {
+                _report = response.Report;
+                _reportContent = new MarkupString(ConvertToHtml(response.Report.Content));
+
+                if (!string.IsNullOrWhiteSpace(response.Report.ChartData))
+                {
+                    try
+                    {
+                        _chartData = System.Text.Json.JsonSerializer.Deserialize<object>(response.Report.ChartData);
+                    }
+                    catch { }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+
+        if (_chartData != null)
+        {
+            await Task.Delay(100);
+            await RenderChart();
+        }
+    }
+
+    private async Task AccessWithPassword()
+    {
+        if (string.IsNullOrWhiteSpace(_password)) return;
+
+        _submitting = true;
+        _error = null;
+        StateHasChanged();
+
+        try
+        {
+            var response = await ShareService.AccessSharedReportAsync(Token!, _password);
+
+            if (!response.Success)
+            {
+                _error = response.Error ?? "Invalid password";
+            }
+            else if (response.Report != null)
+            {
+                _requiresPassword = false;
+                _report = response.Report;
+                _reportContent = new MarkupString(ConvertToHtml(response.Report.Content));
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _submitting = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleKeyPress(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await AccessWithPassword();
+        }
+    }
+
+    private async Task DownloadPdf()
+    {
+        _downloading = true;
+        StateHasChanged();
+
+        try
+        {
+            var url = string.IsNullOrEmpty(_password)
+                ? $"https://api.blackhatbadshah.com/api/share/{Token}/download"
+                : $"https://api.blackhatbadshah.com/api/share/{Token}/download?password={Uri.EscapeDataString(_password)}";
+
+            await JS.InvokeVoidAsync("open", url, "_blank");
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _downloading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RenderChart()
+    {
+        if (_chartData == null) return;
+        try
+        {
+            await JS.InvokeVoidAsync("renderChart", _chartData);
+        }
+        catch { }
+    }
+
+    private string ConvertToHtml(string markdown)
+    {
+        if (string.IsNullOrWhiteSpace(markdown)) return string.Empty;
+        var pipeline = new MarkdownPipelineBuilder().UseAdvancedExtensions().DisableHtml().Build();
+        return Markdown.ToHtml(markdown, pipeline);
+    }
+}

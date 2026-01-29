@@ -1,0 +1,570 @@
+@page "/settings"
+@using Microsoft.AspNetCore.Components.Authorization
+@using shared.Dto
+@using frontend.Services
+@inject UserSettingsService SettingsService
+@inject ActivityService ActivityService
+@inject TagService TagService
+@inject BookmarkService BookmarkService
+@inject ToastService Toast
+@inject IJSRuntime JS
+
+<AuthorizeView>
+    <Authorized>
+        <div class="container-fluid px-4 py-4">
+
+            <!-- HEADER -->
+            <div class="d-flex justify-content-between align-items-center flex-wrap mb-4">
+                <div>
+                    <h2 class="mb-1 fw-bold text-gradient">
+                        <i class="bi bi-gear me-2"></i>Settings
+                    </h2>
+                    <p class="mb-0">Manage your account settings and preferences</p>
+                </div>
+            </div>
+
+            <!-- TAB NAVIGATION -->
+            <ul class="nav nav-tabs mb-4" role="tablist">
+                <li class="nav-item">
+                    <button class="nav-link @(_activeTab == "notifications" ? "active" : "")"
+                            @onclick="@(() => SetActiveTab("notifications"))">
+                        <i class="bi bi-bell me-1"></i>Notifications
+                    </button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link @(_activeTab == "tags" ? "active" : "")"
+                            @onclick="@(() => SetActiveTab("tags"))">
+                        <i class="bi bi-tags me-1"></i>Tags (@_tags.Count)
+                    </button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link @(_activeTab == "bookmarks" ? "active" : "")"
+                            @onclick="@(() => SetActiveTab("bookmarks"))">
+                        <i class="bi bi-bookmark me-1"></i>Bookmarks (@_bookmarks.Count)
+                    </button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link @(_activeTab == "activity" ? "active" : "")"
+                            @onclick="@(() => SetActiveTab("activity"))">
+                        <i class="bi bi-clock-history me-1"></i>Activity Log
+                    </button>
+                </li>
+            </ul>
+
+            @if (_loading)
+            {
+                <div class="text-center py-5">
+                    <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;"></div>
+                    <p class="fw-semibold">Loading settings...</p>
+                </div>
+            }
+            else
+            {
+                <!-- NOTIFICATIONS TAB -->
+                @if (_activeTab == "notifications")
+                {
+                    <div class="card modern-card shadow-lg">
+                        <div class="card-header gradient-header-dark">
+                            <h5 class="mb-0"><i class="bi bi-bell me-2"></i>Notification Preferences</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6 class="fw-bold mb-3">Email Notifications</h6>
+
+                                    <div class="form-check form-switch mb-3">
+                                        <input class="form-check-input" type="checkbox" id="emailAnalysisComplete"
+                                               checked="@_prefs.EmailOnAnalysisComplete"
+                                               @onchange="@(e => UpdatePref(p => p.EmailOnAnalysisComplete = (bool?)e.Value))">
+                                        <label class="form-check-label" for="emailAnalysisComplete">
+                                            Email when analysis completes
+                                        </label>
+                                    </div>
+
+                                    <div class="form-check form-switch mb-3">
+                                        <input class="form-check-input" type="checkbox" id="emailAnalysisFailed"
+                                               checked="@_prefs.EmailOnAnalysisFailed"
+                                               @onchange="@(e => UpdatePref(p => p.EmailOnAnalysisFailed = (bool?)e.Value))">
+                                        <label class="form-check-label" for="emailAnalysisFailed">
+                                            Email when analysis fails
+                                        </label>
+                                    </div>
+
+                                    <div class="form-check form-switch mb-3">
+                                        <input class="form-check-input" type="checkbox" id="emailWorkerOffline"
+                                               checked="@_prefs.EmailOnWorkerOffline"
+                                               @onchange="@(e => UpdatePref(p => p.EmailOnWorkerOffline = (bool?)e.Value))">
+                                        <label class="form-check-label" for="emailWorkerOffline">
+                                            Email when worker goes offline
+                                        </label>
+                                    </div>
+
+                                    <div class="form-check form-switch mb-3">
+                                        <input class="form-check-input" type="checkbox" id="dailySummary"
+                                               checked="@_prefs.DailySummaryEmail"
+                                               @onchange="@(e => UpdatePref(p => p.DailySummaryEmail = (bool?)e.Value))">
+                                        <label class="form-check-label" for="dailySummary">
+                                            Daily summary email
+                                        </label>
+                                    </div>
+
+                                    <div class="form-check form-switch mb-3">
+                                        <input class="form-check-input" type="checkbox" id="weeklySummary"
+                                               checked="@_prefs.WeeklySummaryEmail"
+                                               @onchange="@(e => UpdatePref(p => p.WeeklySummaryEmail = (bool?)e.Value))">
+                                        <label class="form-check-label" for="weeklySummary">
+                                            Weekly summary email
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div class="col-md-6">
+                                    <h6 class="fw-bold mb-3">In-App Notifications</h6>
+
+                                    <div class="form-check form-switch mb-3">
+                                        <input class="form-check-input" type="checkbox" id="inAppNotifications"
+                                               checked="@_prefs.InAppNotifications"
+                                               @onchange="@(e => UpdatePref(p => p.InAppNotifications = (bool?)e.Value))">
+                                        <label class="form-check-label" for="inAppNotifications">
+                                            Show in-app notifications
+                                        </label>
+                                    </div>
+
+                                    <div class="form-check form-switch mb-3">
+                                        <input class="form-check-input" type="checkbox" id="browserPush"
+                                               checked="@_prefs.BrowserPushNotifications"
+                                               @onchange="@(e => UpdatePref(p => p.BrowserPushNotifications = (bool?)e.Value))">
+                                        <label class="form-check-label" for="browserPush">
+                                            Browser push notifications
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            @if (_savingPrefs)
+                            {
+                                <div class="text-center mt-3">
+                                    <span class="spinner-border spinner-border-sm me-2"></span>
+                                    Saving...
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+
+                <!-- TAGS TAB -->
+                @if (_activeTab == "tags")
+                {
+                    <div class="card modern-card shadow-lg">
+                        <div class="card-header gradient-header-dark d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0"><i class="bi bi-tags me-2"></i>Your Tags</h5>
+                            <button class="btn btn-sm btn-light" @onclick="ShowCreateTagModal">
+                                <i class="bi bi-plus-lg me-1"></i>New Tag
+                            </button>
+                        </div>
+                        <div class="card-body">
+                            @if (_tags.Count == 0)
+                            {
+                                <div class="text-center py-4">
+                                    <i class="bi bi-tags display-3 text-muted mb-3"></i>
+                                    <h5>No tags created yet</h5>
+                                    <p class="text-muted">Create tags to organize your logs</p>
+                                    <button class="btn btn-primary" @onclick="ShowCreateTagModal">
+                                        <i class="bi bi-plus-lg me-1"></i>Create First Tag
+                                    </button>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="d-flex flex-wrap gap-2">
+                                    @foreach (var tag in _tags)
+                                    {
+                                        <div class="badge p-2 d-flex align-items-center gap-2" style="background-color: @tag.Color; font-size: 1rem;">
+                                            @tag.Name
+                                            <button class="btn btn-sm p-0 text-white" @onclick="() => DeleteTag(tag.Id)" style="line-height: 1;">
+                                                <i class="bi bi-x"></i>
+                                            </button>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+
+                <!-- BOOKMARKS TAB -->
+                @if (_activeTab == "bookmarks")
+                {
+                    <div class="card modern-card shadow-lg">
+                        <div class="card-header gradient-header-dark">
+                            <h5 class="mb-0"><i class="bi bi-bookmark me-2"></i>Bookmarked Logs</h5>
+                        </div>
+                        <div class="card-body p-0">
+                            @if (_bookmarks.Count == 0)
+                            {
+                                <div class="text-center py-5">
+                                    <i class="bi bi-bookmark display-3 text-muted mb-3"></i>
+                                    <h5>No bookmarks yet</h5>
+                                    <p class="text-muted">Bookmark important logs from the Log Center</p>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="table-responsive">
+                                    <table class="table table-hover mb-0 modern-table">
+                                        <thead>
+                                            <tr>
+                                                <th>File Name</th>
+                                                <th>Note</th>
+                                                <th>Size</th>
+                                                <th>Bookmarked</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var bookmark in _bookmarks)
+                                            {
+                                                <tr>
+                                                    <td class="fw-semibold">@bookmark.FileName</td>
+                                                    <td>@(bookmark.Note ?? "-")</td>
+                                                    <td>@FormatSize(bookmark.SizeBytes)</td>
+                                                    <td>@bookmark.BookmarkedAt.ToLocalTime().ToString("g")</td>
+                                                    <td>
+                                                        <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveBookmark(bookmark.Id)">
+                                                            <i class="bi bi-trash"></i>
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+
+                <!-- ACTIVITY TAB -->
+                @if (_activeTab == "activity")
+                {
+                    <div class="card modern-card shadow-lg">
+                        <div class="card-header gradient-header-dark d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0"><i class="bi bi-clock-history me-2"></i>Activity Log</h5>
+                            @if (_activities.Count > 0)
+                            {
+                                <button class="btn btn-sm btn-outline-danger" @onclick="ClearActivity">
+                                    <i class="bi bi-trash me-1"></i>Clear All
+                                </button>
+                            }
+                        </div>
+                        <div class="card-body p-0">
+                            @if (_activities.Count == 0)
+                            {
+                                <div class="text-center py-5">
+                                    <i class="bi bi-clock-history display-3 text-muted mb-3"></i>
+                                    <h5>No activity recorded yet</h5>
+                                    <p class="text-muted">Your activities will appear here</p>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="table-responsive">
+                                    <table class="table table-hover mb-0 modern-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Activity</th>
+                                                <th>Description</th>
+                                                <th>Time</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var activity in _activities)
+                                            {
+                                                <tr>
+                                                    <td>
+                                                        <span class="badge @GetActivityBadgeClass(activity.ActivityType)">
+                                                            @activity.ActivityType
+                                                        </span>
+                                                    </td>
+                                                    <td>@activity.Description</td>
+                                                    <td>@activity.CreatedAt.ToLocalTime().ToString("g")</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                @if (_activityResponse.TotalPages > 1)
+                                {
+                                    <div class="d-flex justify-content-center p-3">
+                                        <nav>
+                                            <ul class="pagination mb-0">
+                                                <li class="page-item @(_activityPage <= 1 ? "disabled" : "")">
+                                                    <button class="page-link" @onclick="() => LoadActivities(_activityPage - 1)">Previous</button>
+                                                </li>
+                                                <li class="page-item disabled">
+                                                    <span class="page-link">Page @_activityPage of @_activityResponse.TotalPages</span>
+                                                </li>
+                                                <li class="page-item @(_activityPage >= _activityResponse.TotalPages ? "disabled" : "")">
+                                                    <button class="page-link" @onclick="() => LoadActivities(_activityPage + 1)">Next</button>
+                                                </li>
+                                            </ul>
+                                        </nav>
+                                    </div>
+                                }
+                            }
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+
+        <!-- CREATE TAG MODAL -->
+        @if (_showCreateTagModal)
+        {
+            <div class="custom-modal-backdrop" @onclick="HideCreateTagModal"></div>
+            <div class="custom-modal">
+                <div class="custom-modal-dialog custom-modal-dialog-sm">
+                    <div class="custom-modal-content">
+                        <div class="custom-modal-header">
+                            <h5 class="custom-modal-title"><i class="bi bi-tag me-2"></i>Create Tag</h5>
+                            <button class="custom-modal-close" @onclick="HideCreateTagModal"><i class="bi bi-x-lg"></i></button>
+                        </div>
+                        <div class="custom-modal-body">
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">Tag Name</label>
+                                <input type="text" class="form-control" @bind="_newTagName" placeholder="Enter tag name" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">Color</label>
+                                <div class="d-flex gap-2 flex-wrap">
+                                    @foreach (var color in _tagColors)
+                                    {
+                                        <button type="button"
+                                                class="btn rounded-circle p-3 @(_newTagColor == color ? "border-3 border-dark" : "")"
+                                                style="background-color: @color; width: 40px; height: 40px;"
+                                                @onclick="() => _newTagColor = color">
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                        <div class="custom-modal-footer">
+                            <button class="btn btn-secondary" @onclick="HideCreateTagModal">Cancel</button>
+                            <button class="btn btn-primary" @onclick="CreateTag" disabled="@string.IsNullOrWhiteSpace(_newTagName)">
+                                <i class="bi bi-plus-lg me-1"></i>Create
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+    </Authorized>
+    <NotAuthorized>
+        <div class="container mt-5">
+            <div class="alert alert-warning shadow-sm">
+                <i class="bi bi-lock me-2"></i>You must be logged in to access Settings.
+            </div>
+        </div>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    private string _activeTab = "notifications";
+    private bool _loading = true;
+    private bool _savingPrefs = false;
+
+    // Notification preferences
+    private NotificationPreferenceDto _prefs = new();
+
+    // Tags
+    private List<TagDto> _tags = new();
+    private bool _showCreateTagModal = false;
+    private string _newTagName = "";
+    private string _newTagColor = "#6c757d";
+    private readonly string[] _tagColors = { "#dc3545", "#fd7e14", "#ffc107", "#28a745", "#20c997", "#17a2b8", "#0d6efd", "#6610f2", "#6c757d", "#343a40" };
+
+    // Bookmarks
+    private List<BookmarkDto> _bookmarks = new();
+
+    // Activity
+    private List<ActivityLogDto> _activities = new();
+    private ActivityLogListResponse _activityResponse = new();
+    private int _activityPage = 1;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        _loading = true;
+        try
+        {
+            var prefsTask = SettingsService.GetNotificationPreferencesAsync();
+            var tagsTask = TagService.GetTagsAsync();
+            var bookmarksTask = BookmarkService.GetBookmarksAsync();
+            var activitiesTask = ActivityService.GetActivitiesAsync(page: 1, pageSize: 20);
+
+            await Task.WhenAll(prefsTask, tagsTask, bookmarksTask, activitiesTask);
+
+            _prefs = await prefsTask;
+            _tags = await tagsTask;
+            _bookmarks = await bookmarksTask;
+            _activityResponse = await activitiesTask;
+            _activities = _activityResponse.Items;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to load settings: {ex.Message}");
+            Toast.ShowError("Failed to load settings");
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void SetActiveTab(string tab)
+    {
+        _activeTab = tab;
+    }
+
+    private async Task UpdatePref(Action<UpdateNotificationPreferenceRequest> configure)
+    {
+        _savingPrefs = true;
+        StateHasChanged();
+
+        try
+        {
+            var request = new UpdateNotificationPreferenceRequest();
+            configure(request);
+            _prefs = await SettingsService.UpdateNotificationPreferencesAsync(request);
+            Toast.ShowSuccess("Preferences saved");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to save: {ex.Message}");
+        }
+        finally
+        {
+            _savingPrefs = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ShowCreateTagModal()
+    {
+        _newTagName = "";
+        _newTagColor = "#6c757d";
+        _showCreateTagModal = true;
+    }
+
+    private void HideCreateTagModal()
+    {
+        _showCreateTagModal = false;
+    }
+
+    private async Task CreateTag()
+    {
+        if (string.IsNullOrWhiteSpace(_newTagName)) return;
+
+        try
+        {
+            var tag = await TagService.CreateTagAsync(new CreateTagRequest
+            {
+                Name = _newTagName,
+                Color = _newTagColor
+            });
+            _tags.Add(tag);
+            HideCreateTagModal();
+            Toast.ShowSuccess("Tag created");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to create tag: {ex.Message}");
+        }
+    }
+
+    private async Task DeleteTag(Guid id)
+    {
+        try
+        {
+            await TagService.DeleteTagAsync(id);
+            _tags.RemoveAll(t => t.Id == id);
+            Toast.ShowSuccess("Tag deleted");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to delete tag: {ex.Message}");
+        }
+    }
+
+    private async Task RemoveBookmark(Guid id)
+    {
+        try
+        {
+            await BookmarkService.RemoveBookmarkAsync(id);
+            _bookmarks.RemoveAll(b => b.Id == id);
+            Toast.ShowSuccess("Bookmark removed");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to remove bookmark: {ex.Message}");
+        }
+    }
+
+    private async Task LoadActivities(int page)
+    {
+        try
+        {
+            _activityPage = page;
+            _activityResponse = await ActivityService.GetActivitiesAsync(page: page, pageSize: 20);
+            _activities = _activityResponse.Items;
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to load activities: {ex.Message}");
+        }
+    }
+
+    private async Task ClearActivity()
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm", "Are you sure you want to clear all activity logs?");
+        if (!confirmed) return;
+
+        try
+        {
+            await ActivityService.ClearActivityAsync();
+            _activities.Clear();
+            _activityResponse = new();
+            Toast.ShowSuccess("Activity log cleared");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to clear activity: {ex.Message}");
+        }
+    }
+
+    private string GetActivityBadgeClass(string type) => type switch
+    {
+        "LogUpload" => "bg-primary",
+        "LogDelete" => "bg-danger",
+        "LogAnalyze" => "bg-info",
+        "ReportGenerated" => "bg-success",
+        "ReportDownload" => "bg-secondary",
+        "ReportDelete" => "bg-danger",
+        "ShareLinkCreated" => "bg-warning",
+        "WorkerRegistered" => "bg-primary",
+        _ => "bg-secondary"
+    };
+
+    private static string FormatSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        return $"{bytes / (1024.0 * 1024.0):F1} MB";
+    }
+}

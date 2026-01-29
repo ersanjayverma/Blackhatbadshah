@@ -1,0 +1,91 @@
+﻿# Fail2Ban Log Analysis Report
+
+## 1. EXECUTIVE SUMMARY
+
+The log covers a 5-hour period from **2026-01-29 09:16:45 to 15:37:15**, showing **extensive brute-force SSH attempts** and **nginx bad request attacks**. The system is under **moderate to high security pressure** with **40+ unique IP addresses banned** for SSH attempts and **5+ IPs banned** for bad HTTP requests. Fail2Ban is functioning correctly, detecting and banning malicious IPs with appropriate escalation. **No system failures or crashes** were observed.
+
+## 2. CRITICAL ISSUES
+
+**Issue**: **Repeated Fail2Ban Service Restarts**
+- **Root Cause**: Manual intervention or automatic restart mechanism triggered multiple times
+- **Evidence**:
+  - `2026-01-29 13:48:05,444 fail2ban.server [226897]: INFO Shutdown in progress...`
+  - `2026-01-29 13:48:23,033 fail2ban.server [829]: INFO Starting Fail2ban v1.0.2`
+  - `2026-01-29 13:51:52,591 fail2ban.server [754]: INFO Starting Fail2ban v1.0.2`
+  - `2026-01-29 13:55:53,583 fail2ban.server [756]: INFO Starting Fail2ban v1.0.2`
+- **Impact**: Potential brief security gaps during restarts; indicates operational instability
+- **Severity**: **High**
+- **First Occurrence**: 13:48:05
+
+## 3. WARNINGS & ANOMALIES
+
+- **High Volume SSH Attacks**: 40+ IPs banned within 5 hours indicates a coordinated or persistent attack campaign
+- **Repeated Targeting**: IPs like `194.60.231.42` and `51.255.70.56` appear multiple times, suggesting they are part of a persistent attack botnet
+- **Escalating Ban Times**: IPs like `185.196.8.6`, `51.222.27.246`, and `51.89.1.86` show ban time escalation from 2 hours to 8 hours, indicating repeated offenses
+- **Nginx Bad Request Flood**: Multiple IPs banned for bad requests (`48.214.144.100`, `139.99.52.209`, `157.245.98.43`), suggesting potential web scraping or vulnerability probing
+
+## 4. TIMELINE OF KEY EVENTS
+
+| Time | Event | Details |
+| :--- | :--- | :--- |
+| **09:16 - 10:30** | **Initial SSH Attack Surge** | 20+ IPs banned within the first hour. Notable IPs: `197.5.145.150`, `23.236.169.182`, `185.196.8.6` (escalated ban) |
+| **10:39** | **Ban Escalation Begins** | `51.222.27.246` ban time increased to 8 hours |
+| **12:14** | **Ban Escalation Continues** | `139.59.33.34` ban time increased to 8 hours |
+| **12:22** | **Ban Escalation for SSH** | `51.89.1.86` ban time increased to 8 hours |
+| **13:48** | **First Fail2Ban Restart** | Manual or automatic restart |
+| **13:51** | **Second Fail2Ban Restart** | System restarted again |
+| **13:55** | **Third Fail2Ban Restart** | Final restart in the log |
+| **14:53** | **Nginx Bad Request Attacks** | IPs `139.99.52.209` and `157.245.98.43` banned for bad requests |
+
+## 5. SYSTEM HEALTH INDICATORS
+
+- **Security Posture**: **Under Active Attack** - High volume of intrusion attempts detected and mitigated
+- **Fail2Ban Performance**: **Functioning Correctly** - Successfully identifying and banning malicious IPs with appropriate escalation
+- **Resource Utilization**: **Implied High** - Frequent log parsing and ban actions suggest potential CPU/memory spikes during attack peaks
+- **Success Rate**: **High for Detection** - Nearly all malicious attempts resulted in bans. **Low for Prevention** - Attackers are persistent and require continuous mitigation
+
+## 6. REMEDIATION PLAN
+
+### Issue: Repeated Fail2Ban Restarts
+
+- **Immediate Actions**:
+  - Check system logs (`/var/log/syslog`, `journalctl`) for reasons behind the restarts (OOM killer, manual intervention, etc.)
+  - Monitor Fail2Ban process health with a process monitoring tool
+- **Short-term Fix**:
+  - Implement a systemd service restart limit to prevent excessive restarts (e.g., `StartLimitBurst=3` in the service file)
+  - Add monitoring for Fail2Ban process status
+- **Long-term Solution**:
+  - Investigate and resolve the root cause of the restarts (configuration issues, resource constraints)
+  - Implement centralized logging for Fail2Ban events for better auditability
+- **Code/Config Changes**:
+  - Review `/etc/systemd/system/fail2ban.service` for restart policies
+  - Example addition:
+    ```ini
+    [Service]
+    ...
+    Restart=on-failure
+    StartLimitIntervalSec=60
+    StartLimitBurst=3
+    ```
+- **Monitoring Recommendations**:
+  - Set up alerts for Fail2Ban service restarts (more than 2 in 10 minutes)
+  - Monitor Fail2Ban's own logs for "Shutdown" and "Starting" events
+
+## 7. PREVENTIVE MEASURES
+
+- **Architectural Improvements**:
+  - Consider implementing **network-level filtering** (e.g., iptables rules or cloud firewall rules) for known malicious IP ranges to reduce load on Fail2Ban
+  - **Rate-limiting** at the network level for SSH connections (e.g., allow only N connections per minute from a single IP)
+- **Additional Logging/Monitoring**:
+  - Integrate Fail2Ban logs with a **SIEM** for correlation with other security events
+  - Set up dashboards to visualize attack frequency, banned IPs, and geographical distribution
+- **Testing Gaps**:
+  - Regular **penetration testing** to ensure Fail2Ban rules are effective against evolving attack patterns
+  - **Chaos engineering** to test Fail2Ban's resilience under extreme load
+
+## 8. MISSING INFORMATION
+
+- **System Resource Logs**: Absence of CPU, memory, and disk I/O metrics makes it difficult to assess the performance impact of the attacks or the Fail2Ban restarts
+- **Systemd/Journald Logs**: Missing system-level logs that might explain why Fail2Ban was restarted multiple times
+- **Network Traffic Logs**: Lack of packet capture or netflow data prevents analysis of the attack vectors' volume and nature beyond what Fail2Ban reports
+- **Geolocation Data**: No information on the geographical origin of the attacks, which could be useful for blocking by country or region

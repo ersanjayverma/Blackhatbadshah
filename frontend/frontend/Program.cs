@@ -94,6 +94,31 @@ builder.Services.AddScoped<WorkerAgentService>(sp =>
     new WorkerAgentService(sp.GetRequiredService<IHttpClientFactory>()
         .CreateClient("BlackHatBadshahApi")));
 
+builder.Services.AddScoped<LinuxSystemService>(sp =>
+    new LinuxSystemService(sp.GetRequiredService<IHttpClientFactory>()
+        .CreateClient("BlackHatBadshahApi")));
+
+// -------------------- NEW FEATURE SERVICES --------------------
+builder.Services.AddScoped<TagService>(sp =>
+    new TagService(sp.GetRequiredService<IHttpClientFactory>()
+        .CreateClient("BlackHatBadshahApi")));
+
+builder.Services.AddScoped<ShareService>(sp =>
+    new ShareService(sp.GetRequiredService<IHttpClientFactory>()
+        .CreateClient("BlackHatBadshahApi")));
+
+builder.Services.AddScoped<ActivityService>(sp =>
+    new ActivityService(sp.GetRequiredService<IHttpClientFactory>()
+        .CreateClient("BlackHatBadshahApi")));
+
+builder.Services.AddScoped<BookmarkService>(sp =>
+    new BookmarkService(sp.GetRequiredService<IHttpClientFactory>()
+        .CreateClient("BlackHatBadshahApi")));
+
+builder.Services.AddScoped<UserSettingsService>(sp =>
+    new UserSettingsService(sp.GetRequiredService<IHttpClientFactory>()
+        .CreateClient("BlackHatBadshahApi")));
+
 // -------------------- VIEWMODELS --------------------
 builder.Services.AddScoped<DashboardViewModel>();
 builder.Services.AddScoped<LogsViewModel>();

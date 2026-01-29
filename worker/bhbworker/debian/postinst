@@ -21,26 +21,101 @@ touch /opt/bhb-worker/.bhb-worker-id 2>/dev/null || true
 chown root:root /opt/bhb-worker/.bhb-worker-id 2>/dev/null || true
 chmod 644 /opt/bhb-worker/.bhb-worker-id 2>/dev/null || true
 
+# ============================================
+# Configure sudo access for system management
+# ============================================
+echo "Configuring sudo access for bhb-worker..."
+
+SUDOERS_FILE="/etc/sudoers.d/bhb-worker"
+
+# Install sudoers file from package
+if [ -f /opt/bhb-worker/bhb-worker.sudoers ]; then
+    cp /opt/bhb-worker/bhb-worker.sudoers "$SUDOERS_FILE"
+else
+    # Fallback: create sudoers file inline if package file not found
+    cat > "$SUDOERS_FILE" << 'SUDOERS_EOF'
+# BHB Worker Passwordless Sudo Configuration
+# Installed by bhb-worker package
+
+# Disable TTY requirement for sudo commands from service
+Defaults!/usr/bin/systemctl !requiretty
+Defaults!/usr/bin/journalctl !requiretty
+Defaults!/usr/bin/docker !requiretty
+
+# Allow systemctl commands (service management)
+root ALL=(ALL) NOPASSWD: /usr/bin/systemctl *
+root ALL=(ALL) NOPASSWD: /usr/bin/journalctl *
+root ALL=(ALL) NOPASSWD: /usr/bin/cat /var/log/*
+root ALL=(ALL) NOPASSWD: /usr/bin/cat /etc/crontab
+root ALL=(ALL) NOPASSWD: /usr/bin/cat /etc/passwd
+root ALL=(ALL) NOPASSWD: /usr/bin/tail *
+root ALL=(ALL) NOPASSWD: /usr/bin/head *
+root ALL=(ALL) NOPASSWD: /usr/bin/grep *
+root ALL=(ALL) NOPASSWD: /usr/bin/crontab *
+root ALL=(ALL) NOPASSWD: /usr/sbin/ufw *
+root ALL=(ALL) NOPASSWD: /usr/sbin/iptables *
+root ALL=(ALL) NOPASSWD: /usr/bin/kill *
+root ALL=(ALL) NOPASSWD: /bin/kill *
+root ALL=(ALL) NOPASSWD: /usr/bin/getent *
+root ALL=(ALL) NOPASSWD: /usr/bin/who
+root ALL=(ALL) NOPASSWD: /usr/bin/w
+root ALL=(ALL) NOPASSWD: /usr/bin/last *
+root ALL=(ALL) NOPASSWD: /usr/bin/lastlog
+root ALL=(ALL) NOPASSWD: /usr/bin/docker *
+root ALL=(ALL) NOPASSWD: /usr/bin/ss *
+root ALL=(ALL) NOPASSWD: /usr/bin/netstat *
+root ALL=(ALL) NOPASSWD: /usr/sbin/ss *
+root ALL=(ALL) NOPASSWD: /usr/sbin/netstat *
+SUDOERS_EOF
+fi
+
+# Set correct permissions (required for sudoers files)
+chmod 440 "$SUDOERS_FILE"
+chown root:root "$SUDOERS_FILE"
+
+# Validate sudoers file
+if visudo -c -f "$SUDOERS_FILE" > /dev/null 2>&1; then
+    echo "Sudo access configured successfully."
+else
+    echo "WARNING: Sudoers file validation failed. Removing invalid file."
+    rm -f "$SUDOERS_FILE"
+fi
+
+# ============================================
 # Reload systemd and enable service
+# ============================================
 systemctl daemon-reload
 systemctl enable bhb-worker.service
+
+# Start the service automatically
+echo "Starting bhb-worker service..."
+systemctl start bhb-worker.service || true
 
 echo ""
 echo "=========================================="
 echo " BHB Worker installed successfully!"
 echo "=========================================="
 echo ""
+echo " The service has been started automatically."
+echo ""
 echo " Configure the service by editing:"
 echo "   /opt/bhb-worker/appsettings.json"
 echo ""
-echo " Then start the service with:"
-echo "   sudo systemctl start bhb-worker"
+echo " After editing config, restart with:"
+echo "   sudo systemctl restart bhb-worker"
 echo ""
 echo " Check status with:"
 echo "   sudo systemctl status bhb-worker"
 echo ""
 echo " View logs with:"
 echo "   sudo journalctl -u bhb-worker -f"
+echo ""
+echo " Sudo access configured for:"
+echo "   - Service management (systemctl)"
+echo "   - Log viewing (journalctl, /var/log/*)"
+echo "   - Docker container management"
+echo "   - Process management"
+echo "   - Network diagnostics"
 echo "=========================================="
 echo ""
 

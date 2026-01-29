@@ -81,16 +81,46 @@ public class DashboardController : ControllerBase
 
         if (usageTracking != null)
         {
-            stats.ModelUsageBreakdown.Add(new ModelUsage
+            // Calculate free tier usage (total - purchased)
+            var freeProUsage = usageTracking.ProModelCount - usageTracking.PurchasedProCredits;
+            var freeOpenUsage = usageTracking.OpenModelCount - usageTracking.PurchasedOpenCredits;
+
+            // Add breakdown only if there's usage
+            if (freeProUsage > 0)
             {
-                ModelName = "Pro Models (Claude/GPT)",
-                UsageCount = usageTracking.ProModelCount
-            });
-            stats.ModelUsageBreakdown.Add(new ModelUsage
+                stats.ModelUsageBreakdown.Add(new ModelUsage
+                {
+                    ModelName = "Pro Models (Free Tier)",
+                    UsageCount = freeProUsage
+                });
+            }
+
+            if (usageTracking.PurchasedProCredits > 0)
             {
-                ModelName = "Open Source Models",
-                UsageCount = usageTracking.OpenModelCount
-            });
+                stats.ModelUsageBreakdown.Add(new ModelUsage
+                {
+                    ModelName = "Pro Models (Purchased)",
+                    UsageCount = usageTracking.PurchasedProCredits
+                });
+            }
+
+            if (freeOpenUsage > 0)
+            {
+                stats.ModelUsageBreakdown.Add(new ModelUsage
+                {
+                    ModelName = "Open Source (Free Tier)",
+                    UsageCount = freeOpenUsage
+                });
+            }
+
+            if (usageTracking.PurchasedOpenCredits > 0)
+            {
+                stats.ModelUsageBreakdown.Add(new ModelUsage
+                {
+                    ModelName = "Open Source (Purchased)",
+                    UsageCount = usageTracking.PurchasedOpenCredits
+                });
+            }
         }
 
         return Ok(stats);

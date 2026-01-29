@@ -1,0 +1,13 @@
+﻿{
+  "chartType": "ColumnChart",
+  "title": "Command Frequency",
+  "xAxis": {
+    "labels": ["passwd -S", "UFW BLOCK", "journalctl"]
+  },
+  "series": [
+    {
+      "name": "Count",
+      "values": [50, 1, 1]
+    }
+  ]
+}

@@ -22,6 +22,53 @@ namespace backend.Migrations
 
             MySqlModelBuilderExtensions.AutoIncrementColumns(modelBuilder);
 
+            modelBuilder.Entity("backend.Data.Entities.ActivityLog", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("ActivityType")
+                        .IsRequired()
+                        .HasColumnType("varchar(255)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<Guid?>("EntityId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("EntityType")
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("IpAddress")
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("Metadata")
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("UserAgent")
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("varchar(255)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("UserId", "ActivityType");
+
+                    b.ToTable("ActivityLogs");
+                });
+
             modelBuilder.Entity("backend.Data.Entities.Log", b =>
                 {
                     b.Property<Guid>("Id")
@@ -52,6 +99,140 @@ namespace backend.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("Logs");
+                });
+
+            modelBuilder.Entity("backend.Data.Entities.LogBookmark", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<Guid>("LogId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("varchar(255)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LogId");
+
+                    b.HasIndex("UserId", "LogId")
+                        .IsUnique();
+
+                    b.ToTable("LogBookmarks");
+                });
+
+            modelBuilder.Entity("backend.Data.Entities.LogTag", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Color")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("varchar(255)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("varchar(255)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "Name")
+                        .IsUnique();
+
+                    b.ToTable("LogTags");
+                });
+
+            modelBuilder.Entity("backend.Data.Entities.LogTagMapping", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<Guid>("LogId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid>("TagId")
+                        .HasColumnType("char(36)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TagId");
+
+                    b.HasIndex("LogId", "TagId")
+                        .IsUnique();
+
+                    b.ToTable("LogTagMappings");
+                });
+
+            modelBuilder.Entity("backend.Data.Entities.NotificationPreference", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<bool>("BrowserPushNotifications")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<bool>("DailySummaryEmail")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<bool>("EmailOnAnalysisComplete")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<bool>("EmailOnAnalysisFailed")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<bool>("EmailOnWorkerOffline")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<bool>("InAppNotifications")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<TimeSpan?>("QuietHoursEnd")
+                        .HasColumnType("time(6)");
+
+                    b.Property<TimeSpan?>("QuietHoursStart")
+                        .HasColumnType("time(6)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("varchar(255)");
+
+                    b.Property<bool>("WeeklySummaryEmail")
+                        .HasColumnType("tinyint(1)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId")
+                        .IsUnique();
+
+                    b.ToTable("NotificationPreferences");
                 });
 
             modelBuilder.Entity("backend.Data.Entities.PaymentHistory", b =>
@@ -147,6 +328,54 @@ namespace backend.Migrations
                     b.HasIndex("LogId");
 
                     b.ToTable("Reports");
+                });
+
+            modelBuilder.Entity("backend.Data.Entities.ShareableLink", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<int>("AccessCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTime?>("ExpiresAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<DateTime?>("LastAccessedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<int?>("MaxAccesses")
+                        .HasColumnType("int");
+
+                    b.Property<string>("PasswordHash")
+                        .HasColumnType("longtext");
+
+                    b.Property<Guid>("ReportId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Token")
+                        .IsRequired()
+                        .HasColumnType("varchar(255)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReportId");
+
+                    b.HasIndex("Token")
+                        .IsUnique();
+
+                    b.ToTable("ShareableLinks");
                 });
 
             modelBuilder.Entity("backend.Data.Entities.SubscriptionPlan", b =>
@@ -395,6 +624,36 @@ namespace backend.Migrations
                     b.ToTable("WorkerAgents");
                 });
 
+            modelBuilder.Entity("backend.Data.Entities.LogBookmark", b =>
+                {
+                    b.HasOne("backend.Data.Entities.Log", "Log")
+                        .WithMany()
+                        .HasForeignKey("LogId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Log");
+                });
+
+            modelBuilder.Entity("backend.Data.Entities.LogTagMapping", b =>
+                {
+                    b.HasOne("backend.Data.Entities.Log", "Log")
+                        .WithMany()
+                        .HasForeignKey("LogId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("backend.Data.Entities.LogTag", "Tag")
+                        .WithMany()
+                        .HasForeignKey("TagId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Log");
+
+                    b.Navigation("Tag");
+                });
+
             modelBuilder.Entity("backend.Data.Entities.PaymentHistory", b =>
                 {
                     b.HasOne("backend.Data.Entities.UserSubscription", "Subscription")
@@ -414,6 +673,17 @@ namespace backend.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("Log");
+                });
+
+            modelBuilder.Entity("backend.Data.Entities.ShareableLink", b =>
+                {
+                    b.HasOne("backend.Data.Entities.Report", "Report")
+                        .WithMany()
+                        .HasForeignKey("ReportId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Report");
                 });
 
             modelBuilder.Entity("backend.Data.Entities.UserSubscription", b =>

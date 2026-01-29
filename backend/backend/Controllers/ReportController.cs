@@ -17,16 +17,19 @@ public class ReportsController : ControllerBase
     private readonly AppDbContext _db;
     private readonly IConfiguration _config;
     private readonly IHubNotificationService _hubNotification;
+    private readonly IQdrantService _qdrantService;
     private readonly string _storageRoot;
 
     public ReportsController(
         AppDbContext db,
         IConfiguration config,
-        IHubNotificationService hubNotification)
+        IHubNotificationService hubNotification,
+        IQdrantService qdrantService)
     {
         _db = db;
         _config = config;
         _hubNotification = hubNotification;
+        _qdrantService = qdrantService;
 
         _storageRoot = _config["Storage:RootPath"]
             ?? throw new InvalidOperationException("Storage:RootPath not configured");
@@ -161,6 +164,53 @@ public class ReportsController : ControllerBase
 
 
     // ----------------------------------------------------
+    // GET /api/reports/{id}/similar
+    // ----------------------------------------------------
+    /// <summary>
+    /// Get similar reports based on vector similarity search.
+    /// </summary>
+    [HttpGet("{id:guid}/similar")]
+    public async Task<IActionResult> GetSimilar(Guid id, [FromQuery] int? limit = 5)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                     ?? User.FindFirstValue("sub");
+
+        if (string.IsNullOrEmpty(userId))
+            return Unauthorized();
+
+        var report = await _db.Reports
+            .FirstOrDefaultAsync(r => r.Id == id && r.UserId == userId);
+
+        if (report == null)
+            return NotFound();
+
+        // Read the report content to use as query
+        if (string.IsNullOrEmpty(report.ReportPath) || !System.IO.File.Exists(report.ReportPath))
+            return NotFound("Report content missing");
+
+        var content = await System.IO.File.ReadAllTextAsync(report.ReportPath);
+
+        // Search for similar reports (excluding the current one)
+        var similarResults = await _qdrantService.SearchSimilarAsync(
+            userId,
+            content,
+            systemId: null, // Search across all systems
+            limit: (limit ?? 5) + 1); // Get one extra to filter out self
+
+        // Filter out the current report from results
+        var filteredResults = similarResults
+            .Where(r => r.ReportId != id)
+            .Take(limit ?? 5)
+            .ToList();
+
+        return Ok(new
+        {
+            reportId = id,
+            similarReports = filteredResults
+        });
+    }
+
+    // ----------------------------------------------------
     // DELETE /api/reports/{id}
     // ----------------------------------------------------
     [HttpDelete("{id:guid}")]
@@ -198,6 +248,9 @@ public class ReportsController : ControllerBase
             _db.Reports.Remove(report);
             await _db.SaveChangesAsync();
 
+            // Delete vector from Qdrant
+            await _qdrantService.DeleteAnalysisAsync(id);
+
             await _hubNotification.NotifyReportDeletedAsync(userId, id);
 
             return NoContent();
@@ -207,6 +260,235 @@ public class ReportsController : ControllerBase
             Console.WriteLine($"Error deleting report {id}: {ex.Message}");
             return StatusCode(500, new { error = "Failed to delete report", details = ex.Message });
         }
+    }
+
+    // ----------------------------------------------------
+    // GET /api/reports/{id}/export/json
+    // ----------------------------------------------------
+    [HttpGet("{id:guid}/export/json")]
+    public async Task<IActionResult> ExportJson(Guid id)
+    {
+        try
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                         ?? User.FindFirstValue("sub");
+
+            if (string.IsNullOrEmpty(userId))
+                return Unauthorized(new { error = "Unable to determine user identity" });
+
+            var report = await _db.Reports
+                .Include(r => r.Log)
+                .FirstOrDefaultAsync(r => r.Id == id && r.UserId == userId);
+
+            if (report == null)
+                return NotFound(new { error = "Report not found" });
+
+            if (string.IsNullOrEmpty(report.ReportPath) || !System.IO.File.Exists(report.ReportPath))
+                return NotFound(new { error = "Report file not found on disk" });
+
+            var content = await System.IO.File.ReadAllTextAsync(report.ReportPath);
+
+            Dictionary<string, object>? chartData = null;
+            if (!string.IsNullOrWhiteSpace(report.ChartPath) && System.IO.File.Exists(report.ChartPath))
+            {
+                var chartJson = await System.IO.File.ReadAllTextAsync(report.ChartPath);
+                try
+                {
+                    chartData = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(chartJson);
+                }
+                catch { }
+            }
+
+            var exportData = new ReportExportData
+            {
+                ReportId = report.Id,
+                Title = report.Title,
+                FileName = report.Log?.FileName,
+                Model = report.Model,
+                Status = report.Status.ToString(),
+                CreatedAt = report.CreatedAtUtc,
+                Content = content,
+                ChartData = chartData,
+                Metadata = new Dictionary<string, string>
+                {
+                    ["ExportedAt"] = DateTime.UtcNow.ToString("O"),
+                    ["ExportFormat"] = "JSON"
+                }
+            };
+
+            var json = System.Text.Json.JsonSerializer.Serialize(exportData, new System.Text.Json.JsonSerializerOptions
+            {
+                WriteIndented = true
+            });
+
+            var fileName = $"report-{report.Id}.json";
+            return File(System.Text.Encoding.UTF8.GetBytes(json), "application/json", fileName);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error exporting report {id} to JSON: {ex.Message}");
+            return StatusCode(500, new { error = "Failed to export report", details = ex.Message });
+        }
+    }
+
+    // ----------------------------------------------------
+    // GET /api/reports/{id}/export/csv
+    // ----------------------------------------------------
+    [HttpGet("{id:guid}/export/csv")]
+    public async Task<IActionResult> ExportCsv(Guid id)
+    {
+        try
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                         ?? User.FindFirstValue("sub");
+
+            if (string.IsNullOrEmpty(userId))
+                return Unauthorized(new { error = "Unable to determine user identity" });
+
+            var report = await _db.Reports
+                .Include(r => r.Log)
+                .FirstOrDefaultAsync(r => r.Id == id && r.UserId == userId);
+
+            if (report == null)
+                return NotFound(new { error = "Report not found" });
+
+            if (string.IsNullOrEmpty(report.ReportPath) || !System.IO.File.Exists(report.ReportPath))
+                return NotFound(new { error = "Report file not found on disk" });
+
+            var content = await System.IO.File.ReadAllTextAsync(report.ReportPath);
+
+            var csv = new System.Text.StringBuilder();
+            csv.AppendLine("Field,Value");
+            csv.AppendLine($"ReportId,\"{report.Id}\"");
+            csv.AppendLine($"Title,\"{EscapeCsvField(report.Title)}\"");
+            csv.AppendLine($"FileName,\"{EscapeCsvField(report.Log?.FileName ?? "N/A")}\"");
+            csv.AppendLine($"Model,\"{EscapeCsvField(report.Model ?? "N/A")}\"");
+            csv.AppendLine($"Status,\"{report.Status}\"");
+            csv.AppendLine($"CreatedAt,\"{report.CreatedAtUtc:O}\"");
+            csv.AppendLine($"Content,\"{EscapeCsvField(content)}\"");
+
+            var fileName = $"report-{report.Id}.csv";
+            return File(System.Text.Encoding.UTF8.GetBytes(csv.ToString()), "text/csv", fileName);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error exporting report {id} to CSV: {ex.Message}");
+            return StatusCode(500, new { error = "Failed to export report", details = ex.Message });
+        }
+    }
+
+    // ----------------------------------------------------
+    // GET /api/reports/{id}/export/markdown
+    // ----------------------------------------------------
+    [HttpGet("{id:guid}/export/markdown")]
+    public async Task<IActionResult> ExportMarkdown(Guid id)
+    {
+        try
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                         ?? User.FindFirstValue("sub");
+
+            if (string.IsNullOrEmpty(userId))
+                return Unauthorized(new { error = "Unable to determine user identity" });
+
+            var report = await _db.Reports
+                .Include(r => r.Log)
+                .FirstOrDefaultAsync(r => r.Id == id && r.UserId == userId);
+
+            if (report == null)
+                return NotFound(new { error = "Report not found" });
+
+            if (string.IsNullOrEmpty(report.ReportPath) || !System.IO.File.Exists(report.ReportPath))
+                return NotFound(new { error = "Report file not found on disk" });
+
+            var content = await System.IO.File.ReadAllTextAsync(report.ReportPath);
+
+            var markdown = new System.Text.StringBuilder();
+            markdown.AppendLine($"# {report.Title}");
+            markdown.AppendLine();
+            markdown.AppendLine("## Report Metadata");
+            markdown.AppendLine();
+            markdown.AppendLine($"- **Report ID:** {report.Id}");
+            markdown.AppendLine($"- **File:** {report.Log?.FileName ?? "N/A"}");
+            markdown.AppendLine($"- **Model:** {report.Model ?? "N/A"}");
+            markdown.AppendLine($"- **Status:** {report.Status}");
+            markdown.AppendLine($"- **Created:** {report.CreatedAtUtc:yyyy-MM-dd HH:mm:ss} UTC");
+            markdown.AppendLine();
+            markdown.AppendLine("## Analysis Content");
+            markdown.AppendLine();
+            markdown.AppendLine(content);
+
+            var fileName = $"report-{report.Id}.md";
+            return File(System.Text.Encoding.UTF8.GetBytes(markdown.ToString()), "text/markdown", fileName);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error exporting report {id} to Markdown: {ex.Message}");
+            return StatusCode(500, new { error = "Failed to export report", details = ex.Message });
+        }
+    }
+
+    // ----------------------------------------------------
+    // POST /api/reports/bulk-export
+    // ----------------------------------------------------
+    [HttpPost("bulk-export")]
+    public async Task<IActionResult> BulkExport([FromBody] BulkExportRequest request)
+    {
+        try
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                         ?? User.FindFirstValue("sub");
+
+            if (string.IsNullOrEmpty(userId))
+                return Unauthorized(new { error = "Unable to determine user identity" });
+
+            if (request.ReportIds == null || request.ReportIds.Count == 0)
+                return BadRequest(new { error = "No report IDs provided" });
+
+            var exportList = new List<ReportExportData>();
+
+            foreach (var reportId in request.ReportIds)
+            {
+                var report = await _db.Reports
+                    .Include(r => r.Log)
+                    .FirstOrDefaultAsync(r => r.Id == reportId && r.UserId == userId);
+
+                if (report == null) continue;
+                if (string.IsNullOrEmpty(report.ReportPath) || !System.IO.File.Exists(report.ReportPath)) continue;
+
+                var content = await System.IO.File.ReadAllTextAsync(report.ReportPath);
+
+                exportList.Add(new ReportExportData
+                {
+                    ReportId = report.Id,
+                    Title = report.Title,
+                    FileName = report.Log?.FileName,
+                    Model = report.Model,
+                    Status = report.Status.ToString(),
+                    CreatedAt = report.CreatedAtUtc,
+                    Content = content
+                });
+            }
+
+            var json = System.Text.Json.JsonSerializer.Serialize(exportList, new System.Text.Json.JsonSerializerOptions
+            {
+                WriteIndented = true
+            });
+
+            var fileName = $"reports-export-{DateTime.UtcNow:yyyyMMdd-HHmmss}.json";
+            return File(System.Text.Encoding.UTF8.GetBytes(json), "application/json", fileName);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error bulk exporting reports: {ex.Message}");
+            return StatusCode(500, new { error = "Failed to export reports", details = ex.Message });
+        }
+    }
+
+    private static string EscapeCsvField(string? field)
+    {
+        if (string.IsNullOrEmpty(field)) return "";
+        return field.Replace("\"", "\"\"").Replace("\r\n", " ").Replace("\n", " ");
     }
 
     // ----------------------------------------------------
@@ -250,6 +532,9 @@ public class ReportsController : ControllerBase
 
             _db.Reports.RemoveRange(reports);
             await _db.SaveChangesAsync();
+
+            // Delete all vectors from Qdrant for this user
+            await _qdrantService.DeleteUserDataAsync(userId);
 
             await _hubNotification.NotifyAllReportsDeletedAsync(userId, reports.Count);
 

@@ -20,7 +20,22 @@ using backend.Infrastructure.Persistence.Repositories;
 using backend.Infrastructure.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddSignalR();
+builder.Services.AddSignalR(options =>
+{
+    // Optimized SignalR settings for stability and performance
+    // KeepAlive: Server sends ping every 30s (increased from 15s to reduce chatter)
+    options.KeepAliveInterval = TimeSpan.FromSeconds(30);
+    // ClientTimeout: Must be >= 2x KeepAliveInterval (30s * 2 = 60s minimum)
+    options.ClientTimeoutInterval = TimeSpan.FromSeconds(90);
+    // Handshake: Allow more time for slow connections
+    options.HandshakeTimeout = TimeSpan.FromSeconds(30);
+    // Increase max message size for large log batches (1MB)
+    options.MaximumReceiveMessageSize = 1024 * 1024;
+    // Enable streaming for large data transfers
+    options.StreamBufferCapacity = 20;
+    // Enable detailed errors - helps diagnose disconnection issues
+    options.EnableDetailedErrors = true;
+});
 builder.Services.AddSingleton<IConfiguration>(builder.Configuration);
 // -------------------- Services --------------------
 builder.Services.AddControllers();
@@ -61,6 +76,19 @@ builder.Services.AddScoped<IQueryHandler<GetCurrentMonthUsageQuery, CurrentMonth
 // Plan & Model Configuration
 builder.Services.Configure<PlansConfiguration>(builder.Configuration.GetSection("Plans"));
 builder.Services.Configure<ModelsConfig>(builder.Configuration.GetSection("Models"));
+builder.Services.Configure<EmailConfiguration>(builder.Configuration.GetSection("Email"));
+
+// Email Service
+builder.Services.AddSingleton<IEmailService, EmailService>();
+
+// Qdrant Vector Database Service
+builder.Services.Configure<QdrantConfiguration>(builder.Configuration.GetSection("Qdrant"));
+builder.Services.AddHttpClient<IQdrantService, QdrantService>((sp, client) =>
+{
+    var config = builder.Configuration.GetSection("Qdrant").Get<QdrantConfiguration>();
+    client.BaseAddress = new Uri(config?.Url ?? "https://qdrant.blackhatbadshah.com");
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
 
 // SignalR Query Token config (default false for security - prefer Authorization header)
 var allowSignalRQueryToken = builder.Configuration.GetValue<bool>("SignalR:AllowQueryToken", false);
@@ -139,6 +167,9 @@ builder.Services.AddSingleton<IWorkerRegistry, WorkerRegistry>();
 builder.Services.AddHostedService<LiveLogAnalysisBackgroundWorker>();
 builder.Services.AddHostedService<WorkerCleanupBackgroundService>();
 builder.Services.AddHttpContextAccessor();
+
+// Activity Logging Service
+builder.Services.AddScoped<IActivityLoggingService, ActivityLoggingService>();
 
 // Subscription & Payment Services
 builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
@@ -222,3 +253,5 @@ if (app.Environment.IsDevelopment())
 app.MapHub<DataHub>("/hubs/data").RequireCors("AllowFrontend");
 app.MapHub<LiveLogHub>("/hubs/livelog").RequireCors("AllowFrontend").AllowAnonymous();
 app.Run();
+
+

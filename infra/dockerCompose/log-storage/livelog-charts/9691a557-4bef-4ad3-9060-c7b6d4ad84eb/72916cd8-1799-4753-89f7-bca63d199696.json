@@ -1,0 +1,13 @@
+﻿{
+  "chartType": "ColumnChart",
+  "title": "SSH Attack Intensity",
+  "xAxis": {
+    "labels": ["11:46-11:55", "11:55-12:10", "12:10-12:30", "12:30-13:00", "13:00-13:59"]
+  },
+  "series": [
+    {
+      "name": "Failed Attempts",
+      "values": [50, 75, 60, 80, 40]
+    }
+  ]
+}

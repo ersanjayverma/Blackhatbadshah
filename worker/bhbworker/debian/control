@@ -6,6 +6,7 @@ Architecture: amd64
 Maintainer: BlackHatBadshah <contact@blackhatbadshah.com>
 Description: BHB Worker - Log streaming and system monitoring agent
  A background service that streams logs and system metrics to the BHB platform.
- Features include log tailing, CPU/memory/disk/network monitoring, and
- process management via SignalR.
-Depends: libc6
+ Features include log tailing, CPU/memory/disk/network monitoring, service
+ management, Docker container control, and process management via SignalR.
+ Automatically configures passwordless sudo for system management tasks.
+Depends: libc6, sudo

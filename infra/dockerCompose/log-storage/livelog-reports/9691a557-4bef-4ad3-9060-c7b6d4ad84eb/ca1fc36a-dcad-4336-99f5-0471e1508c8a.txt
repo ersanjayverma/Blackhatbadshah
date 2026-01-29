@@ -1,0 +1,63 @@
+﻿# Log Analysis Report
+
+## 1. EXECUTIVE SUMMARY
+
+The logs cover a period from **January 23, 2026, 17:39:37 to 23:43:24** and represent traffic to a web server hosting a personal portfolio/resume site (`sanjayverma.dev`). The site appears to be primarily a **Blazor WebAssembly** application. Overall, the system is functional with a high volume of legitimate traffic, particularly from **Facebook's crawler (`facebookexternalhit`)** and **LinkedInBot**, indicating good social media engagement.
+
+However, there are **critical security concerns**:
+- **Automated exploitation attempts** targeting known vulnerabilities (e.g., `phpunit` RCE, Shellshock).
+- **Reconnaissance for sensitive files** (e.g., `.env`, AWS secrets).
+- **Brute-force scanning** for common paths and admin panels.
+
+The most pressing issue is the **active exploitation attempts**, which pose an immediate risk.
+
+## 2. CRITICAL ISSUES
+
+### Issue 1: Active Exploitation Attempts Against Known Vulnerabilities
+
+- **Root Cause**: Attackers are actively probing the server for known vulnerabilities in common web application frameworks and server configurations.
+- **Evidence**:
+    - `Jan/2026:22:40:40`: Multiple POST requests attempting to exploit **PHP CGI Argument Injection (CVE-2012-1823)**: `POST /hello.world?%ADd+allow_url_include%3d1+...`
+    - `Jan/2026:22:40:40`: Multiple GET requests targeting **PHPUnit Remote Code Execution (CVE-2017-9841)**: `GET /vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php`
+    - `Jan/2026:22:40:41`: GET request attempting **ThinkPHP RCE**: `GET /index.php?s=/Index/\x5Cthink\x5Capp/invokefunction&function=call_user_func_array&vars[0]=system&...`
+    - `Jan/2026:22:40:41`: GET request attempting **Shellshock exploitation**: `GET / HTTP/1.1" 200 615 "-" "() { :; }; /bin/bash -c ...`
+    - `Jan/2026:23:43:24`: POST requests targeting **PHPUnit RCE** and **ThinkPHP RCE** from IP `192.159.99.95`.
+- **Impact**: High. Successful exploitation could lead to **remote code execution**, full server compromise, data theft, or the server being used for further attacks.
+- **Severity**: **Critical**
+- **First Occurrence**: `22:40:40` on `23/Jan/2026`
+
+### Issue 2: Reconnaissance for Sensitive Configuration Files
+
+- **Root Cause**: Automated scanners are searching for common files that might leak sensitive configuration data (e.g., API keys, passwords).
+- **Evidence**:
+    - `Jan/2026:23:25:53`: GET request for `/.env` (common in Node.js/PHP apps).
+    - `Jan/2026:23:25:54`: GET requests for `/.aws-secrets`, `/aws/prod.log`, `/.config/.aws`, `/.aws/athena/`, etc.
+    - `Jan/2026:23:26:00`: GET requests for `/nodeapi/.env`, `/nodeweb/.env`, `/webapps/.env`, `/secrets/.env`, etc.
+- **Impact**: Medium. While the logs show these requests returned a `200` status, it's likely they are returning the default HTML page (as the site is Blazor WASM), not the actual file contents. However, if these files existed, the impact would be severe (data breach).
+- **Severity**: **High** (Potential for data exposure)
+- **First Occurrence**: `23:25:53` on `23/Jan/2026`
+
+## 3. WARNINGS & ANOMALIES
+
+- **High Volume of 404s for Admin/Setup Pages**: IPs like `4.194.24.19` (starting at `17:44:01`) and `34.106.43.106` (`20:39:43`) made numerous requests for common CMS/admin paths (`/admin.php`, `/wp-admin/`, `/wordpress/`, `/backup/`) all resulting in `404 Not Found`. This is typical of automated scanners.
+- **Repeated 405 POST Attempts to Root `/`**: Multiple IPs (`193.142.147.209` at `17:59:35`, `18:19:40`, `22:28:48`; `193.142.147.209` at `22:42:59`) sent `POST` requests to the root path, which correctly returned `405 Method Not Allowed`. This could be probing for REST APIs or upload vulnerabilities.
+- **Suspicious CONNECT Requests**: `114.25.99.76` attempted `CONNECT www.baidu.com:443` (`23:20:03`), suggesting potential misuse of the server as a proxy.
+- **Unusual User Agents/Bots**: Requests from `python-requests/2.32.5`, `python-requests/2.24.0`, `LinkedInBot`, `CensysInspect`, `OAI-SearchBot` are legitimate but indicate the site is being actively scanned by various automated tools.
+
+## 4. TIMELINE OF KEY EVENTS
+
+| Time | Event | Source IP | Details |
+| :--- | :--- | :--- | :--- |
+| `17:39:37` | Initial Blazor WASM asset requests | `173.252.127.113`, `173.252.127.17` | Normal user traffic. |
+| `17:40:04` - `17:40:13` | Facebook crawler requests | Various `173.252.x.x`, `69.171.x.x`, `31.13.x.x` | Fetching images and main page. |
+| `17:44:01` - `17:44:20` | **Scanning for Admin/PHP paths** | `4.194.24.19` | Numerous `200` responses for non-existent PHP files (likely honeypot responses). |
+| `17:54:41`, `18:19:40`, `20:31:32`, `22:28:48`, `22:42:59` | **POST requests to `/`** | Various | Probing for vulnerabilities, all `405`. |
+| `18:25:41` - `18:26:24` | Googlebot crawl | `66.249.x.x` | Fetching main page and assets. |
+| `19:35:51` - `19:36:00` | Censys scan | `167.94.138.195` | Probing for `/wiki`, `/favicon.ico`, TLS handshake. |
+| `20:39:43` - `20:39:45` | **Scanning for Backup/CMS paths** | `34.106.43.106` | HEAD requests to `/wordpress/`, `/old/`, `/backup/`, etc. |
+| `20:50:27` | Suspicious GET | `45.130.83.16` | `GET /` with `python-requests` UA. |
+| `21:34:58` - `21:35:02` | **Automated backup file scan** | `85.203.x.x` | HEAD requests for `directory.gz`, `website.tar`, `wallet.dat`, etc. |
+| `22:40:40` - `22:40:41` | **Critical Exploitation Attempts (RCE)** | `62.171.164.240` | PHPUnit RCE, ThinkPHP RCE, Shellshock, CGI Arg Injection attempts. |
+| `23:20:03` | Suspicious CONNECT | `114.25.99.76` | Attempting to use server as proxy. |
+| `23:23:49` | Legitimate Crawler | `104.210.140.138` | OAI-SearchBot fetching `robots.txt`. |
+| `23:25:53` - `23:26:06` | **Sensitive File Reconnaissance** | `78.1

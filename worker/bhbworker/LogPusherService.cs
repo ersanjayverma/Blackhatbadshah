@@ -1,12 +1,49 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Net.Sockets;
+using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace BHBWorker;
+
+/// <summary>
+/// Custom retry policy with exponential backoff for SignalR reconnection.
+/// Provides unlimited retries with increasing delays up to a maximum.
+/// Logs each retry attempt for diagnostics.
+/// </summary>
+public class RetryPolicy : IRetryPolicy
+{
+    private static readonly TimeSpan[] _retryDelays = new[]
+    {
+        TimeSpan.Zero,              // Immediate first retry
+        TimeSpan.FromSeconds(2),
+        TimeSpan.FromSeconds(5),
+        TimeSpan.FromSeconds(10),
+        TimeSpan.FromSeconds(30),
+        TimeSpan.FromSeconds(60),
+        TimeSpan.FromSeconds(120),  // 2 minutes max
+    };
+
+    public TimeSpan? NextRetryDelay(RetryContext retryContext)
+    {
+        // Never give up - use the last delay for all subsequent retries
+        var index = Math.Min(retryContext.PreviousRetryCount, _retryDelays.Length - 1);
+        var delay = _retryDelays[index];
+        
+        // Log retry attempt with details (using Console since we don't have ILogger here)
+        Console.WriteLine(
+            $"[SignalR Retry] Attempt #{retryContext.PreviousRetryCount + 1} | " +
+            $"Delay: {delay.TotalSeconds}s | " +
+            $"Elapsed: {retryContext.ElapsedTime.TotalSeconds:F1}s | " +
+            $"Error: {retryContext.RetryReason?.Message ?? "Unknown"} | " +
+            $"Time: {DateTime.UtcNow:O}");
+        
+        return delay;
+    }
+}
 
 public class LogPusherService : BackgroundService
 {
@@ -22,6 +59,10 @@ public class LogPusherService : BackgroundService
 
     private string _workerId = string.Empty;
     private const string WorkerIdFileName = ".bhb-worker-id";
+    private bool _connectionStarted = false;
+    // Track registration state to prevent duplicates
+    private string? _currentConnectionId = null;
+    private int _loopsStarted = 0;
 
     // Metrics tracking
     private DateTime _startTime;
@@ -36,6 +77,7 @@ public class LogPusherService : BackgroundService
     private Task? _systemMonitorTask;
 
     private SystemMonitorService? _systemMonitorService;
+    private LinuxSystemService? _linuxSystemService;
 
     public LogPusherService(IConfiguration config, ILogger<LogPusherService> logger)
     {
@@ -50,7 +92,7 @@ public class LogPusherService : BackgroundService
         var psk = _config["LiveLogHub:Psk"] ?? "";
         var configuredWorkerId = _config["LiveLogHub:WorkerId"] ?? "";
 
-        _workerId = !string.IsNullOrEmpty(configuredWorkerId) ? configuredWorkerId : GetOrCreateWorkerId();
+        _workerId = configuredWorkerId ;
 
         _startTime = DateTime.UtcNow;
         _previousCpuCheck = DateTime.UtcNow;
@@ -58,6 +100,10 @@ public class LogPusherService : BackgroundService
 
         _systemMonitorService = new SystemMonitorService(
             LoggerFactory.Create(b => b.AddConsole()).CreateLogger<SystemMonitorService>(),
+            _workerId);
+
+        _linuxSystemService = new LinuxSystemService(
+            LoggerFactory.Create(b => b.AddConsole()).CreateLogger<LinuxSystemService>(),
             _workerId);
 
         _logger.LogInformation("========================================");
@@ -80,39 +126,69 @@ public class LogPusherService : BackgroundService
                     consecutiveFailures++;
                     var delay = Math.Min(5000 * consecutiveFailures, 60000); // Max 60s delay
                     _logger.LogWarning(
-                        "LiveLogHub host not reachable (attempt {Attempt}), retrying in {Delay}ms",
-                        consecutiveFailures, delay);
+                        "========== HOST UNREACHABLE ==========\n" +
+                        "  WorkerId: {WorkerId}\n" +
+                        "  HubUrl: {HubUrl}\n" +
+                        "  Attempt: {Attempt}\n" +
+                        "  RetryDelay: {Delay}ms\n" +
+                        "  Timestamp: {Timestamp}\n" +
+                        "=======================================",
+                        _workerId, hubUrl, consecutiveFailures, delay, DateTime.UtcNow.ToString("O"));
                     await Task.Delay(delay, stoppingToken);
                     continue;
                 }
 
-                await EnsureConnectedAsync(hubUrl, psk, apiKey, _workerId, stoppingToken);
-                consecutiveFailures = 0; // Reset on successful connection
+                // Reset failure counter on successful reachability
+                if (consecutiveFailures > 0)
+                {
+                    _logger.LogInformation("Host reachable after {Attempts} failed attempts", consecutiveFailures);
+                }
+                consecutiveFailures = 0;
 
-                // IMPORTANT:
-                // Do not run your own reconnect loop.
-                // SignalR auto reconnect will handle it.
+                // Connect ONCE. SignalR handles reconnects.
+                await EnsureConnectedAsync(hubUrl, psk, apiKey, _workerId, stoppingToken);
+
+                // Block service lifetime
                 await Task.Delay(Timeout.Infinite, stoppingToken);
+
             }
             catch (OperationCanceledException)
             {
+                _logger.LogInformation("Worker shutdown requested");
                 break;
             }
             catch (Exception ex)
             {
                 consecutiveFailures++;
                 var delay = Math.Min(5000 * consecutiveFailures, 60000);
+                var errorReason = GetConnectionErrorReason(ex);
+                
+                _logger.LogError(
+                    "========== CONNECTION ERROR ==========\n" +
+                    "  WorkerId: {WorkerId}\n" +
+                    "  Attempt: {Attempt}/{MaxAttempts}\n" +
+                    "  Reason: {Reason}\n" +
+                    "  ErrorType: {ErrorType}\n" +
+                    "  ErrorMessage: {ErrorMessage}\n" +
+                    "  InnerException: {InnerException}\n" +
+                    "  RetryDelay: {Delay}ms\n" +
+                    "  Timestamp: {Timestamp}\n" +
+                    "======================================",
+                    _workerId,
+                    consecutiveFailures,
+                    maxConsecutiveFailures,
+                    errorReason,
+                    ex.GetType().FullName,
+                    ex.Message,
+                    ex.InnerException?.Message ?? "N/A",
+                    delay,
+                    DateTime.UtcNow.ToString("O"));
                 
                 if (consecutiveFailures >= maxConsecutiveFailures)
                 {
-                    _logger.LogError(ex, 
-                        "Too many consecutive failures ({Count}). Worker may need manual intervention.",
+                    _logger.LogCritical(
+                        "CRITICAL: Too many consecutive failures ({Count}). Worker may need manual intervention.",
                         consecutiveFailures);
-                }
-                else
-                {
-                    _logger.LogError(ex, "Error in worker loop (attempt {Attempt}). Retrying in {Delay}ms...",
-                        consecutiveFailures, delay);
                 }
                 
                 await Task.Delay(delay, stoppingToken);
@@ -120,20 +196,36 @@ public class LogPusherService : BackgroundService
         }
     }
 
+    /// <summary>
+    /// Analyzes the exception to determine the likely cause of connection failure.
+    /// </summary>
+    private static string GetConnectionErrorReason(Exception ex)
+    {
+        var message = ex.Message?.ToLowerInvariant() ?? "";
+        
+        return ex switch
+        {
+            SocketException socketEx => $"Network error: {socketEx.SocketErrorCode}",
+            System.Net.Http.HttpRequestException httpEx => $"HTTP error: {httpEx.StatusCode?.ToString() ?? "Unknown"}",
+            TimeoutException => "Connection timed out",
+            _ when message.Contains("websocket") => "WebSocket connection failed",
+            _ when message.Contains("ssl") || message.Contains("tls") => "SSL/TLS error",
+            _ when message.Contains("auth") => "Authentication error",
+            _ when message.Contains("refused") => "Connection refused",
+            _ when message.Contains("timeout") => "Operation timed out",
+            _ => "Unknown connection error"
+        };
+    }
+
 
     private async Task EnsureConnectedAsync(string hubUrl, string psk, string apiKey, string workerId, CancellationToken stoppingToken)
     {
         // If already connected, done.
-        if (_connection is { State: HubConnectionState.Connected })
+       // DROP-IN FIX: never dispose/recreate when SignalR auto-reconnect is enabled
+        if (_connection != null)
             return;
 
-        // Dispose old broken connection (important)
-        if (_connection != null)
-        {
-            try { await _connection.DisposeAsync(); } catch { }
-            _connection = null;
-        }
-
+        _connectionStarted = true;
         bool useApiKey = !string.IsNullOrWhiteSpace(apiKey);
         string fullUrl;
 
@@ -148,6 +240,7 @@ public class LogPusherService : BackgroundService
             _logger.LogInformation("Using PSK auth for worker {WorkerId}", workerId);
         }
 
+
         _connection = new HubConnectionBuilder()
             .WithUrl(fullUrl, options =>
             {
@@ -155,151 +248,454 @@ public class LogPusherService : BackgroundService
                 {
                     try { options.Headers.Add("X-Worker-Key", apiKey); } catch { }
                 }
+                // Prefer WebSockets for best performance and lowest latency
+                options.Transports = Microsoft.AspNetCore.Http.Connections.HttpTransportType.WebSockets;
+                // Skip negotiation to connect faster (WebSockets only)
+                options.SkipNegotiation = true;
             })
-            .WithAutomaticReconnect(new[]
-            {
-                TimeSpan.FromSeconds(1),
-                TimeSpan.FromSeconds(5),
-                TimeSpan.FromSeconds(10),
-                TimeSpan.FromSeconds(30)
-            })
+            .WithAutomaticReconnect(new RetryPolicy())
+            .WithKeepAliveInterval(TimeSpan.FromSeconds(30))  // Match server KeepAliveInterval
+            .WithServerTimeout(TimeSpan.FromSeconds(90))       // Match server ClientTimeoutInterval
             .Build();
 
         WireHubHandlers(_connection, stoppingToken);
 
-        _logger.LogInformation("Connecting to LiveLogHub...");
+        _logger.LogInformation(
+            "========== CONNECTING TO HUB ==========\n" +
+            "  WorkerId: {WorkerId}\n" +
+            "  HubUrl: {HubUrl}\n" +
+            "  Transport: WebSockets (SkipNegotiation=true)\n" +
+            "  KeepAlive: 30s\n" +
+            "  ServerTimeout: 90s\n" +
+            "  AuthMode: {AuthMode}\n" +
+            "  Timestamp: {Timestamp}\n" +
+            "========================================",
+            workerId,
+            hubUrl,
+            useApiKey ? "API Key" : "PSK",
+            DateTime.UtcNow.ToString("O"));
+        
+        var connectStart = DateTime.UtcNow;
         await _connection.StartAsync(stoppingToken);
-        _logger.LogInformation("Connected successfully!");
+        var connectDuration = DateTime.UtcNow - connectStart;
+        
+        _logger.LogInformation(
+            "========== CONNECTED SUCCESSFULLY ==========\n" +
+            "  WorkerId: {WorkerId}\n" +
+            "  ConnectionId: {ConnectionId}\n" +
+            "  ConnectDuration: {Duration}ms\n" +
+            "  State: {State}\n" +
+            "  Timestamp: {Timestamp}\n" +
+            "============================================",
+            workerId,
+            _connection.ConnectionId,
+            connectDuration.TotalMilliseconds,
+            _connection.State,
+            DateTime.UtcNow.ToString("O"));
+        
+        _currentConnectionId = _connection.ConnectionId;
+        
+        await RegisterWorkerAsync();
+        await PushMetrics();
+        await PingOnline();
+      if (Interlocked.Exchange(ref _loopsStarted, 1) == 0)
+        {
+            StartMetricsAndMonitor(stoppingToken);
+        }
     }
 
     private void WireHubHandlers(HubConnection conn, CancellationToken stoppingToken)
-    {
-        conn.On<object>("Connected", async data =>
-        {
-            try
-            {
-                // If server returns canonical worker id, persist it
-                TryAdoptWorkerIdFromServer(data);
-                _logger.LogInformation("Connected to hub. WorkerId: {WorkerId}", _workerId);
-
-                // Register + Push metrics immediately
-                await RegisterWorkerAsync();
-                await PushMetrics();
-                await PingOnline();
-
-                // Start loops now that connection is alive
-                StartMetricsAndMonitor(stoppingToken);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Connected handler failed");
-            }
-        });
-
-        conn.On("RequestMetrics", async () =>
-        {
-            await PushMetrics();
-            await PingOnline();
-        });
-
-        conn.On("RequestSystemMonitorData", async () =>
-        {
-            await PushSystemMonitorData();
-        });
-
-        conn.On<int, bool>("KillProcess", async (pid, force) =>
-        {
-            _logger.LogInformation("[SystemMonitor] KillProcess: PID={Pid}, Force={Force}", pid, force);
-            if (_systemMonitorService != null)
-            {
-                var response = _systemMonitorService.KillProcess(pid, force);
-                await conn.InvokeAsync("KillProcessResponse", response);
-            }
-        });
-
-        conn.On<string, int, bool>("PullLogs", async (logPath, lines, fromEnd) =>
-        {
-            _logger.LogInformation("[LogPull] Request: {Path}, {Lines} lines", logPath, lines);
-            await PullLogsAsync(logPath, lines, fromEnd);
-        });
-
-        conn.On<string>("StartLiveLog", async (logPath) =>
-        {
-            _logger.LogInformation("[LiveLog] Start: {Path}", logPath);
-            await StartLiveLogStreamingAsync(logPath);
-        });
-
-        conn.On<string>("StopLiveLog", (logPath) =>
-        {
-            _logger.LogInformation("[LiveLog] Stop: {Path}", logPath);
-            StopLiveLogStreaming(logPath);
-        });
-
-        conn.On<object>("Registered", data =>
-        {
-            // Registration confirmed silently
-        });
-
-        conn.Reconnecting += async ex =>
-        {
-            _logger.LogWarning("Reconnecting to hub...");
-            await StopMetricsAndMonitorAsync();
-        };
-
-        conn.Reconnected += async connectionId =>
-        {
-            _logger.LogInformation("Reconnected to hub");
-
-            try
-            {
-                // MUST re-register & restart heartbeats OR worker stays offline
-                await RegisterWorkerAsync();
-                await PushMetrics();
-                await PingOnline();
-                StartMetricsAndMonitor(stoppingToken);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Reconnected post-init failed");
-            }
-        };
-
-        conn.Closed += async ex =>
-        {
-            _logger.LogWarning("Hub connection closed");
-            await StopMetricsAndMonitorAsync();
-        };
-    }
-
-    private void TryAdoptWorkerIdFromServer(object? data)
+{
+    // ------------------------------------------------------------------
+    // Custom hub "Connected" message
+    // READ-ONLY: log + track connection only
+    // ------------------------------------------------------------------
+    conn.On<object>("Connected", data =>
     {
         try
         {
-            if (data is System.Text.Json.JsonElement je && je.ValueKind == System.Text.Json.JsonValueKind.Object)
-            {
-                if (je.TryGetProperty("WorkerId", out var prop) && prop.ValueKind == System.Text.Json.JsonValueKind.String)
-                {
-                    var supplied = prop.GetString();
-                    if (!string.IsNullOrWhiteSpace(supplied) && supplied != _workerId)
-                    {
-                        _workerId = supplied;
-                        try
-                        {
-                            File.WriteAllText(Path.Combine(Directory.GetCurrentDirectory(), WorkerIdFileName), _workerId);
-                            _logger.LogInformation("Adopted WorkerId from server and persisted: {WorkerId}", _workerId);
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogWarning(ex, "Failed to persist WorkerId to disk");
-                        }
-                    }
-                }
-            }
+            _currentConnectionId = conn.ConnectionId;
+
+            _logger.LogInformation(
+                "Connected to hub. WorkerId: {WorkerId}, ConnectionId: {ConnectionId}",
+                _workerId,
+                _currentConnectionId);
         }
-        catch
+        catch (Exception ex)
         {
-            // ignore
+            _logger.LogError(ex, "Connected handler failed");
         }
+    });
+
+    // ------------------------------------------------------------------
+    // Metrics / system requests
+    // ------------------------------------------------------------------
+    conn.On("RequestMetrics", async () =>
+    {
+        await PushMetrics();
+        await PingOnline();
+    });
+
+    conn.On("RequestSystemMonitorData", async () =>
+    {
+        await PushSystemMonitorData();
+    });
+
+    // ------------------------------------------------------------------
+    // Process control
+    // ------------------------------------------------------------------
+    conn.On<int, bool>("KillProcess", async (pid, force) =>
+    {
+        _logger.LogInformation("[SystemMonitor] KillProcess: PID={Pid}, Force={Force}", pid, force);
+        if (_systemMonitorService != null)
+        {
+            var response = _systemMonitorService.KillProcess(pid, force);
+            await conn.InvokeAsync("KillProcessResponse", response);
+        }
+    });
+
+    // ------------------------------------------------------------------
+    // Log pulling
+    // ------------------------------------------------------------------
+    conn.On<string, int, bool>("PullLogs", async (logPath, lines, fromEnd) =>
+    {
+        _logger.LogInformation("[LogPull] Request: {Path}, {Lines} lines", logPath, lines);
+        await PullLogsAsync(logPath, lines, fromEnd);
+    });
+
+    conn.On<string>("StartLiveLog", async (logPath) =>
+    {
+        _logger.LogInformation("[LiveLog] Start: {Path}", logPath);
+        await StartLiveLogStreamingAsync(logPath);
+    });
+
+    conn.On<string>("StopLiveLog", logPath =>
+    {
+        _logger.LogInformation("[LiveLog] Stop: {Path}", logPath);
+        StopLiveLogStreaming(logPath);
+    });
+
+    // ============================================================
+    // LINUX SYSTEM MANAGEMENT HANDLERS
+    // ============================================================
+    conn.On<string>("GetServices", async requestId =>
+    {
+        _logger.LogInformation("[Linux] GetServices request: {RequestId}", requestId);
+        if (_linuxSystemService != null)
+        {
+            var response = await _linuxSystemService.GetServicesAsync();
+            await conn.InvokeAsync("ServiceListResponse", requestId, response);
+        }
+    });
+
+    conn.On<string, string, string>("ControlService", async (requestId, serviceName, action) =>
+    {
+        _logger.LogInformation("[Linux] ControlService: {Service} {Action}", serviceName, action);
+        if (_linuxSystemService != null)
+        {
+            var request = new ServiceActionRequest
+            {
+                WorkerId = _workerId,
+                ServiceName = serviceName,
+                Action = action
+            };
+            var response = await _linuxSystemService.ControlServiceAsync(request);
+            await conn.InvokeAsync("ServiceActionResponse", requestId, response);
+        }
+    });
+
+    conn.On<string, bool>("GetContainers", async (requestId, includeAll) =>
+    {
+        _logger.LogInformation("[Linux] GetContainers request: {RequestId}", requestId);
+        if (_linuxSystemService != null)
+        {
+            var response = await _linuxSystemService.GetContainersAsync(includeAll);
+            await conn.InvokeAsync("ContainerListResponse", requestId, response);
+        }
+    });
+
+    conn.On<string, string, string, int?>("ControlContainer", async (requestId, containerId, action, logLines) =>
+    {
+        _logger.LogInformation("[Linux] ControlContainer: {Container} {Action}", containerId, action);
+        if (_linuxSystemService != null)
+        {
+            var request = new ContainerActionRequest
+            {
+                WorkerId = _workerId,
+                ContainerId = containerId,
+                Action = action,
+                LogLines = logLines
+            };
+            var response = await _linuxSystemService.ControlContainerAsync(request);
+            await conn.InvokeAsync("ContainerActionResponse", requestId, response);
+        }
+    });
+
+    conn.On<string>("GetUsers", async requestId =>
+    {
+        _logger.LogInformation("[Linux] GetUsers request: {RequestId}", requestId);
+        if (_linuxSystemService != null)
+        {
+            var response = await _linuxSystemService.GetUsersAsync();
+            await conn.InvokeAsync("UserListResponse", requestId, response);
+        }
+    });
+
+    conn.On<string>("GetFirewallStatus", async requestId =>
+    {
+        _logger.LogInformation("[Linux] GetFirewallStatus request: {RequestId}", requestId);
+        if (_linuxSystemService != null)
+        {
+            var response = await _linuxSystemService.GetFirewallStatusAsync();
+            await conn.InvokeAsync("FirewallStatusResponse", requestId, response);
+        }
+    });
+
+    conn.On<string>("GetSshSessions", async requestId =>
+    {
+        _logger.LogInformation("[Linux] GetSshSessions request: {RequestId}", requestId);
+        if (_linuxSystemService != null)
+        {
+            var response = await _linuxSystemService.GetSshSessionsAsync();
+            await conn.InvokeAsync("SshSessionListResponse", requestId, response);
+        }
+    });
+
+    conn.On<string>("GetSecurityAudit", async requestId =>
+    {
+        _logger.LogInformation("[Linux] GetSecurityAudit request: {RequestId}", requestId);
+        if (_linuxSystemService != null)
+        {
+            var response = await _linuxSystemService.GetSecurityAuditAsync();
+            await conn.InvokeAsync("SecurityAuditResponse", requestId, response);
+        }
+    });
+
+    conn.On<string>("GetCronJobs", async requestId =>
+    {
+        _logger.LogInformation("[Linux] GetCronJobs request: {RequestId}", requestId);
+        if (_linuxSystemService != null)
+        {
+            var response = await _linuxSystemService.GetCronJobsAsync();
+            await conn.InvokeAsync("CronJobListResponse", requestId, response);
+        }
+    });
+
+    conn.On<string, string, bool>("ListDirectory", async (requestId, path, includeHidden) =>
+    {
+        _logger.LogInformation("[Linux] ListDirectory: {Path}", path);
+        if (_linuxSystemService != null)
+        {
+            var request = new DirectoryListRequest
+            {
+                WorkerId = _workerId,
+                Path = path,
+                IncludeHidden = includeHidden
+            };
+            var response = await _linuxSystemService.ListDirectoryAsync(request);
+            await conn.InvokeAsync("DirectoryListResponse", requestId, response);
+        }
+    });
+
+    conn.On<string, string, int?, bool>("ReadFile", async (requestId, filePath, maxLines, fromEnd) =>
+    {
+        _logger.LogInformation("[Linux] ReadFile: {Path}", filePath);
+        if (_linuxSystemService != null)
+        {
+            var request = new FileContentRequest
+            {
+                WorkerId = _workerId,
+                FilePath = filePath,
+                MaxLines = maxLines,
+                FromEnd = fromEnd
+            };
+            var response = await _linuxSystemService.ReadFileAsync(request);
+            await conn.InvokeAsync("FileContentResponse", requestId, response);
+        }
+    });
+
+    conn.On<string, CommandExecutionRequest>("ExecuteCommand", async (requestId, request) =>
+    {
+        _logger.LogInformation("[Linux] ExecuteCommand: {Command}", request.Command);
+        if (_linuxSystemService != null)
+        {
+            var response = await _linuxSystemService.ExecuteRemoteCommandAsync(request);
+            await conn.InvokeAsync("CommandExecutionResponse", requestId, response);
+        }
+    });
+
+
+    // ============================================================
+
+    conn.On<object>("Registered", _ => { /* noop */ });
+
+    // ------------------------------------------------------------------
+    // SignalR lifecycle (AUTHORITATIVE) - Enhanced logging for diagnostics
+    // ------------------------------------------------------------------
+    conn.Reconnecting += error =>
+    {
+        var disconnectReason = GetDisconnectReason(error);
+        _logger.LogWarning(
+            "========== CONNECTION RECONNECTING ==========\n" +
+            "  WorkerId: {WorkerId}\n" +
+            "  PreviousConnectionId: {ConnectionId}\n" +
+            "  Reason: {Reason}\n" +
+            "  ErrorType: {ErrorType}\n" +
+            "  ErrorMessage: {ErrorMessage}\n" +
+            "  InnerException: {InnerException}\n" +
+            "  StackTrace: {StackTrace}\n" +
+            "  Timestamp: {Timestamp}\n" +
+            "=============================================",
+            _workerId,
+            _currentConnectionId ?? "unknown",
+            disconnectReason,
+            error?.GetType().FullName ?? "N/A",
+            error?.Message ?? "Connection lost (no error details)",
+            error?.InnerException?.Message ?? "N/A",
+            error?.StackTrace?.Split('\n').FirstOrDefault() ?? "N/A",
+            DateTime.UtcNow.ToString("O"));
+        
+        // Don't stop metrics during brief reconnects - they'll queue up
+        return Task.CompletedTask;
+    };
+
+    conn.Reconnected += async connectionId =>
+    {
+        _logger.LogInformation(
+            "========== CONNECTION RECONNECTED ==========\n" +
+            "  WorkerId: {WorkerId}\n" +
+            "  NewConnectionId: {NewConnectionId}\n" +
+            "  PreviousConnectionId: {PreviousConnectionId}\n" +
+            "  Timestamp: {Timestamp}\n" +
+            "============================================",
+            _workerId,
+            connectionId,
+            _currentConnectionId ?? "unknown",
+            DateTime.UtcNow.ToString("O"));
+        
+        _currentConnectionId = connectionId;
+
+        // Re-register and push state after reconnect
+        try
+        {
+            await RegisterWorkerAsync();
+            await PushMetrics();
+            await PingOnline();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during reconnection registration");
+        }
+    };
+
+    conn.Closed += error =>
+    {
+        var disconnectReason = GetDisconnectReason(error);
+        var willReconnect = error != null; // SignalR auto-reconnect only triggers if there was an error
+        
+        _logger.LogWarning(
+            "========== CONNECTION CLOSED ==========\n" +
+            "  WorkerId: {WorkerId}\n" +
+            "  ConnectionId: {ConnectionId}\n" +
+            "  Reason: {Reason}\n" +
+            "  WillAttemptReconnect: {WillReconnect}\n" +
+            "  ErrorType: {ErrorType}\n" +
+            "  ErrorMessage: {ErrorMessage}\n" +
+            "  InnerException: {InnerException}\n" +
+            "  StackTrace: {StackTrace}\n" +
+            "  Timestamp: {Timestamp}\n" +
+            "=======================================",
+            _workerId,
+            _currentConnectionId ?? "unknown",
+            disconnectReason,
+            willReconnect,
+            error?.GetType().FullName ?? "N/A",
+            error?.Message ?? "Graceful disconnect (no error)",
+            error?.InnerException?.Message ?? "N/A",
+            error?.StackTrace?.Split('\n').FirstOrDefault() ?? "N/A",
+            DateTime.UtcNow.ToString("O"));
+        
+        _currentConnectionId = null;
+        // Note: SignalR will auto-reconnect if configured, don't stop metrics here
+        // The reconnect policy will handle reconnection attempts
+        return Task.CompletedTask;
+    };
+}
+
+    /// <summary>
+    /// Analyzes the exception to determine the likely cause of disconnection.
+    /// </summary>
+    private static string GetDisconnectReason(Exception? error)
+    {
+        if (error == null)
+            return "Graceful shutdown or server-initiated close";
+
+        var message = error.Message?.ToLowerInvariant() ?? "";
+        var typeName = error.GetType().Name;
+
+        // Check for specific exception types
+        return error switch
+        {
+            OperationCanceledException => "Operation was cancelled (possibly timeout or shutdown)",
+            TimeoutException => "Connection timed out - server may be overloaded or network latency too high",
+            SocketException socketEx => $"Socket error ({socketEx.SocketErrorCode}): {GetSocketErrorDescription(socketEx.SocketErrorCode)}",
+            System.Net.Http.HttpRequestException httpEx => $"HTTP error: {httpEx.StatusCode?.ToString() ?? "Unknown"} - {GetHttpErrorDescription(httpEx)}",
+            System.IO.IOException ioEx when ioEx.InnerException is SocketException innerSocket => 
+                $"IO/Socket error ({innerSocket.SocketErrorCode}): {GetSocketErrorDescription(innerSocket.SocketErrorCode)}",
+            _ when message.Contains("websocket") => "WebSocket protocol error or connection reset",
+            _ when message.Contains("transport") => "Transport layer failure (WebSocket/SSE/LongPolling)",
+            _ when message.Contains("handshake") => "Handshake failed - authentication or protocol mismatch",
+            _ when message.Contains("timeout") => "Connection or operation timed out",
+            _ when message.Contains("refused") => "Connection refused by server",
+            _ when message.Contains("reset") => "Connection reset by peer (server or network)",
+            _ when message.Contains("closed") => "Connection closed by remote host",
+            _ when message.Contains("ssl") || message.Contains("tls") => "SSL/TLS negotiation failure",
+            _ when message.Contains("certificate") => "Certificate validation failed",
+            _ when message.Contains("dns") || message.Contains("host") => "DNS resolution failed or host unreachable",
+            _ when message.Contains("unauthorized") || message.Contains("401") => "Authentication failed (401 Unauthorized)",
+            _ when message.Contains("forbidden") || message.Contains("403") => "Access denied (403 Forbidden)",
+            _ => $"Unknown error ({typeName})"
+        };
+    }
+
+    private static string GetSocketErrorDescription(SocketError socketError)
+    {
+        return socketError switch
+        {
+            SocketError.ConnectionRefused => "Server actively refused the connection",
+            SocketError.ConnectionReset => "Connection was forcibly closed by the remote host",
+            SocketError.ConnectionAborted => "Connection was aborted by the local system",
+            SocketError.TimedOut => "Connection attempt timed out",
+            SocketError.HostUnreachable => "Host is unreachable (network path issue)",
+            SocketError.NetworkUnreachable => "Network is unreachable",
+            SocketError.NetworkDown => "Network is down",
+            SocketError.HostDown => "Host is down",
+            SocketError.Shutdown => "Socket has been shut down",
+            SocketError.NotConnected => "Socket is not connected",
+            SocketError.AddressNotAvailable => "Address not available",
+            SocketError.OperationAborted => "Operation was aborted",
+            SocketError.Interrupted => "Operation was interrupted",
+            _ => socketError.ToString()
+        };
+    }
+
+    private static string GetHttpErrorDescription(System.Net.Http.HttpRequestException httpEx)
+    {
+        var statusCode = httpEx.StatusCode;
+        if (statusCode == null)
+            return httpEx.Message;
+
+        return statusCode switch
+        {
+            System.Net.HttpStatusCode.Unauthorized => "Invalid or expired authentication credentials",
+            System.Net.HttpStatusCode.Forbidden => "Access to the hub is forbidden",
+            System.Net.HttpStatusCode.NotFound => "Hub endpoint not found - check URL configuration",
+            System.Net.HttpStatusCode.BadGateway => "Bad gateway - proxy or load balancer issue",
+            System.Net.HttpStatusCode.ServiceUnavailable => "Service unavailable - server may be restarting",
+            System.Net.HttpStatusCode.GatewayTimeout => "Gateway timeout - upstream server not responding",
+            System.Net.HttpStatusCode.InternalServerError => "Internal server error on the hub",
+            _ => $"HTTP {(int)statusCode} {statusCode}"
+        };
     }
 
     private void StartMetricsAndMonitor(CancellationToken stoppingToken)
@@ -475,21 +871,7 @@ public class LogPusherService : BackgroundService
         return metrics;
     }
 
-    private string GetOrCreateWorkerId()
-    {
-        var workerIdPath = Path.Combine(Directory.GetCurrentDirectory(), WorkerIdFileName);
 
-        if (File.Exists(workerIdPath))
-        {
-            var existingId = File.ReadAllText(workerIdPath).Trim();
-            if (!string.IsNullOrEmpty(existingId))
-                return existingId;
-        }
-
-        var newId = $"bhb-{Guid.NewGuid().ToString("N")[..8]}";
-        File.WriteAllText(workerIdPath, newId);
-        return newId;
-    }
 
     private static async Task<bool> IsHubHostReachableAsync(string hubUrl, int timeoutMs, CancellationToken ct)
     {

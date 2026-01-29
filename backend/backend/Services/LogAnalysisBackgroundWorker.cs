@@ -15,19 +15,28 @@ public class LogAnalysisBackgroundWorker : BackgroundService
     private readonly ModelsConfig _modelsConfig;
     private readonly ILogger<LogAnalysisBackgroundWorker> _logger;
     private readonly ITokenValidationService _tokenValidationService;
+    private readonly IEmailService _emailService;
+    private readonly IKeycloakAdminService _keycloakService;
+    private readonly IQdrantService _qdrantService;
 
     public LogAnalysisBackgroundWorker(
         IServiceProvider serviceProvider,
         ILogAnalysisQueue queue,
         IOptions<ModelsConfig> modelsConfig,
         ILogger<LogAnalysisBackgroundWorker> logger,
-        ITokenValidationService tokenValidationService)
+        ITokenValidationService tokenValidationService,
+        IEmailService emailService,
+        IKeycloakAdminService keycloakService,
+        IQdrantService qdrantService)
     {
         _serviceProvider = serviceProvider;
         _queue = queue;
         _modelsConfig = modelsConfig.Value;
         _logger = logger;
         _tokenValidationService = tokenValidationService;
+        _emailService = emailService;
+        _keycloakService = keycloakService;
+        _qdrantService = qdrantService;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -178,8 +187,23 @@ public class LogAnalysisBackgroundWorker : BackgroundService
                 return;
             }
 
-            // 5. Analyze
-            var analysis = await analyzer.AnalyzeAsync(log.Id, logContent, model);
+            // 5. Fetch historical context from Qdrant for similar past analyses
+            // For uploaded logs, use "upload" as systemId
+            var historicalContext = await _qdrantService.GetHistoricalContextAsync(
+                userId,
+                "upload",
+                logContent,
+                limit: 5,
+                cancellationToken);
+
+            _logger.LogInformation(
+                "Found {Count} historical analyses for context, UserId {UserId}, LogId {LogId}",
+                historicalContext.Count, userId, logId);
+
+            // 6. Analyze with historical context
+            var analysis = historicalContext.Count > 0
+                ? await analyzer.AnalyzeWithHistoryAsync(log.Id, logContent, historicalContext, model)
+                : await analyzer.AnalyzeAsync(log.Id, logContent, model);
             if (analysis == null)
             {
                 await UpdateReportStatusAsync(
@@ -232,10 +256,31 @@ public class LogAnalysisBackgroundWorker : BackgroundService
             if (report.Status == ReportStatus.Completed)
             {
                 await planEnforcement.RecordAnalysisAsync(userId, model);
+
+                // Store analysis in Qdrant for similarity search and historical context
+                // For uploaded logs, use "upload" as the default systemId (no worker)
+                var metadata = new Dictionary<string, object>
+                {
+                    ["file_name"] = log.FileName,
+                    ["model"] = model ?? "default",
+                    ["log_id"] = log.Id.ToString(),
+                    ["is_live_log"] = false
+                };
+
+                await _qdrantService.StoreAnalysisAsync(
+                    reportId.Value,
+                    userId,
+                    "upload", // SystemId for uploaded logs (not from a worker)
+                    analysisText,
+                    metadata,
+                    cancellationToken);
             }
 
             await hubNotification.NotifyReportStatusChangedAsync(
                 userId, report.Id, report.Status);
+
+            // 10. Send email notification if configured
+            await SendEmailNotificationAsync(db, userId, log.FileName, report.Id, report.Status, report.Summary);
 
             _logger.LogInformation(
                 "Completed analysis for LogId {LogId}, ReportId {ReportId}",
@@ -279,6 +324,76 @@ public class LogAnalysisBackgroundWorker : BackgroundService
         {
             _logger.LogError(ex,
                 "Failed to update report status for ReportId {ReportId}", reportId);
+        }
+    }
+
+    private async Task SendEmailNotificationAsync(
+        AppDbContext db,
+        string userId,
+        string fileName,
+        Guid reportId,
+        ReportStatus status,
+        string summary)
+    {
+        try
+        {
+            if (!_emailService.IsConfigured())
+                return;
+
+            // Check user notification preferences
+            var prefs = await db.NotificationPreferences.FirstOrDefaultAsync(p => p.UserId == userId);
+
+            var shouldSend = status switch
+            {
+                ReportStatus.Completed => prefs?.EmailOnAnalysisComplete ?? true,
+                ReportStatus.Failed => prefs?.EmailOnAnalysisFailed ?? true,
+                _ => false
+            };
+
+            if (!shouldSend)
+                return;
+
+            // Check quiet hours
+            if (prefs?.QuietHoursStart != null && prefs?.QuietHoursEnd != null)
+            {
+                var now = DateTime.UtcNow.TimeOfDay;
+                if (now >= prefs.QuietHoursStart && now <= prefs.QuietHoursEnd)
+                    return;
+            }
+
+            var userEmail = await _keycloakService.GetUserEmailAsync(userId);
+            if (string.IsNullOrEmpty(userEmail))
+                return;
+
+            var subject = status == ReportStatus.Completed
+                ? $"Analysis Complete: {fileName}"
+                : $"Analysis Failed: {fileName}";
+
+            var htmlBody = status == ReportStatus.Completed
+                ? $@"<h2>Log Analysis Completed</h2>
+                    <p>Your log file <strong>{fileName}</strong> has been analyzed successfully.</p>
+                    <h3>Summary</h3>
+                    <p>{summary}</p>
+                    <p><a href=""https://app.blackhatbadshah.com/reports/{reportId}"">View Full Report</a></p>"
+                : $@"<h2>Log Analysis Failed</h2>
+                    <p>The analysis of your log file <strong>{fileName}</strong> failed.</p>
+                    <p><strong>Error:</strong> {summary}</p>
+                    <p>Please try again or contact support if the issue persists.</p>";
+
+            var emailResult = await _emailService.SendEmailAsync(userEmail, subject, htmlBody);
+            if (emailResult.Success)
+            {
+                _logger.LogInformation("Email notification sent to {Email} for report {ReportId}", userEmail, reportId);
+            }
+            else
+            {
+                _logger.LogWarning("Failed to send email notification to {Email} for report {ReportId}: {Error}",
+                    userEmail, reportId, emailResult.ErrorMessage);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to send email notification for report {ReportId}", reportId);
         }
     }
 }

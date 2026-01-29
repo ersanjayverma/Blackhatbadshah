@@ -1,0 +1,13 @@
+﻿{
+  "chartType": "ColumnChart",
+  "title": "SSH Failed Attempts by IP",
+  "xAxis": {
+    "labels": ["197.156.67.84", "134.199.193.244", "92.118.39.72"]
+  },
+  "series": [
+    {
+      "name": "Attempts",
+      "values": [50, 30, 5]
+    }
+  ]
+}

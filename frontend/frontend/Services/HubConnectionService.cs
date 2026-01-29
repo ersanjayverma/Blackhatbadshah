@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.SignalR.Client;
 
 namespace frontend.Services;
@@ -8,6 +9,7 @@ public class HubConnectionService : IAsyncDisposable
     private bool _isStarted;
     private readonly SemaphoreSlim _startLock = new(1, 1);
     private Func<Task<string?>>? _tokenProvider;
+    private bool _disposed;
 
     public HubConnection Connection => _connection ?? throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
 
@@ -22,6 +24,8 @@ public class HubConnectionService : IAsyncDisposable
 
     public async Task InitializeAsync(Func<Task<string?>> tokenProviderFunc)
     {
+        if (_disposed) return;
+
         await _startLock.WaitAsync();
         try
         {
@@ -41,8 +45,18 @@ public class HubConnectionService : IAsyncDisposable
                         }
                         return string.Empty;
                     };
+                    options.Transports = HttpTransportType.WebSockets | HttpTransportType.LongPolling;
                 })
-                .WithAutomaticReconnect(new[] { TimeSpan.Zero, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10) })
+                .WithAutomaticReconnect(new[] {
+                    TimeSpan.Zero,
+                    TimeSpan.FromSeconds(2),
+                    TimeSpan.FromSeconds(5),
+                    TimeSpan.FromSeconds(10),
+                    TimeSpan.FromSeconds(30),
+                    TimeSpan.FromSeconds(60)
+                })
+                .WithKeepAliveInterval(TimeSpan.FromSeconds(30))
+                .WithServerTimeout(TimeSpan.FromSeconds(90))
                 .Build();
 
             _connection.Reconnecting += error =>
@@ -54,7 +68,6 @@ public class HubConnectionService : IAsyncDisposable
 
             _connection.Reconnected += async connectionId =>
             {
-                // Rejoin user group after reconnection
                 try
                 {
                     await _connection.InvokeAsync("JoinUserGroup");
@@ -83,6 +96,8 @@ public class HubConnectionService : IAsyncDisposable
 
     public async Task StartAsync()
     {
+        if (_disposed) return;
+
         await _startLock.WaitAsync();
         try
         {
@@ -94,8 +109,6 @@ public class HubConnectionService : IAsyncDisposable
                 await _connection.StartAsync();
                 _isStarted = true;
                 OnConnectionStateChanged?.Invoke(true);
-
-                // Join user-specific group
                 await _connection.InvokeAsync("JoinUserGroup");
             }
         }
@@ -107,6 +120,8 @@ public class HubConnectionService : IAsyncDisposable
 
     public async Task StopAsync()
     {
+        if (_disposed) return;
+
         await _startLock.WaitAsync();
         try
         {
@@ -126,7 +141,6 @@ public class HubConnectionService : IAsyncDisposable
     {
         if (_connection == null)
             throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
-
         return _connection.On(methodName, handler);
     }
 
@@ -134,7 +148,6 @@ public class HubConnectionService : IAsyncDisposable
     {
         if (_connection == null)
             throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
-
         return _connection.On(methodName, handler);
     }
 
@@ -142,7 +155,6 @@ public class HubConnectionService : IAsyncDisposable
     {
         if (_connection == null)
             throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
-
         return _connection.On(methodName, handler);
     }
 
@@ -150,7 +162,6 @@ public class HubConnectionService : IAsyncDisposable
     {
         if (_connection == null)
             throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
-
         return _connection.On(methodName, handler);
     }
 
@@ -158,7 +169,6 @@ public class HubConnectionService : IAsyncDisposable
     {
         if (_connection == null)
             throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
-
         return _connection.On(methodName, handler);
     }
 
@@ -166,7 +176,6 @@ public class HubConnectionService : IAsyncDisposable
     {
         if (_connection == null)
             throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
-
         return _connection.On(methodName, handler);
     }
 
@@ -174,7 +183,6 @@ public class HubConnectionService : IAsyncDisposable
     {
         if (_connection == null)
             throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
-
         return _connection.On(methodName, handler);
     }
 
@@ -182,7 +190,6 @@ public class HubConnectionService : IAsyncDisposable
     {
         if (_connection == null)
             throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
-
         await _connection.InvokeAsync(methodName);
     }
 
@@ -190,7 +197,6 @@ public class HubConnectionService : IAsyncDisposable
     {
         if (_connection == null)
             throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
-
         await _connection.InvokeAsync(methodName, arg);
     }
 
@@ -198,7 +204,6 @@ public class HubConnectionService : IAsyncDisposable
     {
         if (_connection == null)
             throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
-
         await _connection.InvokeAsync(methodName, arg1, arg2);
     }
 
@@ -206,7 +211,6 @@ public class HubConnectionService : IAsyncDisposable
     {
         if (_connection == null)
             throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
-
         return await _connection.InvokeAsync<TResult>(methodName);
     }
 
@@ -214,17 +218,22 @@ public class HubConnectionService : IAsyncDisposable
     {
         if (_connection == null)
             throw new InvalidOperationException("Hub connection not initialized. Call InitializeAsync first.");
-
         return await _connection.InvokeAsync<TResult>(methodName, arg);
     }
 
     public async ValueTask DisposeAsync()
     {
+        if (_disposed) return;
+        _disposed = true;
+
         if (_connection != null)
         {
-            await _connection.DisposeAsync();
+            try { await _connection.DisposeAsync(); }
+            catch { }
             _connection = null;
         }
+        _isStarted = false;
         _startLock.Dispose();
     }
 }
+

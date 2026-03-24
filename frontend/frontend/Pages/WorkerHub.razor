@@ -13,11 +13,15 @@
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
 @inject ToastService Toast
+@inject LayoutService LayoutService
 @implements IAsyncDisposable
 
 <AuthorizeView>
     <Authorized>
         <div class="container-fluid px-4 py-4">
+
+            <!-- DYNAMIC GRID CONTAINER -->
+            <div id="workerHubGrid" class="dynamic-grid-container @(_editMode ? "edit-mode" : "")">
 
             <!-- HEADER -->
             <div class="d-flex justify-content-between align-items-center flex-wrap mb-4">
@@ -105,7 +109,7 @@
                                 <div class="alert alert-info mx-auto" style="max-width: 600px;">
                                     <i class="bi bi-info-circle me-2"></i>
                                     <strong>What happens next?</strong> After initialization, you'll receive a PSK.
-                                    Store it securely — you'll need it to configure workers.
+                                    Store it securely ï¿½ you'll need it to configure workers.
                                 </div>
                             </div>
                         </div>
@@ -115,7 +119,8 @@
                         <!-- CONFIG EXISTS - SHOW MANAGEMENT UI -->
 
                         <!-- CONFIG SUMMARY -->
-                        <div class="card modern-card shadow-sm mb-4">
+                        <div class="grid-item mb-4" data-grid-id="config-summary" style="width: 100%;">
+                        <div class="card modern-card shadow-sm">
                             <div class="card-header gradient-header-dark d-flex justify-content-between align-items-center">
                                 <h5 class="mb-0"><i class="bi bi-shield-check me-2"></i>Worker Configuration</h5>
                                 <div class="btn-group">
@@ -155,6 +160,7 @@
                                 </div>
                             </div>
                         </div>
+                        </div>
 
                         <!-- ACTION BUTTONS & LIMIT WARNING -->
                         @if (_summary.ActiveWorkers >= _config.MaxWorkers)
@@ -165,7 +171,8 @@
                         }
 
                         <!-- FILTER -->
-                        <div class="card modern-card shadow-sm mb-4">
+                        <div class="grid-item mb-4" data-grid-id="workers-filter" style="width: 100%;">
+                        <div class="card modern-card shadow-sm">
                             <div class="card-body">
                                 <div class="row g-3 align-items-end">
                                     <div class="col-md-6">
@@ -183,6 +190,7 @@
                                     </div>
                                 </div>
                             </div>
+                        </div>
                         </div>
 
                         <!-- WORKERS TABLE -->
@@ -210,6 +218,7 @@
                         }
                         else
                         {
+                            <div class="grid-item" data-grid-id="workers-table" style="width: 100%;">
                             <div class="card modern-card shadow-lg">
                                 <div class="card-header gradient-header-dark">
                                     <h5 class="mb-0"><i class="bi bi-list-ul me-2"></i>Registered Workers</h5>
@@ -305,6 +314,7 @@
                                     </div>
                                 </div>
                             </div>
+                            </div>
                         }
                     }
                 }
@@ -329,25 +339,25 @@
                     {
                         <!-- STATS ROW -->
                         <div class="row g-3 mb-4">
-                            <div class="col-md-3 col-sm-6">
+                            <div class="col-md-3 col-sm-6 grid-item" data-grid-id="live-stat-total">
                                 <div class="card modern-card shadow-sm stat-card text-center py-3">
                                     <div class="fw-bold fs-4 text-primary">@_liveWorkers.Workers.Count</div>
                                     <small class="fw-bold">Total Workers</small>
                                 </div>
                             </div>
-                            <div class="col-md-3 col-sm-6">
+                            <div class="col-md-3 col-sm-6 grid-item" data-grid-id="live-stat-online">
                                 <div class="card modern-card shadow-sm stat-card text-center py-3">
                                     <div class="fw-bold fs-4 text-success">@_liveWorkers.Workers.Count(w => w.IsOnline)</div>
                                     <small class="fw-bold">Online</small>
                                 </div>
                             </div>
-                            <div class="col-md-3 col-sm-6">
+                            <div class="col-md-3 col-sm-6 grid-item" data-grid-id="live-stat-offline">
                                 <div class="card modern-card shadow-sm stat-card text-center py-3">
                                     <div class="fw-bold fs-4 text-secondary">@_liveWorkers.Workers.Count(w => !w.IsOnline)</div>
                                     <small class="fw-bold">Offline</small>
                                 </div>
                             </div>
-                            <div class="col-md-3 col-sm-6">
+                            <div class="col-md-3 col-sm-6 grid-item" data-grid-id="live-stat-paths">
                                 <div class="card modern-card shadow-sm stat-card text-center py-3">
                                     <div class="fw-bold fs-4 text-info">@_liveWorkers.Workers.Sum(w => w.AvailableLogPaths.Count)</div>
                                     <small class="fw-bold">Log Paths</small>
@@ -356,7 +366,8 @@
                         </div>
 
                         <!-- FILTER -->
-                        <div class="card modern-card shadow-sm mb-4">
+                        <div class="grid-item mb-4" data-grid-id="live-filter" style="width: 100%;">
+                        <div class="card modern-card shadow-sm">
                             <div class="card-body">
                                 <div class="row g-3 align-items-end">
                                     <div class="col-md-6">
@@ -383,6 +394,7 @@
                                     </div>
                                 </div>
                             </div>
+                        </div>
                         </div>
 
                         <!-- WORKERS CARDS -->
@@ -511,6 +523,43 @@
                     }
                 }
             }
+            </div> <!-- End of dynamic-grid-container -->
+
+                <!-- EDIT MODE INDICATOR -->
+                <div class="edit-mode-indicator">
+                    <i class="bi bi-pencil-square"></i>
+                    <span>Edit Mode - Drag and resize cards</span>
+                </div>
+
+                <!-- EDIT MODE TOGGLE BUTTON -->
+                <button class="edit-mode-toggle @(_editMode ? "active" : "")" @onclick="ToggleEditMode">
+                    @if (_editMode)
+                    {
+                        <i class="bi bi-check-lg"></i>
+                        <span>Done Editing</span>
+                    }
+                    else
+                    {
+                        <i class="bi bi-layout-wtf"></i>
+                        <span>Customize Layout</span>
+                    }
+                </button>
+
+                <!-- EDIT CONTROLS PANEL -->
+                <div class="edit-controls @(_editMode ? "visible" : "")">
+                    <button @onclick="ResetLayout" class="danger">
+                        <i class="bi bi-arrow-counterclockwise"></i>
+                        Reset Layout
+                    </button>
+                    <button @onclick="ExportLayout">
+                        <i class="bi bi-download"></i>
+                        Export Layout
+                    </button>
+                    <button @onclick="ImportLayout">
+                        <i class="bi bi-upload"></i>
+                        Import Layout
+                    </button>
+                </div>
         </div>
 
         <!-- REGISTER WORKER MODAL -->
@@ -837,6 +886,8 @@ BHB_API_URL=https://api.blackhatbadshah.com</code></pre>
     // Tab State
     private string _activeTab = "manage";
     private bool _loading = true;
+    private bool _editMode = false;
+    private DotNetObjectReference<WorkerHub>? _dotNetRef;
 
     // Manage Tab State
     private UserWorkerConfigResponse? _config;
@@ -1387,10 +1438,138 @@ BHB_API_URL=https://api.blackhatbadshah.com</code></pre>
         return managedWorker?.Name ?? "Unknown";
     }
 
+    // ==================== GRID LAYOUT METHODS ====================
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await InitializeGrid();
+        }
+    }
+
+    private const string PAGE_ID = "worker-hub";
+
+    private async Task InitializeGrid()
+    {
+        try
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("initDynamicGrid", _dotNetRef, "workerHubGrid", PAGE_ID);
+
+            // Load layout from server
+            try
+            {
+                var layout = await LayoutService.GetLayoutAsync(PAGE_ID);
+                if (!string.IsNullOrEmpty(layout.LayoutJson) && layout.LayoutJson != "{}")
+                {
+                    await JS.InvokeVoidAsync("applyServerLayout", layout.LayoutJson);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to load server layout: {ex.Message}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Grid initialization failed: {ex.Message}");
+        }
+    }
+
+    private async Task ToggleEditMode()
+    {
+        _editMode = !_editMode;
+        try
+        {
+            await JS.InvokeVoidAsync("toggleGridEditMode", _editMode);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Toggle edit mode failed: {ex.Message}");
+        }
+    }
+
+    private async Task ResetLayout()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("resetGridLayout");
+            Toast.ShowSuccess("Layout reset to default!");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Reset layout failed: {ex.Message}");
+            Toast.ShowError($"Reset failed: {ex.Message}");
+        }
+    }
+
+    private async Task ExportLayout()
+    {
+        try
+        {
+            var layoutJson = await JS.InvokeAsync<string>("exportGridLayout");
+            var fileName = $"workerhub-layout-{DateTime.Now:yyyyMMdd-HHmmss}.json";
+            var bytes = System.Text.Encoding.UTF8.GetBytes(layoutJson);
+            var base64 = Convert.ToBase64String(bytes);
+            await JS.InvokeVoidAsync("downloadFileFromBase64", fileName, "application/json", base64);
+            Toast.ShowSuccess("Layout exported successfully!");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Export layout failed: {ex.Message}");
+            Toast.ShowError($"Export failed: {ex.Message}");
+        }
+    }
+
+    private async Task ImportLayout()
+    {
+        Toast.ShowInfo("Import feature coming soon! For now, layouts are auto-saved.");
+    }
+
+    [JSInvokable]
+    public void OnGridEvent(string eventName, object data)
+    {
+        Console.WriteLine($"Grid event: {eventName}");
+        if (eventName == "layoutReset")
+        {
+            InvokeAsync(StateHasChanged);
+        }
+    }
+
+    [JSInvokable]
+    public async Task SaveLayoutToServer(string pageId, string layoutJson)
+    {
+        try
+        {
+            await LayoutService.SaveLayoutAsync(pageId, layoutJson);
+            Console.WriteLine($"Layout saved to server for page: {pageId}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to save layout to server: {ex.Message}");
+        }
+    }
+
+    [JSInvokable]
+    public async Task ResetLayoutOnServer(string pageId)
+    {
+        try
+        {
+            await LayoutService.ResetLayoutAsync(pageId);
+            Console.WriteLine($"Layout reset on server for page: {pageId}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to reset layout on server: {ex.Message}");
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         _workerRegisteredSub?.Dispose();
         _logPullResponseSub?.Dispose();
+        _dotNetRef?.Dispose();
 
         try
         {

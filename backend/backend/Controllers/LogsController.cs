@@ -1,10 +1,9 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System.Security.Claims;
 using System.Text;
 using UglyToad.PdfPig;
-
+using backend.Common;
 using backend.Data;
 using backend.Data.Entities;
 using backend.Services;
@@ -12,10 +11,9 @@ using shared.Dto;
 
 namespace backend.Controllers;
 
-[ApiController]
 [Route("api/logs")]
 [Authorize]
-public class LogsController : ControllerBase
+public class LogsController : BaseApiController
 {
     private readonly IConfiguration _config;
     private readonly AppDbContext _db;
@@ -24,22 +22,8 @@ public class LogsController : ControllerBase
     private readonly IHubNotificationService _hubNotification;
     private readonly ILogAnalysisQueue _analysisQueue;
     private readonly IPlanEnforcementService _planEnforcement;
+    private readonly ITagService _tagService;
     private readonly string _storageRoot;
-
-    // ----------------------------
-    // Supported formats
-    // ----------------------------
-    private static readonly HashSet<string> TextExtensions =
-        new(StringComparer.OrdinalIgnoreCase)
-        { ".txt", ".log", ".json", ".xml", ".csv" };
-
-    private static readonly HashSet<string> ImageExtensions =
-        new(StringComparer.OrdinalIgnoreCase)
-        { ".png", ".jpg", ".jpeg", ".tiff" };
-
-    private static readonly HashSet<string> PdfExtensions =
-        new(StringComparer.OrdinalIgnoreCase)
-        { ".pdf" };
 
     public LogsController(
         IConfiguration config,
@@ -48,7 +32,8 @@ public class LogsController : ControllerBase
         ITextractService textractService,
         IHubNotificationService hubNotification,
         ILogAnalysisQueue analysisQueue,
-        IPlanEnforcementService planEnforcement)
+        IPlanEnforcementService planEnforcement,
+        ITagService tagService)
     {
         _config = config;
         _db = db;
@@ -57,6 +42,7 @@ public class LogsController : ControllerBase
         _hubNotification = hubNotification;
         _analysisQueue = analysisQueue;
         _planEnforcement = planEnforcement;
+        _tagService = tagService;
 
         _storageRoot = _config["Storage:RootPath"]
             ?? throw new InvalidOperationException("Storage:RootPath not configured");
@@ -66,54 +52,50 @@ public class LogsController : ControllerBase
         Directory.CreateDirectory(Path.Combine(_storageRoot, "reports"));
     }
 
-    // -----------------------------------------
-    // POST api/logs/upload
-    // -----------------------------------------
+    /// <summary>
+    /// Upload a log file
+    /// </summary>
     [HttpPost("upload")]
     public async Task<IActionResult> Upload(IFormFile file, [FromQuery] string? tagIds = null)
     {
         if (file == null || file.Length == 0)
-            return BadRequest("File is required.");
+            return BadRequest(ErrorMessages.FileRequired);
 
-        if (file.Length > 10 * 1024 * 1024)
-            return BadRequest("File size exceeds 10 MB.");
+        if (file.Length > Defaults.MaxFileSizeBytes)
+            return BadRequest(ErrorMessages.FileTooLarge);
 
-        var userId =
-            User.FindFirstValue(ClaimTypes.NameIdentifier) ??
-            User.FindFirstValue("sub");
-
-        if (userId == null)
+        if (!TryGetUserId(out var userId))
             return Unauthorized();
 
         var ext = Path.GetExtension(file.FileName);
         if (string.IsNullOrWhiteSpace(ext))
-            return BadRequest("File extension missing.");
+            return BadRequest(ErrorMessages.FileExtensionMissing);
 
         string extractedText;
 
-        if (TextExtensions.Contains(ext))
+        if (FileExtensions.IsText(ext))
         {
             using var reader = new StreamReader(file.OpenReadStream());
             extractedText = await reader.ReadToEndAsync();
         }
-        else if (PdfExtensions.Contains(ext))
+        else if (FileExtensions.IsPdf(ext))
         {
             var pdfText = await TryExtractPdfTextAsync(file);
             extractedText = !string.IsNullOrWhiteSpace(pdfText)
                 ? pdfText
                 : await _textractService.ExtractTextAsync(file);
         }
-        else if (ImageExtensions.Contains(ext))
+        else if (FileExtensions.IsImage(ext))
         {
             extractedText = await _textractService.ExtractTextAsync(file);
         }
         else
         {
-            return BadRequest($"Unsupported file type '{ext}'.");
+            return BadRequest(string.Format(ErrorMessages.UnsupportedFileType, ext));
         }
 
         if (string.IsNullOrWhiteSpace(extractedText))
-            return BadRequest("No extractable text found.");
+            return BadRequest(ErrorMessages.NoExtractableText);
 
         var logId = Guid.NewGuid();
         var filePath = Path.Combine(_storageRoot, "logs", $"{logId}.txt");
@@ -135,110 +117,61 @@ public class LogsController : ControllerBase
         await _db.SaveChangesAsync();
 
         // Assign tags if provided
-        var assignedTags = new List<TagDto>();
-        if (!string.IsNullOrEmpty(tagIds))
-        {
-            var tagIdList = tagIds.Split(',')
-                .Select(s => Guid.TryParse(s.Trim(), out var id) ? id : (Guid?)null)
-                .Where(id => id.HasValue)
-                .Select(id => id!.Value)
-                .ToList();
-
-            foreach (var tagId in tagIdList)
-            {
-                var tag = await _db.LogTags.FirstOrDefaultAsync(t => t.Id == tagId && t.UserId == userId);
-                if (tag != null)
-                {
-                    _db.LogTagMappings.Add(new LogTagMapping
-                    {
-                        Id = Guid.NewGuid(),
-                        LogId = logId,
-                        TagId = tagId,
-                        CreatedAt = DateTime.UtcNow
-                    });
-                    assignedTags.Add(new TagDto
-                    {
-                        Id = tag.Id,
-                        Name = tag.Name,
-                        Color = tag.Color,
-                        CreatedAt = tag.CreatedAt
-                    });
-                }
-            }
-            await _db.SaveChangesAsync();
-        }
+        var parsedTagIds = _tagService.ParseTagIds(tagIds);
+        var assignedTags = parsedTagIds.Count > 0
+            ? await _tagService.AssignTagsToLogAsync(logId, parsedTagIds, userId)
+            : new List<TagDto>();
 
         await _hubNotification.NotifyLogCreatedAsync(userId, logId, entity.FileName);
 
         return Ok(new { logId, tags = assignedTags });
     }
 
-    // -----------------------------------------
-    // GET api/logs/{id}
-    // -----------------------------------------
+    /// <summary>
+    /// Get a specific log
+    /// </summary>
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> Get(Guid id)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                     ?? User.FindFirstValue("sub");
+        var userId = GetUserId();
 
         var log = await _db.Logs.FindAsync(id);
         if (log == null) return NotFound();
         if (log.UserId != userId) return Forbid();
 
-        var tags = await _db.LogTagMappings
-            .Where(m => m.LogId == id)
-            .Include(m => m.Tag)
-            .Select(m => new TagDto
-            {
-                Id = m.Tag.Id,
-                Name = m.Tag.Name,
-                Color = m.Tag.Color,
-                CreatedAt = m.Tag.CreatedAt
-            })
-            .ToListAsync();
+        var tags = await _tagService.GetTagsForLogAsync(id);
 
-        return Ok(new LogDto
-        {
-            Id = log.Id,
-            FileName = log.FileName,
-            SizeBytes = log.SizeBytes,
-            CreatedAt = log.CreatedAt,
-            Tags = tags
-        });
+        return Ok(log.ToDto(tags));
     }
 
-    // -----------------------------------------
-    // GET api/logs/{id}/content
-    // -----------------------------------------
+    /// <summary>
+    /// Get log content
+    /// </summary>
     [HttpGet("{id:guid}/content")]
     public IActionResult GetContent(Guid id)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                     ?? User.FindFirstValue("sub");
+        var userId = GetUserId();
 
         var log = _db.Logs.Find(id);
         if (log == null) return NotFound();
         if (log.UserId != userId) return Forbid();
 
         if (!System.IO.File.Exists(log.StoragePath))
-            return NotFound("File missing");
+            return NotFound(ErrorMessages.FileMissing);
 
         return PhysicalFile(log.StoragePath, "text/plain");
     }
 
-    // -----------------------------------------
-    // GET api/logs
-    // -----------------------------------------
+    /// <summary>
+    /// List all logs for the current user
+    /// </summary>
     [HttpGet]
     public async Task<IActionResult> List([FromQuery] Guid? tagId = null)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                     ?? User.FindFirstValue("sub");
+        var userId = GetUserId();
 
         var query = _db.Logs.AsNoTracking().Where(x => x.UserId == userId);
 
-        // Filter by tag if provided
         if (tagId.HasValue)
         {
             var logIdsWithTag = _db.LogTagMappings
@@ -249,7 +182,7 @@ public class LogsController : ControllerBase
 
         var logs = await query
             .OrderByDescending(x => x.CreatedAt)
-            .Take(50)
+            .Take(Defaults.MaxLogsPerList)
             .Select(x => new LogDto
             {
                 Id = x.Id,
@@ -258,13 +191,7 @@ public class LogsController : ControllerBase
                 CreatedAt = x.CreatedAt,
                 Tags = _db.LogTagMappings
                     .Where(m => m.LogId == x.Id)
-                    .Select(m => new TagDto
-                    {
-                        Id = m.Tag.Id,
-                        Name = m.Tag.Name,
-                        Color = m.Tag.Color,
-                        CreatedAt = m.Tag.CreatedAt
-                    })
+                    .Select(m => m.Tag.ToDto())
                     .ToList()
             })
             .ToListAsync();
@@ -272,14 +199,13 @@ public class LogsController : ControllerBase
         return Ok(logs);
     }
 
-    // -----------------------------------------
-    // DELETE api/logs/{id}
-    // -----------------------------------------
+    /// <summary>
+    /// Delete a log
+    /// </summary>
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                     ?? User.FindFirstValue("sub");
+        var userId = GetUserId();
 
         var log = await _db.Logs.FindAsync(id);
         if (log == null) return NotFound();
@@ -295,23 +221,22 @@ public class LogsController : ControllerBase
         _db.Logs.Remove(log);
         await _db.SaveChangesAsync();
 
-        await _hubNotification.NotifyLogDeletedAsync(userId, id);
+        await _hubNotification.NotifyLogDeletedAsync(userId!, id);
 
         return NoContent();
     }
 
-    // -----------------------------------------
-    // DELETE api/logs/bulk
-    // -----------------------------------------
+    /// <summary>
+    /// Bulk delete logs
+    /// </summary>
     [HttpPost("bulk-delete")]
     public async Task<IActionResult> BulkDelete([FromBody] BulkDeleteRequest request)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                     ?? User.FindFirstValue("sub");
-        if (userId == null) return Unauthorized();
+        if (!TryGetUserId(out var userId))
+            return Unauthorized();
 
         if (request.Ids == null || request.Ids.Count == 0)
-            return BadRequest(new { error = "No log IDs provided" });
+            return BadRequestWithError(ErrorMessages.NoLogIdsProvided);
 
         var successCount = 0;
         var errors = new List<BulkOperationError>();
@@ -323,12 +248,12 @@ public class LogsController : ControllerBase
                 var log = await _db.Logs.FindAsync(id);
                 if (log == null)
                 {
-                    errors.Add(new BulkOperationError { Id = id, Error = "Log not found" });
+                    errors.Add(new BulkOperationError { Id = id, Error = ErrorMessages.LogNotFound });
                     continue;
                 }
                 if (log.UserId != userId)
                 {
-                    errors.Add(new BulkOperationError { Id = id, Error = "Access denied" });
+                    errors.Add(new BulkOperationError { Id = id, Error = ErrorMessages.AccessDenied });
                     continue;
                 }
 
@@ -350,7 +275,6 @@ public class LogsController : ControllerBase
 
         await _db.SaveChangesAsync();
 
-        // Notify frontend
         foreach (var id in request.Ids.Where(id => !errors.Any(e => e.Id == id)))
         {
             await _hubNotification.NotifyLogDeletedAsync(userId, id);
@@ -365,29 +289,25 @@ public class LogsController : ControllerBase
         });
     }
 
-    // -----------------------------------------
-    // POST api/logs/bulk-analyze
-    // -----------------------------------------
+    /// <summary>
+    /// Bulk analyze logs
+    /// </summary>
     [HttpPost("bulk-analyze")]
     public async Task<IActionResult> BulkAnalyze([FromBody] BulkAnalyzeRequest request)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                     ?? User.FindFirstValue("sub");
-        if (userId == null) return Unauthorized();
+        if (!TryGetUserId(out var userId))
+            return Unauthorized();
 
         if (request.LogIds == null || request.LogIds.Count == 0)
-            return BadRequest(new { error = "No log IDs provided" });
+            return BadRequestWithError(ErrorMessages.NoLogIdsProvided);
 
-        // Check plan limits
         var (allowed, message) = await _planEnforcement.CheckAnalysisAllowedAsync(userId, request.Model);
         if (!allowed)
-        {
-            return StatusCode(402, new { error = message, upgradeRequired = true });
-        }
+            return PaymentRequired(message!);
 
-        var authHeader = Request.Headers.Authorization.ToString();
-        var token = authHeader.StartsWith("Bearer ") ? authHeader[7..] : null;
-        if (token == null) return Unauthorized();
+        var token = GetBearerToken();
+        if (token == null)
+            return Unauthorized();
 
         var successCount = 0;
         var errors = new List<BulkOperationError>();
@@ -399,12 +319,12 @@ public class LogsController : ControllerBase
                 var log = await _db.Logs.FindAsync(id);
                 if (log == null)
                 {
-                    errors.Add(new BulkOperationError { Id = id, Error = "Log not found" });
+                    errors.Add(new BulkOperationError { Id = id, Error = ErrorMessages.LogNotFound });
                     continue;
                 }
                 if (log.UserId != userId)
                 {
-                    errors.Add(new BulkOperationError { Id = id, Error = "Access denied" });
+                    errors.Add(new BulkOperationError { Id = id, Error = ErrorMessages.AccessDenied });
                     continue;
                 }
 
@@ -426,15 +346,14 @@ public class LogsController : ControllerBase
         });
     }
 
-    // -----------------------------------------
-    // DELETE api/logs/all
-    // -----------------------------------------
+    /// <summary>
+    /// Delete all logs
+    /// </summary>
     [HttpDelete("all")]
     public async Task<IActionResult> DeleteAll()
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                     ?? User.FindFirstValue("sub");
-        if (userId == null) return Unauthorized();
+        if (!TryGetUserId(out var userId))
+            return Unauthorized();
 
         var logs = await _db.Logs.Where(l => l.UserId == userId).ToListAsync();
 
@@ -456,51 +375,44 @@ public class LogsController : ControllerBase
         return Ok(new DeleteAllResponse { Deleted = logs.Count });
     }
 
-    // -----------------------------------------
-    // POST api/logs/{id}/analyze
-    // -----------------------------------------
+    /// <summary>
+    /// Queue analysis for a log
+    /// </summary>
     [HttpPost("{id:guid}/analyze")]
     public async Task<IActionResult> QueueAnalysis(Guid id, [FromBody] AnalyzeLogRequest? request = null)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                     ?? User.FindFirstValue("sub");
+        var userId = GetUserId();
 
         var log = _db.Logs.Find(id);
         if (log == null) return NotFound();
         if (log.UserId != userId) return Forbid();
 
-        // Check plan limits and model access
-        var (allowed, message) = await _planEnforcement.CheckAnalysisAllowedAsync(userId, request?.Model);
+        var (allowed, message) = await _planEnforcement.CheckAnalysisAllowedAsync(userId!, request?.Model);
         if (!allowed)
-        {
-            return StatusCode(402, new { error = message, upgradeRequired = true });
-        }
+            return PaymentRequired(message!);
 
-        var authHeader = Request.Headers.Authorization.ToString();
-        var token = authHeader.StartsWith("Bearer ") ? authHeader[7..] : null;
-        if (token == null) return Unauthorized();
+        var token = GetBearerToken();
+        if (token == null)
+            return Unauthorized();
 
-        // Usage is recorded in LogAnalysisBackgroundWorker only after successful analysis
-
-        await _analysisQueue.QueueAnalysisJobAsync(id, userId, token, request?.Model);
+        await _analysisQueue.QueueAnalysisJobAsync(id, userId!, token, request?.Model);
         return Accepted(new { message = "Analysis queued", logId = id });
     }
 
-    // -----------------------------------------
-    // GET api/logs/{id}/analyze (legacy)
-    // -----------------------------------------
+    /// <summary>
+    /// Analyze log content (legacy endpoint)
+    /// </summary>
     [HttpGet("{id:guid}/analyze")]
     public async Task<IActionResult> AnalyseContent(Guid id, [FromQuery] string? model = null)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                     ?? User.FindFirstValue("sub");
+        var userId = GetUserId();
 
         var log = await _db.Logs.FindAsync(id);
         if (log == null) return NotFound();
         if (log.UserId != userId) return Forbid();
 
         if (!System.IO.File.Exists(log.StoragePath))
-            return NotFound("Log file missing");
+            return NotFound(ErrorMessages.FileMissing);
 
         var logContent = await System.IO.File.ReadAllTextAsync(log.StoragePath);
 
@@ -518,7 +430,7 @@ public class LogsController : ControllerBase
         {
             Id = reportId,
             LogId = log.Id,
-            UserId = userId,
+            UserId = userId!,
             Title = $"Analysis Report – {log.FileName}",
             Summary = analysisText.Length > 500 ? analysisText[..500] : analysisText,
             ReportPath = reportPath,
@@ -529,7 +441,7 @@ public class LogsController : ControllerBase
         _db.Reports.Add(report);
         await _db.SaveChangesAsync();
 
-        await _hubNotification.NotifyReportCreatedAsync(userId, new ReportListItem
+        await _hubNotification.NotifyReportCreatedAsync(userId!, new ReportListItem
         {
             Id = report.Id,
             Title = report.Title,
@@ -541,9 +453,6 @@ public class LogsController : ControllerBase
         return Ok(analysis);
     }
 
-    // -----------------------------------------
-    // PDF text probe
-    // -----------------------------------------
     private static async Task<string?> TryExtractPdfTextAsync(IFormFile file)
     {
         await using var stream = file.OpenReadStream();

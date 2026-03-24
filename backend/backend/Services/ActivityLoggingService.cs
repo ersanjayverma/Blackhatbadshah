@@ -1,3 +1,4 @@
+using backend.Common;
 using backend.Data;
 using backend.Data.Entities;
 using Microsoft.AspNetCore.Http;
@@ -76,29 +77,29 @@ public class ActivityLoggingService : IActivityLoggingService
 public static class ActivityLoggingExtensions
 {
     public static Task LogLogUploadAsync(this IActivityLoggingService service, string userId, Guid logId, string fileName)
-        => service.LogActivityAsync(userId, ActivityTypes.LogUpload, $"Uploaded log file: {fileName}", logId, "Log");
+        => service.LogActivityAsync(userId, ActivityTypes.LogUpload, $"Uploaded log file: {fileName}", logId, EntityTypes.Log);
 
     public static Task LogLogDeleteAsync(this IActivityLoggingService service, string userId, Guid logId, string fileName)
-        => service.LogActivityAsync(userId, ActivityTypes.LogDelete, $"Deleted log file: {fileName}", logId, "Log");
+        => service.LogActivityAsync(userId, ActivityTypes.LogDelete, $"Deleted log file: {fileName}", logId, EntityTypes.Log);
 
     public static Task LogLogAnalyzeAsync(this IActivityLoggingService service, string userId, Guid logId, string fileName, string? model)
-        => service.LogActivityAsync(userId, ActivityTypes.LogAnalyze, $"Queued analysis for: {fileName} using model: {model ?? "default"}", logId, "Log");
+        => service.LogActivityAsync(userId, ActivityTypes.LogAnalyze, $"Queued analysis for: {fileName} using model: {model ?? "default"}", logId, EntityTypes.Log);
 
     public static Task LogReportGeneratedAsync(this IActivityLoggingService service, string userId, Guid reportId, string title)
-        => service.LogActivityAsync(userId, ActivityTypes.ReportGenerated, $"Generated report: {title}", reportId, "Report");
+        => service.LogActivityAsync(userId, ActivityTypes.ReportGenerated, $"Generated report: {title}", reportId, EntityTypes.Report);
 
     public static Task LogReportDownloadAsync(this IActivityLoggingService service, string userId, Guid reportId, string title)
-        => service.LogActivityAsync(userId, ActivityTypes.ReportDownload, $"Downloaded report: {title}", reportId, "Report");
+        => service.LogActivityAsync(userId, ActivityTypes.ReportDownload, $"Downloaded report: {title}", reportId, EntityTypes.Report);
 
     public static Task LogReportDeleteAsync(this IActivityLoggingService service, string userId, Guid reportId, string title)
-        => service.LogActivityAsync(userId, ActivityTypes.ReportDelete, $"Deleted report: {title}", reportId, "Report");
+        => service.LogActivityAsync(userId, ActivityTypes.ReportDelete, $"Deleted report: {title}", reportId, EntityTypes.Report);
 
     public static Task LogShareLinkCreatedAsync(this IActivityLoggingService service, string userId, Guid linkId, Guid reportId)
-        => service.LogActivityAsync(userId, ActivityTypes.ShareLinkCreated, $"Created share link for report", linkId, "ShareableLink");
+        => service.LogActivityAsync(userId, ActivityTypes.ShareLinkCreated, $"Created share link for report", linkId, EntityTypes.ShareableLink);
 
     public static Task LogWorkerRegisteredAsync(this IActivityLoggingService service, string userId, Guid workerId, string name)
-        => service.LogActivityAsync(userId, ActivityTypes.WorkerRegistered, $"Registered worker: {name}", workerId, "WorkerAgent");
+        => service.LogActivityAsync(userId, ActivityTypes.WorkerRegistered, $"Registered worker: {name}", workerId, EntityTypes.WorkerAgent);
 
     public static Task LogWorkerDeletedAsync(this IActivityLoggingService service, string userId, Guid workerId, string name)
-        => service.LogActivityAsync(userId, ActivityTypes.WorkerDeleted, $"Deleted worker: {name}", workerId, "WorkerAgent");
+        => service.LogActivityAsync(userId, ActivityTypes.WorkerDeleted, $"Deleted worker: {name}", workerId, EntityTypes.WorkerAgent);
 }

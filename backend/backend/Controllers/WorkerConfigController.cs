@@ -1,18 +1,18 @@
+using backend.Common;
 using backend.Data;
 using backend.Data.Entities;
 using backend.Handlers;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System.Security.Claims;
+using shared.Dto;
 using System.Security.Cryptography;
 
 namespace backend.Controllers;
 
-[ApiController]
 [Route("api/worker-config")]
 [Authorize]
-public class WorkerConfigController : ControllerBase
+public class WorkerConfigController : BaseApiController
 {
     private readonly AppDbContext _db;
     private readonly ILogger<WorkerConfigController> _logger;
@@ -23,32 +23,15 @@ public class WorkerConfigController : ControllerBase
         _logger = logger;
     }
 
-    private string? GetUserId()
-    {
-        // Try multiple claim types that Keycloak might use
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                     ?? User.FindFirstValue("sub")
-                     ?? User.FindFirstValue("preferred_username");
-        
-        if (string.IsNullOrEmpty(userId))
-        {
-            _logger.LogWarning("Could not determine user ID from claims. Available claims: {Claims}",
-                string.Join(", ", User.Claims.Select(c => $"{c.Type}={c.Value}")));
-        }
-        
-        return userId;
-    }
-
     [HttpGet]
     public async Task<IActionResult> GetConfig()
     {
         try
         {
-            var userId = GetUserId();
-            if (string.IsNullOrEmpty(userId))
+            if (!TryGetUserId(out var userId))
             {
                 _logger.LogWarning("GetConfig: User ID is null or empty");
-                return Unauthorized(new { error = "Unable to determine user identity" });
+                return UnauthorizedWithError(ErrorMessages.Unauthorized);
             }
 
             var config = await _db.UserWorkerConfigs
@@ -97,26 +80,19 @@ public class WorkerConfigController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Initialize worker configuration and generate PSK for first time
-    /// </summary>
     [HttpPost("initialize")]
     public async Task<IActionResult> Initialize([FromBody] InitializeWorkerConfigRequest? request)
     {
         try
         {
-            var userId = GetUserId();
-            if (string.IsNullOrEmpty(userId))
-                return Unauthorized(new { error = "Unable to determine user identity" });
+            if (!TryGetUserId(out var userId))
+                return UnauthorizedWithError(ErrorMessages.Unauthorized);
 
-            // Check if config already exists
             var existingConfig = await _db.UserWorkerConfigs
                 .FirstOrDefaultAsync(c => c.UserId == userId);
 
             if (existingConfig != null)
-            {
-                return Conflict(new { error = "Worker configuration already exists. Use rotate-psk to generate a new key." });
-            }
+                return ConflictWithError(ErrorMessages.WorkerConfigAlreadyExists);
 
             // Generate PSK
             var psk = GeneratePsk();
@@ -127,8 +103,8 @@ public class WorkerConfigController : ControllerBase
                 Id = Guid.NewGuid(),
                 UserId = userId,
                 PskHash = pskHash,
-                ConfigName = request?.ConfigName ?? "Default Configuration",
-                MaxWorkers = 3, // Default limit - can be updated based on subscription
+                ConfigName = request?.ConfigName ?? Defaults.DefaultWorkerConfigName,
+                MaxWorkers = Defaults.DefaultMaxWorkers,
                 IsEnabled = true,
                 CreatedAt = DateTime.UtcNow
             };
@@ -152,25 +128,19 @@ public class WorkerConfigController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Rotate the user's PSK
-    /// </summary>
     [HttpPost("rotate-psk")]
     public async Task<IActionResult> RotatePsk()
     {
         try
         {
-            var userId = GetUserId();
-            if (string.IsNullOrEmpty(userId))
-                return Unauthorized(new { error = "Unable to determine user identity" });
+            if (!TryGetUserId(out var userId))
+                return UnauthorizedWithError(ErrorMessages.Unauthorized);
 
             var config = await _db.UserWorkerConfigs
                 .FirstOrDefaultAsync(c => c.UserId == userId);
 
             if (config == null)
-            {
-                return NotFound(new { error = "Worker configuration not found. Initialize first." });
-            }
+                return NotFoundWithError(ErrorMessages.WorkerConfigNotFound);
 
             // Generate new PSK
             var psk = GeneratePsk();
@@ -196,23 +166,17 @@ public class WorkerConfigController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Update worker configuration settings
-    /// </summary>
     [HttpPut]
     public async Task<IActionResult> UpdateConfig([FromBody] UpdateWorkerConfigRequest request)
     {
-        var userId = GetUserId();
-        if (string.IsNullOrEmpty(userId))
+        if (!TryGetUserId(out var userId))
             return Unauthorized();
 
         var config = await _db.UserWorkerConfigs
             .FirstOrDefaultAsync(c => c.UserId == userId);
 
         if (config == null)
-        {
-            return NotFound(new { error = "Worker configuration not found. Initialize first." });
-        }
+            return NotFoundWithError(ErrorMessages.WorkerConfigNotFound);
 
         if (!string.IsNullOrWhiteSpace(request.ConfigName))
         {
@@ -229,14 +193,10 @@ public class WorkerConfigController : ControllerBase
         return Ok(new { message = "Configuration updated successfully" });
     }
 
-    /// <summary>
-    /// Get worker installation instructions for user
-    /// </summary>
     [HttpGet("install-instructions")]
     public async Task<IActionResult> GetInstallInstructions()
     {
-        var userId = GetUserId();
-        if (string.IsNullOrEmpty(userId))
+        if (!TryGetUserId(out var userId))
             return Unauthorized();
 
         var config = await _db.UserWorkerConfigs
@@ -404,7 +364,6 @@ Get-Service -Name ""BHBWorker""";
 
     private static string GenerateDockerRunCommand(string workerId)
     {
-        // Docker support removed - use native installation instead
         return @"Docker installation is not currently supported.
 
 Please use the Linux or Windows native installation method.
@@ -412,53 +371,4 @@ Please use the Linux or Windows native installation method.
 For Linux: Use the systemd service installation
 For Windows: Use the Windows Service installation";
     }
-}
-
-// DTOs
-public class UserWorkerConfigResponse
-{
-    public bool HasConfig { get; set; }
-    public Guid? ConfigId { get; set; }
-    public string? ConfigName { get; set; }
-    public bool IsEnabled { get; set; } = true;
-    public int MaxWorkers { get; set; }
-    public int WorkerCount { get; set; }
-    public DateTime? CreatedAt { get; set; }
-    public DateTime? LastPskRotatedAt { get; set; }
-    public DateTime? LastWorkerActivityAt { get; set; }
-}
-
-public class InitializeWorkerConfigRequest
-{
-    public string? ConfigName { get; set; }
-}
-
-public class InitializeWorkerConfigResponse
-{
-    public Guid ConfigId { get; set; }
-    public string Psk { get; set; } = string.Empty;
-    public string Message { get; set; } = string.Empty;
-}
-
-public class RotatePskResponse
-{
-    public string Psk { get; set; } = string.Empty;
-    public DateTime RotatedAt { get; set; }
-    public string Message { get; set; } = string.Empty;
-}
-
-public class UpdateWorkerConfigRequest
-{
-    public string? ConfigName { get; set; }
-    public bool? IsEnabled { get; set; }
-}
-
-public class WorkerInstallInstructions
-{
-    public bool HasConfig { get; set; }
-    public string LinuxSystemdService { get; set; } = string.Empty;
-    public string LinuxInstallCommands { get; set; } = string.Empty;
-    public string WindowsServiceCommands { get; set; } = string.Empty;
-    public string DockerRunCommand { get; set; } = string.Empty;
-    public Dictionary<string, string> EnvironmentVariables { get; set; } = new();
 }

@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Net;
+using shared.Dto;
 
 namespace frontend.Services;
 
@@ -36,12 +37,12 @@ public class WorkerAgentService
         }
     }
 
-    public async Task<InitializeConfigResponse> InitializeConfigAsync(string? configName = null)
+    public async Task<InitializeWorkerConfigResponse> InitializeConfigAsync(string? configName = null)
     {
         var request = new { ConfigName = configName };
         var response = await _http.PostAsJsonAsync("api/worker-config/initialize", request);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<InitializeConfigResponse>()
+        return await response.Content.ReadFromJsonAsync<InitializeWorkerConfigResponse>()
             ?? throw new Exception("Failed to parse response");
     }
 
@@ -115,45 +116,7 @@ public class WorkerAgentService
     }
 }
 
-// Config DTOs
-public class UserWorkerConfigResponse
-{
-    public bool HasConfig { get; set; }
-    public Guid? ConfigId { get; set; }
-    public string? ConfigName { get; set; }
-    public bool IsEnabled { get; set; } = true;
-    public int MaxWorkers { get; set; }
-    public int WorkerCount { get; set; }
-    public DateTime? CreatedAt { get; set; }
-    public DateTime? LastPskRotatedAt { get; set; }
-    public DateTime? LastWorkerActivityAt { get; set; }
-}
-
-public class InitializeConfigResponse
-{
-    public Guid ConfigId { get; set; }
-    public string Psk { get; set; } = string.Empty;
-    public string Message { get; set; } = string.Empty;
-}
-
-public class RotatePskResponse
-{
-    public string Psk { get; set; } = string.Empty;
-    public DateTime RotatedAt { get; set; }
-    public string Message { get; set; } = string.Empty;
-}
-
-public class WorkerInstallInstructions
-{
-    public bool HasConfig { get; set; }
-    public string LinuxSystemdService { get; set; } = string.Empty;
-    public string LinuxInstallCommands { get; set; } = string.Empty;
-    public string WindowsServiceCommands { get; set; } = string.Empty;
-    public string DockerRunCommand { get; set; } = string.Empty;
-    public Dictionary<string, string> EnvironmentVariables { get; set; } = new();
-}
-
-// Worker Agent DTOs
+// Worker Agent DTOs (not in shared)
 public class WorkerAgentListItem
 {
     public Guid Id { get; set; }
@@ -168,36 +131,4 @@ public class WorkerAgentListItem
 
     public bool IsActive => Status == 1;
     public bool IsRevoked => Status == 2;
-}
-
-public class WorkerSummaryResponse
-{
-    public bool HasConfig { get; set; }
-    public bool IsEnabled { get; set; }
-    public int MaxWorkers { get; set; }
-    public int TotalWorkers { get; set; }
-    public int ActiveWorkers { get; set; }
-    public int RevokedWorkers { get; set; }
-    public DateTime? LastWorkerActivityAt { get; set; }
-}
-
-public class RegisterWorkerAgentResponse
-{
-    public Guid WorkerId { get; set; }
-    public string ApiKey { get; set; } = string.Empty;
-    public string WorkerName { get; set; } = string.Empty;
-    public string Message { get; set; } = string.Empty;
-}
-
-public class RotateKeyResponse
-{
-    public Guid WorkerId { get; set; }
-    public string ApiKey { get; set; } = string.Empty;
-}
-
-public class ReactivateWorkerResponse
-{
-    public Guid WorkerId { get; set; }
-    public string ApiKey { get; set; } = string.Empty;
-    public string Message { get; set; } = string.Empty;
 }

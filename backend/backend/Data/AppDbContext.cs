@@ -23,6 +23,7 @@ public class AppDbContext : DbContext
     public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
     public DbSet<LogBookmark> LogBookmarks => Set<LogBookmark>();
     public DbSet<NotificationPreference> NotificationPreferences => Set<NotificationPreference>();
+    public DbSet<UserLayoutPreference> UserLayoutPreferences => Set<UserLayoutPreference>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -150,6 +151,11 @@ public class AppDbContext : DbContext
         // Configure NotificationPreference
         modelBuilder.Entity<NotificationPreference>()
             .HasIndex(n => n.UserId)
+            .IsUnique();
+
+        // Configure UserLayoutPreference - unique per user and page
+        modelBuilder.Entity<UserLayoutPreference>()
+            .HasIndex(l => new { l.UserId, l.PageId })
             .IsUnique();
 
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);

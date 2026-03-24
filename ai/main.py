@@ -655,14 +655,14 @@ async def embed(req: EmbedRequest):
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                "https://api.openai.com/v1/embeddings",
+                "https://api.together.xyz/v1",
                 headers={
-                    "Authorization": f"Bearer {OPENAI_API_KEY}",
+                    "Authorization": f"Bearer {TOGETHER_API_KEY}",
                     "Content-Type": "application/json"
                 },
                 json={
-                    "model": "text-embedding-3-small",
-                    "input": req.text[:8000]  # Limit text length
+                    "model": "Alibaba-NLP/gte-modernbert-base",
+                    "input": req.text[:80000]  # Limit text length
                 },
                 timeout=30.0
             )

@@ -15,11 +15,15 @@
 @inject WorkerAgentService WorkerAgentService
 @inject IJSRuntime JS
 @inject ToastService Toast
+@inject LayoutService LayoutService
 @implements IAsyncDisposable
 
 <AuthorizeView>
     <Authorized>
         <div class="container-fluid px-4 py-4">
+
+            <!-- DYNAMIC GRID CONTAINER -->
+            <div id="systemMonitorGrid" class="dynamic-grid-container @(_editMode ? "edit-mode" : "")">
 
             <!-- HEADER -->
             <div class="d-flex justify-content-between align-items-center flex-wrap mb-4">
@@ -62,7 +66,8 @@
             </div>
 
             <!-- WORKER SELECTION -->
-            <div class="card modern-card shadow-sm mb-4">
+            <div class="grid-item mb-4" data-grid-id="worker-selection" style="width: 100%;">
+            <div class="card modern-card shadow-sm">
                 <div class="card-body">
                     <div class="row g-3 align-items-end">
                         <div class="col-md-6">
@@ -136,13 +141,15 @@
                     </div>
                 </div>
             </div>
+            </div>
 
             @if (_isSubscribed)
             {
                 @if (_data != null)
                 {
                     <!-- SYSTEM INFO HEADER -->
-                    <div class="card modern-card shadow-sm mb-4 border-primary border-2">
+                    <div class="grid-item mb-4" data-grid-id="system-info" style="width: 100%;">
+                    <div class="card modern-card shadow-sm border-primary border-2">
                         <div class="card-body py-3">
                             <div class="row align-items-center">
                                 <div class="col-auto">
@@ -163,10 +170,12 @@
                             </div>
                         </div>
                     </div>
+                    </div>
                 }
 
                 <!-- TAB NAVIGATION -->
-                <ul class="nav nav-tabs mb-4">
+                <div class="grid-item mb-4" data-grid-id="tab-navigation" style="width: 100%;">
+                <ul class="nav nav-tabs">
                     <li class="nav-item">
                         <button class="nav-link @(_activeTab == "monitor" ? "active" : "")" @onclick='() => _activeTab = "monitor"'>
                             <i class="bi bi-activity me-1"></i>Monitor
@@ -203,6 +212,7 @@
                         </button>
                     </li>
                 </ul>
+                </div>
 
                 <!-- TAB CONTENT -->
                 @if (_isLoadingLinuxData && _activeTab != "monitor")
@@ -252,6 +262,43 @@
                     </div>
                 </div>
             }
+            </div> <!-- End of dynamic-grid-container -->
+
+                <!-- EDIT MODE INDICATOR -->
+                <div class="edit-mode-indicator">
+                    <i class="bi bi-pencil-square"></i>
+                    <span>Edit Mode - Drag and resize cards</span>
+                </div>
+
+                <!-- EDIT MODE TOGGLE BUTTON -->
+                <button class="edit-mode-toggle @(_editMode ? "active" : "")" @onclick="ToggleEditMode">
+                    @if (_editMode)
+                    {
+                        <i class="bi bi-check-lg"></i>
+                        <span>Done Editing</span>
+                    }
+                    else
+                    {
+                        <i class="bi bi-layout-wtf"></i>
+                        <span>Customize Layout</span>
+                    }
+                </button>
+
+                <!-- EDIT CONTROLS PANEL -->
+                <div class="edit-controls @(_editMode ? "visible" : "")">
+                    <button @onclick="ResetLayout" class="danger">
+                        <i class="bi bi-arrow-counterclockwise"></i>
+                        Reset Layout
+                    </button>
+                    <button @onclick="ExportLayout">
+                        <i class="bi bi-download"></i>
+                        Export Layout
+                    </button>
+                    <button @onclick="ImportLayout">
+                        <i class="bi bi-upload"></i>
+                        Import Layout
+                    </button>
+                </div>
         </div>
 
         <!-- DETAIL MODALS -->
@@ -277,6 +324,8 @@
     private string _processSortBy = "cpu";
     private string _processFilter = "";
     private string _activeTab = "monitor";
+    private bool _editMode = false;
+    private DotNetObjectReference<SystemMonitor>? _dotNetRef;
 
     private List<WorkerRegistration> _availableWorkers = new();
     private bool _loadingWorkers;
@@ -701,9 +750,137 @@
         return $"{ts.Seconds}s";
     }
 
+    // ==================== GRID LAYOUT METHODS ====================
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await InitializeGrid();
+        }
+    }
+
+    private const string PAGE_ID = "system-monitor";
+
+    private async Task InitializeGrid()
+    {
+        try
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("initDynamicGrid", _dotNetRef, "systemMonitorGrid", PAGE_ID);
+
+            // Load layout from server
+            try
+            {
+                var layout = await LayoutService.GetLayoutAsync(PAGE_ID);
+                if (!string.IsNullOrEmpty(layout.LayoutJson) && layout.LayoutJson != "{}")
+                {
+                    await JS.InvokeVoidAsync("applyServerLayout", layout.LayoutJson);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to load server layout: {ex.Message}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Grid initialization failed: {ex.Message}");
+        }
+    }
+
+    private async Task ToggleEditMode()
+    {
+        _editMode = !_editMode;
+        try
+        {
+            await JS.InvokeVoidAsync("toggleGridEditMode", _editMode);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Toggle edit mode failed: {ex.Message}");
+        }
+    }
+
+    private async Task ResetLayout()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("resetGridLayout");
+            Toast.ShowSuccess("Layout reset to default!");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Reset layout failed: {ex.Message}");
+            Toast.ShowError($"Reset failed: {ex.Message}");
+        }
+    }
+
+    private async Task ExportLayout()
+    {
+        try
+        {
+            var layoutJson = await JS.InvokeAsync<string>("exportGridLayout");
+            var fileName = $"systemmonitor-layout-{DateTime.Now:yyyyMMdd-HHmmss}.json";
+            var bytes = System.Text.Encoding.UTF8.GetBytes(layoutJson);
+            var base64 = Convert.ToBase64String(bytes);
+            await JS.InvokeVoidAsync("downloadFileFromBase64", fileName, "application/json", base64);
+            Toast.ShowSuccess("Layout exported successfully!");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Export layout failed: {ex.Message}");
+            Toast.ShowError($"Export failed: {ex.Message}");
+        }
+    }
+
+    private async Task ImportLayout()
+    {
+        Toast.ShowInfo("Import feature coming soon! For now, layouts are auto-saved.");
+    }
+
+    [JSInvokable]
+    public void OnGridEvent(string eventName, object data)
+    {
+        Console.WriteLine($"Grid event: {eventName}");
+        if (eventName == "layoutReset")
+        {
+            InvokeAsync(StateHasChanged);
+        }
+    }
+
+    [JSInvokable]
+    public async Task SaveLayoutToServer(string pageId, string layoutJson)
+    {
+        try
+        {
+            await LayoutService.SaveLayoutAsync(pageId, layoutJson);
+            Console.WriteLine($"Layout saved to server for page: {pageId}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to save layout to server: {ex.Message}");
+        }
+    }
+
+    [JSInvokable]
+    public async Task ResetLayoutOnServer(string pageId)
+    {
+        try
+        {
+            await LayoutService.ResetLayoutAsync(pageId);
+            Console.WriteLine($"Layout reset on server for page: {pageId}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to reset layout on server: {ex.Message}");
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         HubService.OnConnectionStateChanged -= OnConnectionStateChanged;
+        _dotNetRef?.Dispose();
 
         if (_isSubscribed)
         {

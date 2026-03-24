@@ -1,33 +1,26 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
+using backend.Common;
 using backend.Hubs;
 using backend.Services;
 using shared.Dto;
 using System.Collections.Concurrent;
-using System.Security.Claims;
 using backend.Data;
 using backend.Data.Entities;
 using Microsoft.EntityFrameworkCore;
 
 namespace backend.Controllers;
 
-/// <summary>
-/// Enterprise Linux system management API controller.
-/// Provides REST endpoints for managing Linux systems remotely via workers.
-/// Features: Service management, Docker, Users, Firewall, Security auditing, File browser, Commands
-/// </summary>
-[ApiController]
 [Route("api/linux")]
 [Authorize]
-public class LinuxSystemController : ControllerBase
+public class LinuxSystemController : BaseApiController
 {
     private readonly IHubContext<LiveLogHub> _liveLogHub;
     private readonly IWorkerRegistry _workerRegistry;
     private readonly ILogger<LinuxSystemController> _logger;
     private readonly AppDbContext _db;
 
-    // Pending request tracking for async SignalR responses
     private static readonly ConcurrentDictionary<string, TaskCompletionSource<object>> _pendingRequests = new();
 
     public LinuxSystemController(
@@ -42,16 +35,9 @@ public class LinuxSystemController : ControllerBase
         _db = db;
     }
 
-    private string? GetUserId()
-    {
-        return User.FindFirstValue(ClaimTypes.NameIdentifier)
-               ?? User.FindFirstValue("sub");
-    }
-
     private async Task<bool> IsWorkerOwnedByUser(string workerId)
     {
-        var userId = GetUserId();
-        if (string.IsNullOrEmpty(userId)) return false;
+        if (!TryGetUserId(out var userId)) return false;
 
         return await _db.WorkerAgents.AnyAsync(w =>
             w.Id.ToString() == workerId &&
@@ -107,9 +93,8 @@ public class LinuxSystemController : ControllerBase
         if (!await IsWorkerOwnedByUser(workerId))
             return Forbid();
 
-        var validActions = new[] { "start", "stop", "restart", "enable", "disable", "reload", "status" };
-        if (!validActions.Contains(action.ToLower()))
-            return BadRequest(new { error = $"Invalid action. Valid: {string.Join(", ", validActions)}" });
+        if (!ServiceActions.IsValid(action))
+            return BadRequest(new { error = string.Format(ErrorMessages.InvalidAction, string.Join(", ", ServiceActions.ValidActions)) });
 
         var requestId = Guid.NewGuid().ToString();
         var tcs = new TaskCompletionSource<object>();
@@ -458,12 +443,8 @@ public class LinuxSystemController : ControllerBase
         if (!await IsWorkerOwnedByUser(workerId))
             return Forbid();
 
-        // Additional server-side security validation
-        var blockedPatterns = new[] { "rm -rf /", "mkfs", "dd if=", ":(){:|:&};:", "chmod -R 777 /", "passwd", "useradd", "userdel" };
-        if (blockedPatterns.Any(p => request.Command.Contains(p, StringComparison.OrdinalIgnoreCase)))
-        {
-            return BadRequest(new { error = "Command blocked for security reasons" });
-        }
+        if (SecurityPatterns.IsBlocked(request.Command))
+            return BadRequest(new { error = ErrorMessages.CommandBlocked });
 
         var requestId = Guid.NewGuid().ToString();
         var tcs = new TaskCompletionSource<object>();

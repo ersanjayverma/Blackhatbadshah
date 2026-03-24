@@ -1,0 +1,13 @@
+﻿{
+  "chartType": "LineChart",
+  "title": "SSH Attack Attempts Over Time",
+  "xAxis": {
+    "labels": ["11:27", "11:30", "11:33", "11:36", "11:39", "11:42", "11:44"]
+  },
+  "series": [
+    {
+      "name": "Failed Attempts",
+      "values": [15, 20, 18, 22, 19, 25, 10]
+    }
+  ]
+}

@@ -1,8 +1,8 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System.Security.Claims;
 using System.Security.Cryptography;
+using backend.Common;
 using backend.Data;
 using backend.Data.Entities;
 using backend.Services;
@@ -10,9 +10,8 @@ using shared.Dto;
 
 namespace backend.Controllers;
 
-[ApiController]
 [Route("api/share")]
-public class ShareableLinksController : ControllerBase
+public class ShareableLinksController : BaseApiController
 {
     private readonly AppDbContext _db;
     private readonly IConfiguration _config;
@@ -26,9 +25,7 @@ public class ShareableLinksController : ControllerBase
             ?? throw new InvalidOperationException("Storage:RootPath not configured");
     }
 
-    private string? GetUserId() =>
-        User.FindFirstValue(ClaimTypes.NameIdentifier) ??
-        User.FindFirstValue("sub");
+    private string GetBaseUrl() => $"{Request.Scheme}://{Request.Host}";
 
     /// <summary>
     /// Get all shareable links for the current user
@@ -37,30 +34,16 @@ public class ShareableLinksController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetLinks()
     {
-        var userId = GetUserId();
-        if (userId == null) return Unauthorized();
+        if (!TryGetUserId(out var userId))
+            return Unauthorized();
 
-        var baseUrl = $"{Request.Scheme}://{Request.Host}";
+        var baseUrl = GetBaseUrl();
 
         var links = await _db.ShareableLinks
             .Include(l => l.Report)
             .Where(l => l.UserId == userId)
             .OrderByDescending(l => l.CreatedAt)
-            .Select(l => new ShareableLinkDto
-            {
-                Id = l.Id,
-                ReportId = l.ReportId,
-                ReportTitle = l.Report.Title,
-                Token = l.Token,
-                ShareUrl = $"{baseUrl}/shared/{l.Token}",
-                HasPassword = l.PasswordHash != null,
-                ExpiresAt = l.ExpiresAt,
-                AccessCount = l.AccessCount,
-                MaxAccesses = l.MaxAccesses,
-                IsActive = l.IsActive,
-                CreatedAt = l.CreatedAt,
-                LastAccessedAt = l.LastAccessedAt
-            })
+            .Select(l => l.ToDto(baseUrl))
             .ToListAsync();
 
         return Ok(links);
@@ -73,13 +56,13 @@ public class ShareableLinksController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> CreateLink([FromBody] CreateShareableLinkRequest request)
     {
-        var userId = GetUserId();
-        if (userId == null) return Unauthorized();
+        if (!TryGetUserId(out var userId))
+            return Unauthorized();
 
         var report = await _db.Reports.FirstOrDefaultAsync(r => r.Id == request.ReportId && r.UserId == userId);
-        if (report == null) return NotFound(new { error = "Report not found" });
+        if (report == null)
+            return NotFoundWithError(ErrorMessages.ReportNotFound);
 
-        // Generate unique token
         var token = GenerateToken();
 
         string? passwordHash = null;
@@ -106,22 +89,7 @@ public class ShareableLinksController : ControllerBase
         _db.ShareableLinks.Add(link);
         await _db.SaveChangesAsync();
 
-        var baseUrl = $"{Request.Scheme}://{Request.Host}";
-
-        return Ok(new ShareableLinkDto
-        {
-            Id = link.Id,
-            ReportId = link.ReportId,
-            ReportTitle = report.Title,
-            Token = link.Token,
-            ShareUrl = $"{baseUrl}/shared/{link.Token}",
-            HasPassword = link.PasswordHash != null,
-            ExpiresAt = link.ExpiresAt,
-            AccessCount = link.AccessCount,
-            MaxAccesses = link.MaxAccesses,
-            IsActive = link.IsActive,
-            CreatedAt = link.CreatedAt
-        });
+        return Ok(link.ToDto(GetBaseUrl(), report.Title));
     }
 
     /// <summary>
@@ -131,11 +99,12 @@ public class ShareableLinksController : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> DeleteLink(Guid id)
     {
-        var userId = GetUserId();
-        if (userId == null) return Unauthorized();
+        if (!TryGetUserId(out var userId))
+            return Unauthorized();
 
         var link = await _db.ShareableLinks.FirstOrDefaultAsync(l => l.Id == id && l.UserId == userId);
-        if (link == null) return NotFound();
+        if (link == null)
+            return NotFound();
 
         _db.ShareableLinks.Remove(link);
         await _db.SaveChangesAsync();
@@ -150,11 +119,12 @@ public class ShareableLinksController : ControllerBase
     [HttpPatch("{id:guid}/toggle")]
     public async Task<IActionResult> ToggleLink(Guid id)
     {
-        var userId = GetUserId();
-        if (userId == null) return Unauthorized();
+        if (!TryGetUserId(out var userId))
+            return Unauthorized();
 
         var link = await _db.ShareableLinks.FirstOrDefaultAsync(l => l.Id == id && l.UserId == userId);
-        if (link == null) return NotFound();
+        if (link == null)
+            return NotFound();
 
         link.IsActive = !link.IsActive;
         await _db.SaveChangesAsync();
@@ -175,16 +145,16 @@ public class ShareableLinksController : ControllerBase
             .FirstOrDefaultAsync(l => l.Token == token);
 
         if (link == null)
-            return NotFound(new SharedReportResponse { Success = false, Error = "Link not found" });
+            return NotFound(new SharedReportResponse { Success = false, Error = ErrorMessages.LinkNotFound });
 
         if (!link.IsActive)
-            return BadRequest(new SharedReportResponse { Success = false, Error = "Link is no longer active" });
+            return BadRequest(new SharedReportResponse { Success = false, Error = ErrorMessages.LinkInactive });
 
         if (link.ExpiresAt.HasValue && link.ExpiresAt.Value < DateTime.UtcNow)
-            return BadRequest(new SharedReportResponse { Success = false, Error = "Link has expired" });
+            return BadRequest(new SharedReportResponse { Success = false, Error = ErrorMessages.LinkExpired });
 
         if (link.MaxAccesses.HasValue && link.AccessCount >= link.MaxAccesses.Value)
-            return BadRequest(new SharedReportResponse { Success = false, Error = "Maximum access limit reached" });
+            return BadRequest(new SharedReportResponse { Success = false, Error = ErrorMessages.MaxAccessLimitReached });
 
         if (link.PasswordHash != null)
         {
@@ -192,12 +162,11 @@ public class ShareableLinksController : ControllerBase
                 return Ok(new SharedReportResponse { Success = false, RequiresPassword = true });
 
             if (!BCrypt.Net.BCrypt.Verify(password, link.PasswordHash))
-                return BadRequest(new SharedReportResponse { Success = false, Error = "Invalid password" });
+                return BadRequest(new SharedReportResponse { Success = false, Error = ErrorMessages.InvalidPassword });
         }
 
-        // Read report content
         if (!System.IO.File.Exists(link.Report.ReportPath))
-            return NotFound(new SharedReportResponse { Success = false, Error = "Report content not found" });
+            return NotFound(new SharedReportResponse { Success = false, Error = ErrorMessages.ReportContentMissing });
 
         var content = await System.IO.File.ReadAllTextAsync(link.Report.ReportPath);
 
@@ -208,7 +177,6 @@ public class ShareableLinksController : ControllerBase
             chartData = await System.IO.File.ReadAllTextAsync(link.Report.ChartPath);
         }
 
-        // Update access count
         link.AccessCount++;
         link.LastAccessedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
@@ -245,19 +213,18 @@ public class ShareableLinksController : ControllerBase
             return NotFound();
 
         if (link.ExpiresAt.HasValue && link.ExpiresAt.Value < DateTime.UtcNow)
-            return BadRequest(new { error = "Link has expired" });
+            return BadRequestWithError(ErrorMessages.LinkExpired);
 
         if (link.MaxAccesses.HasValue && link.AccessCount >= link.MaxAccesses.Value)
-            return BadRequest(new { error = "Maximum access limit reached" });
+            return BadRequestWithError(ErrorMessages.MaxAccessLimitReached);
 
-        if (link.PasswordHash != null && !string.IsNullOrWhiteSpace(password))
+        if (link.PasswordHash != null)
         {
+            if (string.IsNullOrWhiteSpace(password))
+                return BadRequestWithError(ErrorMessages.PasswordRequired);
+
             if (!BCrypt.Net.BCrypt.Verify(password, link.PasswordHash))
-                return BadRequest(new { error = "Invalid password" });
-        }
-        else if (link.PasswordHash != null)
-        {
-            return BadRequest(new { error = "Password required" });
+                return BadRequestWithError(ErrorMessages.InvalidPassword);
         }
 
         if (!System.IO.File.Exists(link.Report.ReportPath))
@@ -274,7 +241,6 @@ public class ShareableLinksController : ControllerBase
 
         var pdfBytes = await PdfGenerator.FromMarkdownAsync(markdown, chartData);
 
-        // Update access count
         link.AccessCount++;
         link.LastAccessedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();

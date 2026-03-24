@@ -1,18 +1,16 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using backend.Common;
 using backend.Data;
-using backend.Data.Entities;
 using backend.Services;
 using shared.Dto;
-using System.Security.Claims;
 
 namespace backend.Controllers;
 
-[ApiController]
 [Route("api/reports")]
 [Authorize]
-public class ReportsController : ControllerBase
+public class ReportsController : BaseApiController
 {
     private readonly AppDbContext _db;
     private readonly IConfiguration _config;
@@ -39,14 +37,13 @@ public class ReportsController : ControllerBase
         Directory.CreateDirectory(Path.Combine(_storageRoot, "charts"));
     }
 
-    // ----------------------------------------------------
-    // GET /api/reports
-    // ----------------------------------------------------
+    /// <summary>
+    /// Get all reports
+    /// </summary>
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                     ?? User.FindFirstValue("sub");
+        var userId = GetUserId();
 
         var reports = await _db.Reports
             .Include(r => r.Log)
@@ -65,14 +62,13 @@ public class ReportsController : ControllerBase
         return Ok(reports);
     }
 
-    // ----------------------------------------------------
-    // GET /api/reports/{id}
-    // ----------------------------------------------------
+    /// <summary>
+    /// Get a specific report
+    /// </summary>
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<ReportDetail>> Get(Guid id)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                     ?? User.FindFirstValue("sub");
+        var userId = GetUserId();
 
         try
         {
@@ -84,7 +80,7 @@ public class ReportsController : ControllerBase
                 return NotFound();
 
             if (!System.IO.File.Exists(report.ReportPath))
-                return NotFound("Report content missing");
+                return NotFound(ErrorMessages.ReportContentMissing);
 
             var content = await System.IO.File.ReadAllTextAsync(report.ReportPath);
 
@@ -109,35 +105,31 @@ public class ReportsController : ControllerBase
         }
         catch (Exception ex)
         {
-            // Log the error for debugging
             Console.WriteLine($"Error fetching report {id}: {ex.Message}");
             return StatusCode(500, new { error = "Failed to fetch report", details = ex.Message });
         }
     }
 
-    // ----------------------------------------------------
-    // GET /api/reports/{id}/download
-    // ----------------------------------------------------
+    /// <summary>
+    /// Download report as PDF
+    /// </summary>
     [HttpGet("{id:guid}/download")]
     public async Task<IActionResult> Download(Guid id)
     {
         try
         {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                         ?? User.FindFirstValue("sub");
-
-            if (string.IsNullOrEmpty(userId))
-                return Unauthorized(new { error = "Unable to determine user identity" });
+            if (!TryGetUserId(out var userId))
+                return UnauthorizedWithError(ErrorMessages.Unauthorized);
 
             var report = await _db.Reports
                 .Include(r => r.Log)
                 .FirstOrDefaultAsync(r => r.Id == id && r.UserId == userId);
 
             if (report == null)
-                return NotFound(new { error = "Report not found" });
+                return NotFoundWithError(ErrorMessages.ReportNotFound);
 
             if (string.IsNullOrEmpty(report.ReportPath) || !System.IO.File.Exists(report.ReportPath))
-                return NotFound(new { error = "Report file not found on disk" });
+                return NotFoundWithError(ErrorMessages.ReportFileNotFound);
 
             var markdown = await System.IO.File.ReadAllTextAsync(report.ReportPath);
 
@@ -162,20 +154,13 @@ public class ReportsController : ControllerBase
         }
     }
 
-
-    // ----------------------------------------------------
-    // GET /api/reports/{id}/similar
-    // ----------------------------------------------------
     /// <summary>
-    /// Get similar reports based on vector similarity search.
+    /// Get similar reports based on vector similarity search
     /// </summary>
     [HttpGet("{id:guid}/similar")]
     public async Task<IActionResult> GetSimilar(Guid id, [FromQuery] int? limit = 5)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                     ?? User.FindFirstValue("sub");
-
-        if (string.IsNullOrEmpty(userId))
+        if (!TryGetUserId(out var userId))
             return Unauthorized();
 
         var report = await _db.Reports
@@ -184,20 +169,17 @@ public class ReportsController : ControllerBase
         if (report == null)
             return NotFound();
 
-        // Read the report content to use as query
         if (string.IsNullOrEmpty(report.ReportPath) || !System.IO.File.Exists(report.ReportPath))
-            return NotFound("Report content missing");
+            return NotFound(ErrorMessages.ReportContentMissing);
 
         var content = await System.IO.File.ReadAllTextAsync(report.ReportPath);
 
-        // Search for similar reports (excluding the current one)
         var similarResults = await _qdrantService.SearchSimilarAsync(
             userId,
             content,
-            systemId: null, // Search across all systems
-            limit: (limit ?? 5) + 1); // Get one extra to filter out self
+            systemId: null,
+            limit: (limit ?? 5) + 1);
 
-        // Filter out the current report from results
         var filteredResults = similarResults
             .Where(r => r.ReportId != id)
             .Take(limit ?? 5)
@@ -210,20 +192,16 @@ public class ReportsController : ControllerBase
         });
     }
 
-    // ----------------------------------------------------
-    // DELETE /api/reports/{id}
-    // ----------------------------------------------------
+    /// <summary>
+    /// Delete a report
+    /// </summary>
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
         try
         {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                         ?? User.FindFirstValue("sub")
-                         ?? string.Empty;
-
-            if (string.IsNullOrEmpty(userId))
-                return Unauthorized(new { error = "Unable to determine user identity" });
+            if (!TryGetUserId(out var userId))
+                return UnauthorizedWithError(ErrorMessages.Unauthorized);
 
             var report = await _db.Reports
                 .FirstOrDefaultAsync(r => r.Id == id && r.UserId == userId);
@@ -248,9 +226,7 @@ public class ReportsController : ControllerBase
             _db.Reports.Remove(report);
             await _db.SaveChangesAsync();
 
-            // Delete vector from Qdrant
             await _qdrantService.DeleteAnalysisAsync(id);
-
             await _hubNotification.NotifyReportDeletedAsync(userId, id);
 
             return NoContent();
@@ -262,29 +238,26 @@ public class ReportsController : ControllerBase
         }
     }
 
-    // ----------------------------------------------------
-    // GET /api/reports/{id}/export/json
-    // ----------------------------------------------------
+    /// <summary>
+    /// Export report as JSON
+    /// </summary>
     [HttpGet("{id:guid}/export/json")]
     public async Task<IActionResult> ExportJson(Guid id)
     {
         try
         {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                         ?? User.FindFirstValue("sub");
-
-            if (string.IsNullOrEmpty(userId))
-                return Unauthorized(new { error = "Unable to determine user identity" });
+            if (!TryGetUserId(out var userId))
+                return UnauthorizedWithError(ErrorMessages.Unauthorized);
 
             var report = await _db.Reports
                 .Include(r => r.Log)
                 .FirstOrDefaultAsync(r => r.Id == id && r.UserId == userId);
 
             if (report == null)
-                return NotFound(new { error = "Report not found" });
+                return NotFoundWithError(ErrorMessages.ReportNotFound);
 
             if (string.IsNullOrEmpty(report.ReportPath) || !System.IO.File.Exists(report.ReportPath))
-                return NotFound(new { error = "Report file not found on disk" });
+                return NotFoundWithError(ErrorMessages.ReportFileNotFound);
 
             var content = await System.IO.File.ReadAllTextAsync(report.ReportPath);
 
@@ -331,29 +304,26 @@ public class ReportsController : ControllerBase
         }
     }
 
-    // ----------------------------------------------------
-    // GET /api/reports/{id}/export/csv
-    // ----------------------------------------------------
+    /// <summary>
+    /// Export report as CSV
+    /// </summary>
     [HttpGet("{id:guid}/export/csv")]
     public async Task<IActionResult> ExportCsv(Guid id)
     {
         try
         {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                         ?? User.FindFirstValue("sub");
-
-            if (string.IsNullOrEmpty(userId))
-                return Unauthorized(new { error = "Unable to determine user identity" });
+            if (!TryGetUserId(out var userId))
+                return UnauthorizedWithError(ErrorMessages.Unauthorized);
 
             var report = await _db.Reports
                 .Include(r => r.Log)
                 .FirstOrDefaultAsync(r => r.Id == id && r.UserId == userId);
 
             if (report == null)
-                return NotFound(new { error = "Report not found" });
+                return NotFoundWithError(ErrorMessages.ReportNotFound);
 
             if (string.IsNullOrEmpty(report.ReportPath) || !System.IO.File.Exists(report.ReportPath))
-                return NotFound(new { error = "Report file not found on disk" });
+                return NotFoundWithError(ErrorMessages.ReportFileNotFound);
 
             var content = await System.IO.File.ReadAllTextAsync(report.ReportPath);
 
@@ -377,29 +347,26 @@ public class ReportsController : ControllerBase
         }
     }
 
-    // ----------------------------------------------------
-    // GET /api/reports/{id}/export/markdown
-    // ----------------------------------------------------
+    /// <summary>
+    /// Export report as Markdown
+    /// </summary>
     [HttpGet("{id:guid}/export/markdown")]
     public async Task<IActionResult> ExportMarkdown(Guid id)
     {
         try
         {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                         ?? User.FindFirstValue("sub");
-
-            if (string.IsNullOrEmpty(userId))
-                return Unauthorized(new { error = "Unable to determine user identity" });
+            if (!TryGetUserId(out var userId))
+                return UnauthorizedWithError(ErrorMessages.Unauthorized);
 
             var report = await _db.Reports
                 .Include(r => r.Log)
                 .FirstOrDefaultAsync(r => r.Id == id && r.UserId == userId);
 
             if (report == null)
-                return NotFound(new { error = "Report not found" });
+                return NotFoundWithError(ErrorMessages.ReportNotFound);
 
             if (string.IsNullOrEmpty(report.ReportPath) || !System.IO.File.Exists(report.ReportPath))
-                return NotFound(new { error = "Report file not found on disk" });
+                return NotFoundWithError(ErrorMessages.ReportFileNotFound);
 
             var content = await System.IO.File.ReadAllTextAsync(report.ReportPath);
 
@@ -428,22 +395,19 @@ public class ReportsController : ControllerBase
         }
     }
 
-    // ----------------------------------------------------
-    // POST /api/reports/bulk-export
-    // ----------------------------------------------------
+    /// <summary>
+    /// Bulk export reports
+    /// </summary>
     [HttpPost("bulk-export")]
     public async Task<IActionResult> BulkExport([FromBody] BulkExportRequest request)
     {
         try
         {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                         ?? User.FindFirstValue("sub");
-
-            if (string.IsNullOrEmpty(userId))
-                return Unauthorized(new { error = "Unable to determine user identity" });
+            if (!TryGetUserId(out var userId))
+                return UnauthorizedWithError(ErrorMessages.Unauthorized);
 
             if (request.ReportIds == null || request.ReportIds.Count == 0)
-                return BadRequest(new { error = "No report IDs provided" });
+                return BadRequestWithError(ErrorMessages.NoReportIdsProvided);
 
             var exportList = new List<ReportExportData>();
 
@@ -485,26 +449,16 @@ public class ReportsController : ControllerBase
         }
     }
 
-    private static string EscapeCsvField(string? field)
-    {
-        if (string.IsNullOrEmpty(field)) return "";
-        return field.Replace("\"", "\"\"").Replace("\r\n", " ").Replace("\n", " ");
-    }
-
-    // ----------------------------------------------------
-    // DELETE /api/reports/all
-    // ----------------------------------------------------
+    /// <summary>
+    /// Delete all reports
+    /// </summary>
     [HttpDelete("all")]
     public async Task<IActionResult> DeleteAll()
     {
         try
         {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                         ?? User.FindFirstValue("sub")
-                         ?? string.Empty;
-
-            if (string.IsNullOrEmpty(userId))
-                return Unauthorized(new { error = "Unable to determine user identity" });
+            if (!TryGetUserId(out var userId))
+                return UnauthorizedWithError(ErrorMessages.Unauthorized);
 
             var reports = await _db.Reports
                 .Where(r => r.UserId == userId)
@@ -533,9 +487,7 @@ public class ReportsController : ControllerBase
             _db.Reports.RemoveRange(reports);
             await _db.SaveChangesAsync();
 
-            // Delete all vectors from Qdrant for this user
             await _qdrantService.DeleteUserDataAsync(userId);
-
             await _hubNotification.NotifyAllReportsDeletedAsync(userId, reports.Count);
 
             return Ok(new DeleteAllResponse { Deleted = reports.Count });
@@ -545,5 +497,11 @@ public class ReportsController : ControllerBase
             Console.WriteLine($"Error deleting all reports: {ex.Message}");
             return StatusCode(500, new { error = "Failed to delete reports", details = ex.Message });
         }
+    }
+
+    private static string EscapeCsvField(string? field)
+    {
+        if (string.IsNullOrEmpty(field)) return "";
+        return field.Replace("\"", "\"\"").Replace("\r\n", " ").Replace("\n", " ");
     }
 }

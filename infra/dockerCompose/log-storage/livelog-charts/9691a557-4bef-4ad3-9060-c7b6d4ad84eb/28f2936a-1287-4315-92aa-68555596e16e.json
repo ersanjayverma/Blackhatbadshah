@@ -1,0 +1,17 @@
+﻿{
+  "chartType": "LineChart",
+  "title": "WebSocket Failures Over Time",
+  "xAxis": {
+    "labels": ["15:58", "16:00", "16:15", "16:26", "16:37"]
+  },
+  "series": [
+    {
+      "name": "Connection Errors",
+      "values": [1, 1, 1, 1, 1]
+    },
+    {
+      "name": "502 Errors",
+      "values": [1, 0, 0, 1, 0]
+    }
+  ]
+}

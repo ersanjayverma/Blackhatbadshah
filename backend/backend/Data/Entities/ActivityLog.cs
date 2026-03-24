@@ -46,22 +46,5 @@ public class ActivityLog
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
-/// <summary>
-/// Common activity types
-/// </summary>
-public static class ActivityTypes
-{
-    public const string LogUpload = "LogUpload";
-    public const string LogDelete = "LogDelete";
-    public const string LogAnalyze = "LogAnalyze";
-    public const string ReportGenerated = "ReportGenerated";
-    public const string ReportDownload = "ReportDownload";
-    public const string ReportDelete = "ReportDelete";
-    public const string ShareLinkCreated = "ShareLinkCreated";
-    public const string ShareLinkAccessed = "ShareLinkAccessed";
-    public const string WorkerRegistered = "WorkerRegistered";
-    public const string WorkerDeleted = "WorkerDeleted";
-    public const string SubscriptionChanged = "SubscriptionChanged";
-    public const string Login = "Login";
-    public const string Logout = "Logout";
-}
+// ActivityTypes has been moved to backend.Common.Constants for centralized management
+// Use: using backend.Common; then ActivityTypes.LogUpload, etc.

@@ -17,6 +17,7 @@
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
 @inject ToastService Toast
+@inject LayoutService LayoutService
 @implements IAsyncDisposable
 
 <AuthorizeView>
@@ -42,144 +43,163 @@
             }
             else
             {
-                <!-- STATS ROW -->
-                <div class="row g-3 mb-3">
-                    <div class="col-md-2 col-sm-4">
-                        <div class="card modern-card shadow-sm h-100 clickable @(_statusFilter == "" ? "border-primary border-2" : "")" @onclick="@(() => ApplyStatusFilter(""))" style="cursor: pointer;">
-                            <div class="card-body text-center py-3">
-                                <h3 class="mb-1 fw-bold">@(_stats?.TotalLogsAnalyzed ?? 0)</h3>
-                                <small class="text-muted">Total Analyzed</small>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-2 col-sm-4">
-                        <div class="card modern-card shadow-sm h-100 clickable @(_statusFilter == "Completed" ? "border-success border-2" : "")" @onclick="@(() => ApplyStatusFilter("Completed"))" style="cursor: pointer;">
-                            <div class="card-body text-center py-3">
-                                <h3 class="mb-1 fw-bold text-success">@(_stats?.SuccessfulAnalyses ?? 0)</h3>
-                                <small class="text-muted">Successful</small>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-2 col-sm-4">
-                        <div class="card modern-card shadow-sm h-100 clickable @(_statusFilter == "InProgress" ? "border-warning border-2" : "")" @onclick="@(() => ApplyStatusFilter("InProgress"))" style="cursor: pointer;">
-                            <div class="card-body text-center py-3">
-                                <h3 class="mb-1 fw-bold text-warning">@(_stats?.InProgressAnalyses ?? 0)</h3>
-                                <small class="text-muted">In Progress</small>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-2 col-sm-4">
-                        <div class="card modern-card shadow-sm h-100 clickable @(_statusFilter == "Failed" ? "border-danger border-2" : "")" @onclick="@(() => ApplyStatusFilter("Failed"))" style="cursor: pointer;">
-                            <div class="card-body text-center py-3">
-                                <h3 class="mb-1 fw-bold text-danger">@(_stats?.FailedAnalyses ?? 0)</h3>
-                                <small class="text-muted">Failed</small>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-2 col-sm-4">
-                        <div class="card modern-card shadow-sm h-100">
-                            <div class="card-body text-center py-3">
-                                <h3 class="mb-1 fw-bold text-info">@(_stats?.SuccessRate ?? 0)%</h3>
-                                <small class="text-muted">Success Rate</small>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-2 col-sm-4">
-                        <div class="card modern-card shadow-sm h-100">
-                            <div class="card-body text-center py-3">
-                                <h3 class="mb-1 fw-bold text-secondary">@FormatBytes(_stats?.TotalBytesProcessed ?? 0)</h3>
-                                <small class="text-muted">Data Processed</small>
-                            </div>
-                        </div>
-                    </div>
+                <!-- EDIT MODE INDICATOR -->
+                <div class="edit-mode-indicator">
+                    <i class="bi bi-pencil-square"></i>
+                    <span>Edit Mode - Drag and resize cards</span>
                 </div>
 
-                <!-- FILTERS ROW -->
-                <div class="card modern-card shadow-sm mb-3">
-                    <div class="card-body py-2">
-                        <div class="row g-2 align-items-center">
-                            <div class="col-md-4">
-                                <div class="input-group">
-                                    <span class="input-group-text"><i class="bi bi-search"></i></span>
-                                    <input type="text" class="form-control" placeholder="Search reports..." @bind="_reportSearchTerm" @bind:event="oninput" @bind:after="FilterAnalyses" />
+                <!-- DYNAMIC GRID CONTAINER -->
+                <div id="dashboardGrid" class="dynamic-grid-container @(_editMode ? "edit-mode" : "")">
+
+                    <!-- STATS ROW -->
+                    <div class="row g-3 mb-3 stat-card-grid">
+                        <div class="col-md-2 col-sm-4 grid-item" data-grid-id="stat-total">
+                            <div class="card modern-card shadow-sm h-100 clickable @(_statusFilter == "" ? "border-primary border-2" : "")" @onclick="@(() => ApplyStatusFilter(""))" style="cursor: pointer;">
+                                <div class="card-body text-center py-3">
+                                    <h3 class="mb-1 fw-bold">@(_stats?.TotalLogsAnalyzed ?? 0)</h3>
+                                    <small class="text-muted">Total Analyzed</small>
                                 </div>
                             </div>
-                            <div class="col-md-3">
-                                <div class="input-group">
-                                    <span class="input-group-text">From</span>
-                                    <input type="date" class="form-control" @bind="_fromDate" @bind:after="FilterAnalyses" />
+                        </div>
+                        <div class="col-md-2 col-sm-4 grid-item" data-grid-id="stat-success">
+                            <div class="card modern-card shadow-sm h-100 clickable @(_statusFilter == "Completed" ? "border-success border-2" : "")" @onclick="@(() => ApplyStatusFilter("Completed"))" style="cursor: pointer;">
+                                <div class="card-body text-center py-3">
+                                    <h3 class="mb-1 fw-bold text-success">@(_stats?.SuccessfulAnalyses ?? 0)</h3>
+                                    <small class="text-muted">Successful</small>
                                 </div>
                             </div>
-                            <div class="col-md-3">
-                                <div class="input-group">
-                                    <span class="input-group-text">To</span>
-                                    <input type="date" class="form-control" @bind="_toDate" @bind:after="FilterAnalyses" />
+                        </div>
+                        <div class="col-md-2 col-sm-4 grid-item" data-grid-id="stat-progress">
+                            <div class="card modern-card shadow-sm h-100 clickable @(_statusFilter == "InProgress" ? "border-warning border-2" : "")" @onclick="@(() => ApplyStatusFilter("InProgress"))" style="cursor: pointer;">
+                                <div class="card-body text-center py-3">
+                                    <h3 class="mb-1 fw-bold text-warning">@(_stats?.InProgressAnalyses ?? 0)</h3>
+                                    <small class="text-muted">In Progress</small>
                                 </div>
                             </div>
-                            <div class="col-md-2">
-                                <select class="form-select" @bind="_statusFilter" @bind:after="FilterAnalyses">
-                                    <option value="">All Status</option>
-                                    <option value="Completed">Completed</option>
-                                    <option value="InProgress">In Progress</option>
-                                    <option value="Failed">Failed</option>
-                                </select>
+                        </div>
+                        <div class="col-md-2 col-sm-4 grid-item" data-grid-id="stat-failed">
+                            <div class="card modern-card shadow-sm h-100 clickable @(_statusFilter == "Failed" ? "border-danger border-2" : "")" @onclick="@(() => ApplyStatusFilter("Failed"))" style="cursor: pointer;">
+                                <div class="card-body text-center py-3">
+                                    <h3 class="mb-1 fw-bold text-danger">@(_stats?.FailedAnalyses ?? 0)</h3>
+                                    <small class="text-muted">Failed</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-2 col-sm-4 grid-item" data-grid-id="stat-rate">
+                            <div class="card modern-card shadow-sm h-100">
+                                <div class="card-body text-center py-3">
+                                    <h3 class="mb-1 fw-bold text-info">@(_stats?.SuccessRate ?? 0)%</h3>
+                                    <small class="text-muted">Success Rate</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-2 col-sm-4 grid-item" data-grid-id="stat-bytes">
+                            <div class="card modern-card shadow-sm h-100">
+                                <div class="card-body text-center py-3">
+                                    <h3 class="mb-1 fw-bold text-secondary">@FormatBytes(_stats?.TotalBytesProcessed ?? 0)</h3>
+                                    <small class="text-muted">Data Processed</small>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
 
-                <!-- CHARTS ROW -->
-                <div class="row g-3 mb-3">
-                    <div class="col-lg-5">
+                    <!-- FILTERS ROW -->
+                    <div class="grid-item mb-3" data-grid-id="filters" style="width: 100%;">
                         <div class="card modern-card shadow-sm">
                             <div class="card-header py-2">
-                                <span class="fw-bold"><i class="bi bi-graph-up me-2"></i>Activity Trend</span>
+                                <span class="fw-bold"><i class="bi bi-funnel me-2"></i>Filters</span>
                             </div>
-                            <div class="card-body">
-                                <div style="height: 200px;"><canvas id="trendChart"></canvas></div>
+                            <div class="card-body py-2">
+                                <div class="row g-2 align-items-center">
+                                    <div class="col-md-4">
+                                        <div class="input-group">
+                                            <span class="input-group-text"><i class="bi bi-search"></i></span>
+                                            <input type="text" class="form-control" placeholder="Search reports..." @bind="_reportSearchTerm" @bind:event="oninput" @bind:after="FilterAnalyses" />
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="input-group">
+                                            <span class="input-group-text">From</span>
+                                            <input type="date" class="form-control" @bind="_fromDate" @bind:after="FilterAnalyses" />
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="input-group">
+                                            <span class="input-group-text">To</span>
+                                            <input type="date" class="form-control" @bind="_toDate" @bind:after="FilterAnalyses" />
+                                        </div>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <select class="form-select" @bind="_statusFilter" @bind:after="FilterAnalyses">
+                                            <option value="">All Status</option>
+                                            <option value="Completed">Completed</option>
+                                            <option value="InProgress">In Progress</option>
+                                            <option value="Failed">Failed</option>
+                                        </select>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
-                    <div class="col-lg-3">
-                        <div class="card modern-card shadow-sm">
-                            <div class="card-header py-2">
-                                <span class="fw-bold"><i class="bi bi-pie-chart me-2"></i>Status</span>
-                            </div>
-                            <div class="card-body">
-                                <div style="height: 200px;"><canvas id="statusChart"></canvas></div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-lg-4">
-                        <div class="card modern-card shadow-sm">
-                            <div class="card-header py-2">
-                                <span class="fw-bold"><i class="bi bi-clock me-2"></i>Hourly Distribution</span>
-                            </div>
-                            <div class="card-body">
-                                <div style="height: 200px;"><canvas id="hourlyChart"></canvas></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
 
-                <!-- MODEL USAGE -->
-                @if (_stats?.ModelUsageBreakdown?.Count > 0)
-                {
-                    <div class="card modern-card shadow-sm mb-3">
-                        <div class="card-body py-2">
-                            <div class="d-flex align-items-center gap-3 flex-wrap">
-                                <span class="fw-bold"><i class="bi bi-cpu me-2"></i>Model Usage:</span>
-                                @foreach (var model in _stats.ModelUsageBreakdown)
-                                {
-                                    <span class="badge bg-primary px-3 py-2">@model.ModelName: @model.UsageCount calls</span>
-                                }
+                    <!-- CHARTS ROW -->
+                    <div class="row g-3 mb-3 chart-card-grid">
+                        <div class="col-lg-5 grid-item" data-grid-id="chart-trend">
+                            <div class="card modern-card shadow-sm h-100">
+                                <div class="card-header py-2">
+                                    <span class="fw-bold"><i class="bi bi-graph-up me-2"></i>Activity Trend</span>
+                                </div>
+                                <div class="card-body">
+                                    <div style="height: 200px;"><canvas id="trendChart"></canvas></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-lg-3 grid-item" data-grid-id="chart-status">
+                            <div class="card modern-card shadow-sm h-100">
+                                <div class="card-header py-2">
+                                    <span class="fw-bold"><i class="bi bi-pie-chart me-2"></i>Status</span>
+                                </div>
+                                <div class="card-body">
+                                    <div style="height: 200px;"><canvas id="statusChart"></canvas></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-lg-4 grid-item" data-grid-id="chart-hourly">
+                            <div class="card modern-card shadow-sm h-100">
+                                <div class="card-header py-2">
+                                    <span class="fw-bold"><i class="bi bi-clock me-2"></i>Hourly Distribution</span>
+                                </div>
+                                <div class="card-body">
+                                    <div style="height: 200px;"><canvas id="hourlyChart"></canvas></div>
+                                </div>
                             </div>
                         </div>
                     </div>
-                }
 
-                <!-- REPORTS TABLE -->
-                <div class="card modern-card shadow-sm">
+                    <!-- MODEL USAGE -->
+                    @if (_stats?.ModelUsageBreakdown?.Count > 0)
+                    {
+                        <div class="grid-item mb-3" data-grid-id="model-usage" style="width: 100%;">
+                            <div class="card modern-card shadow-sm">
+                                <div class="card-header py-2">
+                                    <span class="fw-bold"><i class="bi bi-cpu me-2"></i>Model Usage</span>
+                                </div>
+                                <div class="card-body py-2">
+                                    <div class="d-flex align-items-center gap-3 flex-wrap">
+                                        @foreach (var model in _stats.ModelUsageBreakdown)
+                                        {
+                                            <span class="badge bg-primary px-3 py-2">@model.ModelName: @model.UsageCount calls</span>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+
+                    <!-- REPORTS TABLE -->
+                    <div class="grid-item" data-grid-id="reports-table" style="width: 100%;">
+                        <div class="card modern-card shadow-sm">
                     <div class="card-header py-2 d-flex justify-content-between align-items-center">
                         <span class="fw-bold"><i class="bi bi-list-ul me-2"></i>Reports (@FilteredReports.Count)</span>
                         @if (_reports.Count > 0)
@@ -238,6 +258,38 @@
                             </div>
                         }
                     </div>
+                </div>
+                    </div>
+                </div> <!-- End of dynamic-grid-container -->
+
+                <!-- EDIT MODE TOGGLE BUTTON -->
+                <button class="edit-mode-toggle @(_editMode ? "active" : "")" @onclick="ToggleEditMode">
+                    @if (_editMode)
+                    {
+                        <i class="bi bi-check-lg"></i>
+                        <span>Done Editing</span>
+                    }
+                    else
+                    {
+                        <i class="bi bi-layout-wtf"></i>
+                        <span>Customize Layout</span>
+                    }
+                </button>
+
+                <!-- EDIT CONTROLS PANEL -->
+                <div class="edit-controls @(_editMode ? "visible" : "")">
+                    <button @onclick="ResetLayout" class="danger">
+                        <i class="bi bi-arrow-counterclockwise"></i>
+                        Reset Layout
+                    </button>
+                    <button @onclick="ExportLayout">
+                        <i class="bi bi-download"></i>
+                        Export Layout
+                    </button>
+                    <button @onclick="ImportLayout">
+                        <i class="bi bi-upload"></i>
+                        Import Layout
+                    </button>
                 </div>
             }
         </div>
@@ -391,6 +443,8 @@
 
     // State
     private bool _loading = true;
+    private bool _editMode = false;
+    private DotNetObjectReference<Analysis>? _dotNetRef;
 
     // Dashboard Stats
     private DashboardStatistics? _stats;
@@ -571,9 +625,10 @@
             StateHasChanged();
         }
 
-        // Render charts
+        // Render charts and initialize grid
         await Task.Delay(100);
         await RenderCharts();
+        await InitializeGrid();
     }
 
     private async Task RefreshAll()
@@ -829,6 +884,144 @@
     public class XAxisData { public List<string> Labels { get; set; } = new(); }
     public class SeriesData { public string Name { get; set; } = ""; public List<double> Values { get; set; } = new(); }
 
+    // Grid Layout Methods
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_loading)
+        {
+            await InitializeGrid();
+        }
+    }
+
+    private const string PAGE_ID = "analysis";
+
+    private async Task InitializeGrid()
+    {
+        try
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("initDynamicGrid", _dotNetRef, "dashboardGrid", PAGE_ID);
+
+            // Load layout from server
+            try
+            {
+                var layout = await LayoutService.GetLayoutAsync(PAGE_ID);
+                if (!string.IsNullOrEmpty(layout.LayoutJson) && layout.LayoutJson != "{}")
+                {
+                    await JS.InvokeVoidAsync("applyServerLayout", layout.LayoutJson);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to load server layout: {ex.Message}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Grid initialization failed: {ex.Message}");
+        }
+    }
+
+    private async Task ToggleEditMode()
+    {
+        _editMode = !_editMode;
+        try
+        {
+            await JS.InvokeVoidAsync("toggleGridEditMode", _editMode);
+            if (!_editMode)
+            {
+                // Refresh charts after exiting edit mode
+                await Task.Delay(100);
+                await RenderCharts();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Toggle edit mode failed: {ex.Message}");
+        }
+    }
+
+    private async Task ResetLayout()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("resetGridLayout");
+            Toast.ShowSuccess("Layout reset to default!");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Reset layout failed: {ex.Message}");
+            Toast.ShowError($"Reset failed: {ex.Message}");
+        }
+    }
+
+    private async Task ExportLayout()
+    {
+        try
+        {
+            var layoutJson = await JS.InvokeAsync<string>("exportGridLayout");
+            var fileName = $"dashboard-layout-{DateTime.Now:yyyyMMdd-HHmmss}.json";
+            var bytes = System.Text.Encoding.UTF8.GetBytes(layoutJson);
+            var base64 = Convert.ToBase64String(bytes);
+            await JS.InvokeVoidAsync("downloadFileFromBase64", fileName, "application/json", base64);
+            Toast.ShowSuccess("Layout exported successfully!");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Export layout failed: {ex.Message}");
+            Toast.ShowError($"Export failed: {ex.Message}");
+        }
+    }
+
+    private async Task ImportLayout()
+    {
+        // For simplicity, prompt user to paste JSON
+        // In a full implementation, you'd use a file input
+        Toast.ShowInfo("Import feature coming soon! For now, layouts are auto-saved.");
+    }
+
+    [JSInvokable]
+    public void OnGridEvent(string eventName, object data)
+    {
+        Console.WriteLine($"Grid event: {eventName}");
+        if (eventName == "layoutChanged")
+        {
+            // Layout was saved automatically
+        }
+        else if (eventName == "layoutReset")
+        {
+            InvokeAsync(StateHasChanged);
+        }
+    }
+
+    [JSInvokable]
+    public async Task SaveLayoutToServer(string pageId, string layoutJson)
+    {
+        try
+        {
+            await LayoutService.SaveLayoutAsync(pageId, layoutJson);
+            Console.WriteLine($"Layout saved to server for page: {pageId}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to save layout to server: {ex.Message}");
+        }
+    }
+
+    [JSInvokable]
+    public async Task ResetLayoutOnServer(string pageId)
+    {
+        try
+        {
+            await LayoutService.ResetLayoutAsync(pageId);
+            Console.WriteLine($"Layout reset on server for page: {pageId}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to reset layout on server: {ex.Message}");
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         _dashboardUpdateSubscription?.Dispose();
@@ -836,6 +1029,7 @@
         _reportStatusChangedSubscription?.Dispose();
         _reportDeletedSubscription?.Dispose();
         _allReportsDeletedSubscription?.Dispose();
+        _dotNetRef?.Dispose();
         await Task.CompletedTask;
     }
 }

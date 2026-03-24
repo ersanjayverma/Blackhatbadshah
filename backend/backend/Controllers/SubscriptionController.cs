@@ -6,9 +6,8 @@ using shared.Dto;
 
 namespace backend.Controllers;
 
-[ApiController]
 [Route("api/subscriptions")]
-public sealed class SubscriptionController : ControllerBase
+public sealed class SubscriptionController : BaseApiController
 {
     private readonly ISubscriptionService _subscriptionService;
     private readonly IPlanEnforcementService _planEnforcement;
@@ -27,31 +26,10 @@ public sealed class SubscriptionController : ControllerBase
         _logger = logger;
     }
 
-    // -------------------------------------------------
-    // CORS PREFLIGHT (MUST BE ANONYMOUS)
-    // -------------------------------------------------
     [HttpOptions]
     [AllowAnonymous]
-    public IActionResult Options()
-    {
-        return NoContent();
-    }
+    public IActionResult Options() => NoContent();
 
-    // -------------------------------------------------
-    // USER ID (KEYCLOAK CANONICAL)
-    // -------------------------------------------------
-    private bool TryGetUserId([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? userId)
-    {
-        // Keycloak user identifier (OIDC standard)
-        userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                     ?? User.FindFirstValue("sub");
-        return !string.IsNullOrWhiteSpace(userId);
-    }
-
-
-    // -------------------------------------------------
-    // PUBLIC
-    // -------------------------------------------------
     [HttpGet("plans")]
     [AllowAnonymous]
     public async Task<ActionResult<List<PlanDto>>> GetPlans()

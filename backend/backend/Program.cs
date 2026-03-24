@@ -171,6 +171,9 @@ builder.Services.AddHttpContextAccessor();
 // Activity Logging Service
 builder.Services.AddScoped<IActivityLoggingService, ActivityLoggingService>();
 
+// Tag Service
+builder.Services.AddScoped<ITagService, TagService>();
+
 // Subscription & Payment Services
 builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
 builder.Services.AddScoped<IPlanEnforcementService, PlanEnforcementService>();

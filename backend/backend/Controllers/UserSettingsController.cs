@@ -1,17 +1,16 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System.Security.Claims;
+using backend.Common;
 using backend.Data;
 using backend.Data.Entities;
 using shared.Dto;
 
 namespace backend.Controllers;
 
-[ApiController]
 [Route("api/settings")]
 [Authorize]
-public class UserSettingsController : ControllerBase
+public class UserSettingsController : BaseApiController
 {
     private readonly AppDbContext _db;
 
@@ -20,47 +19,18 @@ public class UserSettingsController : ControllerBase
         _db = db;
     }
 
-    private string? GetUserId() =>
-        User.FindFirstValue(ClaimTypes.NameIdentifier) ??
-        User.FindFirstValue("sub");
-
     /// <summary>
     /// Get notification preferences
     /// </summary>
     [HttpGet("notifications")]
     public async Task<IActionResult> GetNotificationPreferences()
     {
-        var userId = GetUserId();
-        if (userId == null) return Unauthorized();
+        if (!TryGetUserId(out var userId))
+            return Unauthorized();
 
         var prefs = await _db.NotificationPreferences.FirstOrDefaultAsync(p => p.UserId == userId);
 
-        if (prefs == null)
-        {
-            return Ok(new NotificationPreferenceDto
-            {
-                EmailOnAnalysisComplete = true,
-                EmailOnAnalysisFailed = true,
-                EmailOnWorkerOffline = false,
-                InAppNotifications = true,
-                BrowserPushNotifications = false,
-                DailySummaryEmail = false,
-                WeeklySummaryEmail = false
-            });
-        }
-
-        return Ok(new NotificationPreferenceDto
-        {
-            EmailOnAnalysisComplete = prefs.EmailOnAnalysisComplete,
-            EmailOnAnalysisFailed = prefs.EmailOnAnalysisFailed,
-            EmailOnWorkerOffline = prefs.EmailOnWorkerOffline,
-            InAppNotifications = prefs.InAppNotifications,
-            BrowserPushNotifications = prefs.BrowserPushNotifications,
-            DailySummaryEmail = prefs.DailySummaryEmail,
-            WeeklySummaryEmail = prefs.WeeklySummaryEmail,
-            QuietHoursStart = prefs.QuietHoursStart,
-            QuietHoursEnd = prefs.QuietHoursEnd
-        });
+        return Ok(prefs?.ToDto() ?? MappingExtensions.GetDefaultNotificationPreferences());
     }
 
     /// <summary>
@@ -69,8 +39,8 @@ public class UserSettingsController : ControllerBase
     [HttpPut("notifications")]
     public async Task<IActionResult> UpdateNotificationPreferences([FromBody] UpdateNotificationPreferenceRequest request)
     {
-        var userId = GetUserId();
-        if (userId == null) return Unauthorized();
+        if (!TryGetUserId(out var userId))
+            return Unauthorized();
 
         var prefs = await _db.NotificationPreferences.FirstOrDefaultAsync(p => p.UserId == userId);
 
@@ -85,38 +55,97 @@ public class UserSettingsController : ControllerBase
             _db.NotificationPreferences.Add(prefs);
         }
 
-        if (request.EmailOnAnalysisComplete.HasValue)
-            prefs.EmailOnAnalysisComplete = request.EmailOnAnalysisComplete.Value;
-        if (request.EmailOnAnalysisFailed.HasValue)
-            prefs.EmailOnAnalysisFailed = request.EmailOnAnalysisFailed.Value;
-        if (request.EmailOnWorkerOffline.HasValue)
-            prefs.EmailOnWorkerOffline = request.EmailOnWorkerOffline.Value;
-        if (request.InAppNotifications.HasValue)
-            prefs.InAppNotifications = request.InAppNotifications.Value;
-        if (request.BrowserPushNotifications.HasValue)
-            prefs.BrowserPushNotifications = request.BrowserPushNotifications.Value;
-        if (request.DailySummaryEmail.HasValue)
-            prefs.DailySummaryEmail = request.DailySummaryEmail.Value;
-        if (request.WeeklySummaryEmail.HasValue)
-            prefs.WeeklySummaryEmail = request.WeeklySummaryEmail.Value;
+        prefs.ApplyUpdate(request);
+        await _db.SaveChangesAsync();
 
-        prefs.QuietHoursStart = request.QuietHoursStart;
-        prefs.QuietHoursEnd = request.QuietHoursEnd;
-        prefs.UpdatedAt = DateTime.UtcNow;
+        return Ok(prefs.ToDto());
+    }
+
+    /// <summary>
+    /// Get all layout preferences for the user
+    /// </summary>
+    [HttpGet("layouts")]
+    public async Task<IActionResult> GetAllLayouts()
+    {
+        if (!TryGetUserId(out var userId))
+            return Unauthorized();
+
+        var layouts = await _db.UserLayoutPreferences
+            .Where(l => l.UserId == userId)
+            .Select(l => l.ToDto())
+            .ToListAsync();
+
+        return Ok(new AllLayoutsResponse { Layouts = layouts });
+    }
+
+    /// <summary>
+    /// Get layout preference for a specific page
+    /// </summary>
+    [HttpGet("layouts/{pageId}")]
+    public async Task<IActionResult> GetLayout(string pageId)
+    {
+        if (!TryGetUserId(out var userId))
+            return Unauthorized();
+
+        var layout = await _db.UserLayoutPreferences
+            .FirstOrDefaultAsync(l => l.UserId == userId && l.PageId == pageId);
+
+        return Ok(layout?.ToDto() ?? MappingExtensions.GetDefaultLayoutPreference(pageId));
+    }
+
+    /// <summary>
+    /// Save layout preference for a page
+    /// </summary>
+    [HttpPut("layouts")]
+    public async Task<IActionResult> SaveLayout([FromBody] SaveLayoutPreferenceRequest request)
+    {
+        if (!TryGetUserId(out var userId))
+            return Unauthorized();
+
+        if (string.IsNullOrWhiteSpace(request.PageId))
+            return BadRequest(ErrorMessages.PageIdRequired);
+
+        var layout = await _db.UserLayoutPreferences
+            .FirstOrDefaultAsync(l => l.UserId == userId && l.PageId == request.PageId);
+
+        if (layout == null)
+        {
+            layout = new UserLayoutPreference
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                PageId = request.PageId,
+                CreatedAt = DateTime.UtcNow
+            };
+            _db.UserLayoutPreferences.Add(layout);
+        }
+
+        layout.LayoutJson = request.LayoutJson ?? Defaults.EmptyLayoutJson;
+        layout.UpdatedAt = DateTime.UtcNow;
 
         await _db.SaveChangesAsync();
 
-        return Ok(new NotificationPreferenceDto
+        return Ok(layout.ToDto());
+    }
+
+    /// <summary>
+    /// Delete layout preference for a page (reset to default)
+    /// </summary>
+    [HttpDelete("layouts/{pageId}")]
+    public async Task<IActionResult> DeleteLayout(string pageId)
+    {
+        if (!TryGetUserId(out var userId))
+            return Unauthorized();
+
+        var layout = await _db.UserLayoutPreferences
+            .FirstOrDefaultAsync(l => l.UserId == userId && l.PageId == pageId);
+
+        if (layout != null)
         {
-            EmailOnAnalysisComplete = prefs.EmailOnAnalysisComplete,
-            EmailOnAnalysisFailed = prefs.EmailOnAnalysisFailed,
-            EmailOnWorkerOffline = prefs.EmailOnWorkerOffline,
-            InAppNotifications = prefs.InAppNotifications,
-            BrowserPushNotifications = prefs.BrowserPushNotifications,
-            DailySummaryEmail = prefs.DailySummaryEmail,
-            WeeklySummaryEmail = prefs.WeeklySummaryEmail,
-            QuietHoursStart = prefs.QuietHoursStart,
-            QuietHoursEnd = prefs.QuietHoursEnd
-        });
+            _db.UserLayoutPreferences.Remove(layout);
+            await _db.SaveChangesAsync();
+        }
+
+        return Ok(new { message = "Layout reset to default" });
     }
 }

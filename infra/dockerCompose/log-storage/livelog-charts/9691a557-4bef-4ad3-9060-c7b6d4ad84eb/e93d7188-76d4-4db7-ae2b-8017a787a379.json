@@ -1,0 +1,17 @@
+﻿{
+  "chartType": "LineChart",
+  "title": "SignalR Failures & UDP Blocks",
+  "xAxis": {
+    "labels": ["16:39", "17:00", "18:00", "19:00", "19:08", "19:16", "20:04", "20:35"]
+  },
+  "series": [
+    {
+      "name": "UDP Blocks",
+      "values": [200, 180, 160, 140, 120, 100, 80, 60]
+    },
+    {
+      "name": "SignalR 502s",
+      "values": [0, 0, 0, 1, 1, 1, 0, 1]
+    }
+  ]
+}

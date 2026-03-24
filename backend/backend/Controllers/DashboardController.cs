@@ -3,14 +3,12 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using backend.Data;
 using shared.Dto;
-using System.Security.Claims;
 
 namespace backend.Controllers;
 
-[ApiController]
 [Route("api/dashboard")]
 [Authorize]
-public class DashboardController : ControllerBase
+public class DashboardController : BaseApiController
 {
     private readonly AppDbContext _db;
 
@@ -19,16 +17,10 @@ public class DashboardController : ControllerBase
         _db = db;
     }
 
-    // ----------------------------------------------------
-    // GET /api/dashboard/statistics
-    // ----------------------------------------------------
     [HttpGet("statistics")]
     public async Task<ActionResult<DashboardStatistics>> GetStatistics()
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                     ?? User.FindFirstValue("sub");
-
-        if (string.IsNullOrEmpty(userId))
+        if (!TryGetUserId(out var userId))
             return Unauthorized();
 
         var now = DateTime.UtcNow;
@@ -126,17 +118,11 @@ public class DashboardController : ControllerBase
         return Ok(stats);
     }
 
-    // ----------------------------------------------------
-    // GET /api/dashboard/recent
-    // ----------------------------------------------------
     [HttpGet("recent")]
     public async Task<ActionResult<List<RecentAnalysisResult>>> GetRecentAnalyses(
         [FromQuery] int count = 5)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                     ?? User.FindFirstValue("sub");
-
-        if (string.IsNullOrEmpty(userId))
+        if (!TryGetUserId(out var userId))
             return Unauthorized();
 
         var recent = await _db.Reports
@@ -160,16 +146,10 @@ public class DashboardController : ControllerBase
         return Ok(recent);
     }
 
-    // ----------------------------------------------------
-    // GET /api/dashboard/charts/trend
-    // ----------------------------------------------------
     [HttpGet("charts/trend")]
     public async Task<ActionResult<DashboardChartData>> GetTrendChart()
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                     ?? User.FindFirstValue("sub");
-
-        if (string.IsNullOrEmpty(userId))
+        if (!TryGetUserId(out var userId))
             return Unauthorized();
 
         var now = DateTime.UtcNow;
@@ -215,16 +195,10 @@ public class DashboardController : ControllerBase
         });
     }
 
-    // ----------------------------------------------------
-    // GET /api/dashboard/charts/status
-    // ----------------------------------------------------
     [HttpGet("charts/status")]
     public async Task<ActionResult<DashboardChartData>> GetStatusDistributionChart()
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                     ?? User.FindFirstValue("sub");
-
-        if (string.IsNullOrEmpty(userId))
+        if (!TryGetUserId(out var userId))
             return Unauthorized();
 
         var reports = await _db.Reports

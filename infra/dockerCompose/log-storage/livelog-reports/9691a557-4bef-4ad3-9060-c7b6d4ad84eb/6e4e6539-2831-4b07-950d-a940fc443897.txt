@@ -1,0 +1,115 @@
+﻿# SSH Brute Force Attack Analysis
+
+## 1. EXECUTIVE SUMMARY
+The system is under a **sustained SSH brute force attack** from a single IP address (109.107.189.250) over approximately 12 minutes (Feb 13 14:32:49 - 14:44:51). The attacker attempted to authenticate with over **150 different invalid usernames** and targeted the root account multiple times. Fortunately, **all attempts failed** due to proper security configurations including `AllowUsers` restrictions and UFW firewall blocking.
+
+## 2. CRITICAL ISSUES
+
+### Issue 1: SSH Brute Force Attack
+- **Root Cause**: Automated credential stuffing/botnet attack targeting SSH service
+- **Evidence**: Continuous failed authentication attempts from single source IP with invalid usernames and root account
+- **Impact**: Potential unauthorized access if successful; consumes system resources
+- **Severity**: **High** (security threat, but currently mitigated)
+- **First Occurrence**: Feb 13 14:32:49
+
+**Key Log Evidence:**
+```
+Feb 13 14:32:49 vmi3002731 sshd[746784]: Connection closed by invalid user yilingLiu 109.107.189.250 port 24554 [preauth]
+Feb 13 14:32:51 vmi3002731 sshd[746789]: Failed password for invalid user aotian from 109.107.189.250 port 7062 ssh2
+Feb 13 14:35:03 vmi3002731 sshd[746909]: Failed password for invalid user root from 109.107.189.250 port 20616 ssh2
+```
+
+## 3. WARNINGS & ANOMALIES
+- **High frequency attack**: ~12-15 attempts per minute for 12 minutes straight
+- **Targeted root account**: Multiple direct attempts against root user
+- **System resource consumption**: Continuous SSH daemon process creation (sshd[746784], sshd[746789], etc.)
+- **Secondary UDP flood**: Concurrent UDP traffic from different IP (197.248.225.61) being blocked by UFW
+- **Pattern**: Systematic username enumeration followed by root targeting
+
+## 4. TIMELINE OF KEY EVENTS
+
+### Attack Timeline Matrix:
+| Time Period | Attack Intensity | Target Type | Key Events |
+|-------------|------------------|-------------|------------|
+| 14:32:49-14:35:00 | High (20+ attempts) | Username enumeration | First attempts with various invalid users |
+| 14:35:00-14:40:00 | High (30+ attempts) | Root targeting | Multiple root account attacks |
+| 14:40:00-14:44:51 | High (50+ attempts) | Mixed targeting | Continued enumeration + root attempts |
+
+### Key Security Events:
+1. **14:32:49**: First invalid user attempt
+2. **14:35:00**: First root account targeting
+3. **14:35:05**: Attack intensity increases with systematic username testing
+4. **14:44:51**: Last recorded attack attempt
+
+## 5. SYSTEM HEALTH INDICATORS
+- **Success Rate**: 0% - All attacks blocked
+- **Security Effectiveness**: High - `AllowUsers` and UFW working properly
+- **Resource Impact**: Moderate - Continuous SSH process creation
+- **Attack Volume**: ~150 failed attempts over 12 minutes
+- **Firewall Performance**: Excellent - UFW consistently blocking malicious traffic
+
+## 6. REMEDIATION PLAN
+
+### Immediate Actions:
+- **Block source IP**: `ufw deny from 109.107.189.250`
+- **Monitor for similar patterns**: Watch for attacks from different IPs
+- **Review current fail2ban configuration**: Ensure it's properly configured
+
+### Short-term Fix:
+- **Implement rate limiting**: 
+  ```bash
+  ufw limit ssh
+  ```
+- **Enhance fail2ban rules** for SSH brute force protection
+
+### Long-term Solution:
+- **Deploy fail2ban with SSH jail**:
+  ```bash
+  # /etc/fail2ban/jail.local
+  [sshd]
+  enabled = true
+  port = ssh
+  filter = sshd
+  logpath = /var/log/auth.log
+  maxretry = 3
+  bantime = 3600
+  ```
+- **Consider SSH key-only authentication**
+- **Implement port knocking or VPN access**
+
+### Code/Config Changes:
+1. Install and configure fail2ban:
+   ```bash
+   apt-get install fail2ban
+   systemctl enable fail2ban
+   systemctl start fail2ban
+   ```
+
+2. Strengthen SSH configuration (`/etc/ssh/sshd_config`):
+   ```bash
+   PermitRootLogin no
+   PasswordAuthentication no  # If using keys only
+   MaxAuthTries 3
+   ```
+
+### Monitoring Recommendations:
+- **Alert on**: >5 failed SSH attempts in 1 minute
+- **Watch for**: New IPs targeting SSH service
+- **Monitor**: SSH daemon process count for resource exhaustion
+
+## 7. PREVENTIVE MEASURES
+- **Architecture**: Move SSH behind VPN or bastion host
+- **Logging**: Implement centralized log management (ELK/Graylog)
+- **Monitoring**: Deploy SIEM for real-time threat detection
+- **Network**: Consider Cloudflare Spectrum or similar proxy services
+- **Access Control**: Implement zero-trust network access (ZTNA)
+
+## 8. MISSING INFORMATION
+- **Geolocation data**: Country/region of attacking IP addresses
+- **User agent or attack tool identification**: What tools are being used
+- **Connection duration metrics**: How long each connection attempt lasted
+- **System resource metrics**: CPU/memory impact during attack
+- **Network bandwidth utilization**: Impact on network performance
+- **Correlation with other system logs**: Application logs, database logs
+
+**Recommendation**: Implement comprehensive logging with tools like `auditd` and centralized log management to capture more contextual information for future incidents.

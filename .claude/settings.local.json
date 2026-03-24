@@ -16,7 +16,11 @@
       "Bash(dpkg-deb:*)",
       "Bash(tar:*)",
       "Bash(grep:*)",
-      "Bash(dotnet ef migrations add:*)"
+      "Bash(dotnet ef migrations add:*)",
+      "Bash(wc:*)",
+      "Bash(xargs:*)",
+      "Bash(ls:*)",
+      "Bash(dotnet ef database update:*)"
     ]
   }
 }

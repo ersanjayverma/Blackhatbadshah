@@ -119,6 +119,10 @@ builder.Services.AddScoped<UserSettingsService>(sp =>
     new UserSettingsService(sp.GetRequiredService<IHttpClientFactory>()
         .CreateClient("BlackHatBadshahApi")));
 
+builder.Services.AddScoped<LayoutService>(sp =>
+    new LayoutService(sp.GetRequiredService<IHttpClientFactory>()
+        .CreateClient("BlackHatBadshahApi")));
+
 // -------------------- VIEWMODELS --------------------
 builder.Services.AddScoped<DashboardViewModel>();
 builder.Services.AddScoped<LogsViewModel>();

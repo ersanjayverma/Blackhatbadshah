@@ -1,3 +1,4 @@
+using backend.Common;
 using backend.Data;
 using backend.Data.Entities;
 using backend.Handlers;
@@ -5,21 +6,20 @@ using backend.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System.Security.Claims;
+using shared.Dto;
 
 namespace backend.Controllers;
 
-[ApiController]
 [Route("api/worker-agents")]
 [Authorize]
-public class WorkerAgentsController : ControllerBase
+public class WorkerAgentsController : BaseApiController
 {
     private readonly AppDbContext _db;
     private readonly ILogger<WorkerAgentsController> _logger;
     private readonly IWorkerRegistry _workerRegistry;
 
     public WorkerAgentsController(
-        AppDbContext db, 
+        AppDbContext db,
         ILogger<WorkerAgentsController> logger,
         IWorkerRegistry workerRegistry)
     {
@@ -28,64 +28,35 @@ public class WorkerAgentsController : ControllerBase
         _workerRegistry = workerRegistry;
     }
 
-    private string? GetUserId()
-    {
-        // Try multiple claim types that Keycloak might use
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                     ?? User.FindFirstValue("sub")
-                     ?? User.FindFirstValue("preferred_username");
-        
-        if (string.IsNullOrEmpty(userId))
-        {
-            _logger.LogWarning("Could not determine user ID from claims. Available claims: {Claims}",
-                string.Join(", ", User.Claims.Select(c => $"{c.Type}={c.Value}")));
-        }
-        
-        return userId;
-    }
-
-    // POST /api/worker-agents/register
     [HttpPost("register")]
     public async Task<IActionResult> Register([FromBody] RegisterWorkerAgentRequest request)
     {
-        var userId = GetUserId();
-        if (string.IsNullOrEmpty(userId))
+        if (!TryGetUserId(out var userId))
         {
             _logger.LogWarning("Register: User ID is null or empty");
-            return Unauthorized(new { error = "Unable to determine user identity" });
+            return UnauthorizedWithError(ErrorMessages.Unauthorized);
         }
 
-        // Check if user has worker config initialized
         var userConfig = await _db.UserWorkerConfigs
             .FirstOrDefaultAsync(c => c.UserId == userId);
 
         if (userConfig == null)
-        {
-            return BadRequest(new { error = "Please initialize your worker configuration first at /api/worker-config/initialize" });
-        }
+            return BadRequestWithError(ErrorMessages.InitializeConfigFirst);
 
         if (!userConfig.IsEnabled)
-        {
-            return BadRequest(new { error = "Your worker configuration is disabled" });
-        }
+            return BadRequestWithError(ErrorMessages.WorkerConfigDisabled);
 
-        // Check worker limit
         var currentWorkerCount = await _db.WorkerAgents
             .CountAsync(w => w.CreatedByUserId == userId && w.Status == WorkerAgentStatus.Active);
 
         if (currentWorkerCount >= userConfig.MaxWorkers)
-        {
-            return BadRequest(new { error = $"Maximum worker limit ({userConfig.MaxWorkers}) reached. Upgrade your plan or revoke unused workers." });
-        }
+            return BadRequestWithError(string.Format(ErrorMessages.WorkerLimitReached, userConfig.MaxWorkers));
 
-        // Check if worker with same name exists for this user
         var existingWorker = await _db.WorkerAgents
             .FirstOrDefaultAsync(w => w.CreatedByUserId == userId && w.Name == request.Name);
 
         if (existingWorker != null)
-        {
-            return Conflict(new { error = "A worker with this name already exists" });
-        }
+            return ConflictWithError(ErrorMessages.WorkerAlreadyExists);
 
         // Generate API key
         var apiKey = WorkerKeyAuthenticationHandler.GenerateApiKey();
@@ -117,12 +88,10 @@ public class WorkerAgentsController : ControllerBase
         });
     }
 
-    // GET /api/worker-agents/summary (summary for current user)
     [HttpGet("summary")]
     public async Task<IActionResult> GetSummary()
     {
-        var userId = GetUserId();
-        if (string.IsNullOrEmpty(userId))
+        if (!TryGetUserId(out var userId))
             return Unauthorized();
 
         var userConfig = await _db.UserWorkerConfigs
@@ -144,12 +113,10 @@ public class WorkerAgentsController : ControllerBase
         });
     }
 
-    // GET /api/worker-agents (all workers for current user)
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
-        var userId = GetUserId();
-        if (string.IsNullOrEmpty(userId))
+        if (!TryGetUserId(out var userId))
             return Unauthorized();
 
         var workers = await _db.WorkerAgents
@@ -183,24 +150,21 @@ public class WorkerAgentsController : ControllerBase
         return Ok(workerList);
     }
 
-    // POST /api/worker-agents/{workerId}/revoke
     [HttpPost("{workerId:guid}/revoke")]
     public async Task<IActionResult> Revoke(Guid workerId)
     {
-        var userId = GetUserId();
-        if (string.IsNullOrEmpty(userId))
+        if (!TryGetUserId(out var userId))
             return Unauthorized();
 
         var worker = await _db.WorkerAgents.FindAsync(workerId);
         if (worker == null)
-            return NotFound(new { error = "Worker not found" });
+            return NotFoundWithError(ErrorMessages.WorkerNotFound);
 
-        // Only allow creator to revoke
         if (worker.CreatedByUserId != userId)
             return Forbid();
 
         if (worker.Status == WorkerAgentStatus.Revoked)
-            return BadRequest(new { error = "Worker is already revoked" });
+            return BadRequestWithError(ErrorMessages.WorkerAlreadyRevoked);
 
         worker.Status = WorkerAgentStatus.Revoked;
         worker.RevokedAt = DateTime.UtcNow;
@@ -211,24 +175,21 @@ public class WorkerAgentsController : ControllerBase
         return Ok(new { message = "Worker revoked successfully" });
     }
 
-    // POST /api/worker-agents/{workerId}/rotate-key
     [HttpPost("{workerId:guid}/rotate-key")]
     public async Task<IActionResult> RotateKey(Guid workerId)
     {
-        var userId = GetUserId();
-        if (string.IsNullOrEmpty(userId))
+        if (!TryGetUserId(out var userId))
             return Unauthorized();
 
         var worker = await _db.WorkerAgents.FindAsync(workerId);
         if (worker == null)
-            return NotFound(new { error = "Worker not found" });
+            return NotFoundWithError(ErrorMessages.WorkerNotFound);
 
-        // Only allow creator to rotate key
         if (worker.CreatedByUserId != userId)
             return Forbid();
 
         if (worker.Status == WorkerAgentStatus.Revoked)
-            return BadRequest(new { error = "Cannot rotate key for revoked worker" });
+            return BadRequestWithError(ErrorMessages.CannotRotateKeyForRevoked);
 
         // Generate new API key
         var apiKey = WorkerKeyAuthenticationHandler.GenerateApiKey();
@@ -246,19 +207,16 @@ public class WorkerAgentsController : ControllerBase
         });
     }
 
-    // DELETE /api/worker-agents/{workerId}
     [HttpDelete("{workerId:guid}")]
     public async Task<IActionResult> Delete(Guid workerId)
     {
-        var userId = GetUserId();
-        if (string.IsNullOrEmpty(userId))
+        if (!TryGetUserId(out var userId))
             return Unauthorized();
 
         var worker = await _db.WorkerAgents.FindAsync(workerId);
         if (worker == null)
-            return NotFound(new { error = "Worker not found" });
+            return NotFoundWithError(ErrorMessages.WorkerNotFound);
 
-        // Only allow creator to delete
         if (worker.CreatedByUserId != userId)
             return Forbid();
 
@@ -270,26 +228,22 @@ public class WorkerAgentsController : ControllerBase
         return Ok(new { message = "Worker deleted successfully" });
     }
 
-    // POST /api/worker-agents/{workerId}/reactivate
     [HttpPost("{workerId:guid}/reactivate")]
     public async Task<IActionResult> Reactivate(Guid workerId)
     {
-        var userId = GetUserId();
-        if (string.IsNullOrEmpty(userId))
+        if (!TryGetUserId(out var userId))
             return Unauthorized();
 
         var worker = await _db.WorkerAgents.FindAsync(workerId);
         if (worker == null)
-            return NotFound(new { error = "Worker not found" });
+            return NotFoundWithError(ErrorMessages.WorkerNotFound);
 
-        // Only allow creator to reactivate
         if (worker.CreatedByUserId != userId)
             return Forbid();
 
         if (worker.Status == WorkerAgentStatus.Active)
-            return BadRequest(new { error = "Worker is already active" });
+            return BadRequestWithError(ErrorMessages.WorkerAlreadyActive);
 
-        // Check worker limit before reactivating
         var userConfig = await _db.UserWorkerConfigs
             .FirstOrDefaultAsync(c => c.UserId == userId);
 
@@ -297,9 +251,7 @@ public class WorkerAgentsController : ControllerBase
             .CountAsync(w => w.CreatedByUserId == userId && w.Status == WorkerAgentStatus.Active);
 
         if (userConfig != null && activeCount >= userConfig.MaxWorkers)
-        {
-            return BadRequest(new { error = $"Maximum worker limit ({userConfig.MaxWorkers}) reached. Revoke other workers first." });
-        }
+            return BadRequestWithError(string.Format(ErrorMessages.WorkerLimitReachedReactivate, userConfig.MaxWorkers));
 
         // Generate new API key for reactivated worker
         var apiKey = WorkerKeyAuthenticationHandler.GenerateApiKey();
@@ -315,31 +267,10 @@ public class WorkerAgentsController : ControllerBase
         return Ok(new ReactivateWorkerResponse
         {
             WorkerId = workerId,
-            ApiKey = apiKey, // Returned ONCE only
+            ApiKey = apiKey,
             Message = "Worker reactivated with a new API key. Update your worker configuration."
         });
     }
-}
-
-// Request/Response DTOs
-public class RegisterWorkerAgentRequest
-{
-    public Guid? WorkspaceId { get; set; }
-    public string Name { get; set; } = string.Empty;
-}
-
-public class RegisterWorkerAgentResponse
-{
-    public Guid WorkerId { get; set; }
-    public string ApiKey { get; set; } = string.Empty;
-    public string WorkerName { get; set; } = string.Empty;
-    public string Message { get; set; } = string.Empty;
-}
-
-public class RotateKeyResponse
-{
-    public Guid WorkerId { get; set; }
-    public string ApiKey { get; set; } = string.Empty;
 }
 
 public class WorkerAgentListItem
@@ -353,22 +284,4 @@ public class WorkerAgentListItem
     public DateTime? RevokedAt { get; set; }
     public string CreatedByUserId { get; set; } = string.Empty;
     public Guid WorkspaceId { get; set; }
-}
-
-public class WorkerSummaryResponse
-{
-    public bool HasConfig { get; set; }
-    public bool IsEnabled { get; set; }
-    public int MaxWorkers { get; set; }
-    public int TotalWorkers { get; set; }
-    public int ActiveWorkers { get; set; }
-    public int RevokedWorkers { get; set; }
-    public DateTime? LastWorkerActivityAt { get; set; }
-}
-
-public class ReactivateWorkerResponse
-{
-    public Guid WorkerId { get; set; }
-    public string ApiKey { get; set; } = string.Empty;
-    public string Message { get; set; } = string.Empty;
 }

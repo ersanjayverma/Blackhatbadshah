@@ -1,0 +1,515 @@
+/* Dynamic Grid System - Drag, Drop & Resize Styles */
+
+/* Grid Container */
+.dynamic-grid-container {
+    position: relative;
+    min-height: 100vh;
+    padding-bottom: 100px;
+}
+
+.dynamic-grid-container.edit-mode {
+    background-image:
+        linear-gradient(rgba(217, 119, 6, 0.1) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(217, 119, 6, 0.1) 1px, transparent 1px);
+    background-size: 20px 20px;
+}
+
+/* Ensure rows don't interfere with absolute positioned items */
+.dynamic-grid-container.edit-mode .row {
+    position: static;
+}
+
+/* When items become absolute, the row container needs min-height to not collapse */
+.dynamic-grid-container.edit-mode .row:has(.grid-item[style*="position: absolute"]) {
+    min-height: 200px;
+}
+
+/* Grid Item Base */
+.grid-item {
+    position: relative;
+    touch-action: none;
+    user-select: none;
+    transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.grid-item.dragging {
+    opacity: 0.9;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4) !important;
+    border-color: var(--accent) !important;
+    cursor: grabbing !important;
+}
+
+.grid-item.resizing {
+    opacity: 0.95;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3) !important;
+    border-color: var(--accent) !important;
+}
+
+/* Drag Handle */
+.drag-handle {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    cursor: grab;
+    color: var(--text-muted);
+    border-radius: 6px;
+    margin-right: 10px;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+    background: var(--surface-2, rgba(255,255,255,0.1));
+    border: 1px solid var(--border, rgba(255,255,255,0.1));
+    touch-action: none;
+    user-select: none;
+}
+
+.drag-handle:hover {
+    background: var(--accent, #d97706);
+    color: white;
+    transform: scale(1.1);
+}
+
+.drag-handle:active {
+    cursor: grabbing;
+    background: var(--accent, #d97706);
+    color: white;
+    transform: scale(0.95);
+}
+
+.edit-mode .drag-handle {
+    display: flex !important;
+}
+
+/* Drag handle for cards without headers (stat cards) */
+.edit-mode .grid-item .card:not(:has(.card-header)) .drag-handle {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    margin: 0;
+    z-index: 50;
+    background: var(--surface-2, rgba(0,0,0,0.7));
+    opacity: 0.9;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+}
+
+.edit-mode .grid-item .card:not(:has(.card-header)) .drag-handle:hover {
+    opacity: 1;
+}
+
+/* Resize Handles */
+.resize-handle {
+    position: absolute;
+    display: none;
+    z-index: 100;
+    touch-action: none;
+    user-select: none;
+}
+
+.edit-mode .resize-handle {
+    display: block !important;
+}
+
+/* Corner resize handles - larger hitbox for easier grabbing */
+.resize-handle.top-left,
+.resize-handle.top-right,
+.resize-handle.bottom-left,
+.resize-handle.bottom-right {
+    width: 16px;
+    height: 16px;
+    background: var(--accent);
+    border: 2px solid var(--bg);
+    border-radius: 50%;
+    transition: transform 0.2s ease, background 0.2s ease;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+}
+
+.resize-handle.top-left:hover,
+.resize-handle.top-right:hover,
+.resize-handle.bottom-left:hover,
+.resize-handle.bottom-right:hover {
+    transform: scale(1.4);
+    background: var(--accent-hover, #f59e0b);
+}
+
+.resize-handle.top-left {
+    top: -8px;
+    left: -8px;
+    cursor: nwse-resize;
+}
+
+.resize-handle.top-right {
+    top: -8px;
+    right: -8px;
+    cursor: nesw-resize;
+}
+
+.resize-handle.bottom-left {
+    bottom: -8px;
+    left: -8px;
+    cursor: nesw-resize;
+}
+
+.resize-handle.bottom-right {
+    bottom: -8px;
+    right: -8px;
+    cursor: nwse-resize;
+}
+
+/* Edge resize handles - larger for easier grabbing */
+.resize-handle.top,
+.resize-handle.bottom {
+    left: 50%;
+    transform: translateX(-50%);
+    width: 60px;
+    height: 10px;
+    background: var(--accent);
+    border-radius: 5px;
+    opacity: 0.8;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+}
+
+.resize-handle.top:hover,
+.resize-handle.bottom:hover {
+    opacity: 1;
+    height: 12px;
+    background: var(--accent-hover, #f59e0b);
+}
+
+.resize-handle.top {
+    top: -5px;
+    cursor: ns-resize;
+}
+
+.resize-handle.bottom {
+    bottom: -5px;
+    cursor: ns-resize;
+}
+
+.resize-handle.left,
+.resize-handle.right {
+    top: 50%;
+    transform: translateY(-50%);
+    width: 10px;
+    height: 60px;
+    background: var(--accent);
+    border-radius: 5px;
+    opacity: 0.8;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+}
+
+.resize-handle.left:hover,
+.resize-handle.right:hover {
+    opacity: 1;
+    width: 12px;
+    background: var(--accent-hover, #f59e0b);
+}
+
+.resize-handle.left {
+    left: -5px;
+    cursor: ew-resize;
+}
+
+.resize-handle.right {
+    right: -5px;
+    cursor: ew-resize;
+}
+
+/* Edit Mode Card Styling */
+.edit-mode .grid-item {
+    border: 2px dashed var(--border) !important;
+    /* Override Bootstrap flex/grid properties when item becomes absolute */
+    flex: none !important;
+    max-width: none !important;
+}
+
+.edit-mode .grid-item:hover {
+    border-color: var(--accent) !important;
+}
+
+/* When a grid item has been positioned absolutely (after drag/resize) */
+.edit-mode .grid-item[style*="position: absolute"],
+.grid-item[style*="position: absolute"] {
+    position: absolute !important;
+    margin: 0 !important;
+    flex: none !important;
+    max-width: none !important;
+}
+
+/* Edit Mode Toggle Button */
+.edit-mode-toggle {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 1000;
+    padding: 12px 20px;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 50px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(217, 119, 6, 0.4);
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.edit-mode-toggle:hover {
+    background: var(--accent-hover);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(217, 119, 6, 0.5);
+}
+
+.edit-mode-toggle.active {
+    background: var(--success);
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+}
+
+.edit-mode-toggle.active:hover {
+    background: #059669;
+    box-shadow: 0 6px 16px rgba(16, 185, 129, 0.5);
+}
+
+/* Edit Mode Controls Panel */
+.edit-controls {
+    position: fixed;
+    bottom: 80px;
+    right: 24px;
+    z-index: 1000;
+    display: none;
+    flex-direction: column;
+    gap: 8px;
+    padding: 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.edit-controls.visible {
+    display: flex;
+}
+
+.edit-controls button {
+    padding: 10px 16px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--text);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9rem;
+}
+
+.edit-controls button:hover {
+    background: var(--surface-2);
+    border-color: var(--accent);
+}
+
+.edit-controls button.danger:hover {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: var(--danger);
+    color: var(--danger);
+}
+
+/* Responsive Grid Items */
+@media (max-width: 768px) {
+    .grid-item {
+        transform: none !important;
+        width: 100% !important;
+        height: auto !important;
+        position: relative !important;
+        margin-bottom: 16px;
+    }
+
+    .resize-handle {
+        display: none !important;
+    }
+
+    .drag-handle {
+        display: none !important;
+    }
+
+    .edit-mode-toggle {
+        display: none;
+    }
+
+    .edit-controls {
+        display: none !important;
+    }
+}
+
+/* Card header adjustments for drag handle */
+.edit-mode .card-header {
+    display: flex;
+    align-items: center;
+}
+
+.edit-mode .card-header > span:first-of-type:not(.drag-handle) {
+    flex: 1;
+}
+
+/* Smooth transitions when not dragging */
+.grid-item:not(.dragging):not(.resizing) {
+    transition: transform 0.1s ease, width 0.1s ease, height 0.1s ease;
+}
+
+/* Placeholder for dropped items */
+.grid-placeholder {
+    position: absolute;
+    background: rgba(217, 119, 6, 0.1);
+    border: 2px dashed var(--accent);
+    border-radius: 12px;
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* Stat cards in grid mode - maintain aspect ratio */
+.edit-mode .stat-card-grid .grid-item {
+    min-width: 140px;
+    min-height: 100px;
+}
+
+/* Chart cards in grid mode - ensure charts are visible */
+.edit-mode .chart-card-grid .grid-item {
+    min-width: 300px;
+    min-height: 280px;
+}
+
+.grid-item canvas {
+    max-width: 100%;
+    max-height: 100%;
+}
+
+/* Ensure card content fills the grid item */
+.grid-item .card {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.grid-item .card-body {
+    flex: 1;
+    overflow: auto;
+}
+
+/* Edit mode indicator */
+.edit-mode-indicator {
+    position: fixed;
+    top: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--accent);
+    color: white;
+    padding: 8px 20px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    z-index: 1001;
+    display: none;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 4px 12px rgba(217, 119, 6, 0.4);
+}
+
+.edit-mode .edit-mode-indicator {
+    display: flex;
+}
+
+/* Animation for edit mode entrance */
+@keyframes pulseHandle {
+    0%, 100% { opacity: 0.7; }
+    50% { opacity: 1; }
+}
+
+.edit-mode .drag-handle {
+    animation: pulseHandle 2s ease-in-out infinite;
+}
+
+.edit-mode .drag-handle:hover {
+    animation: none;
+}
+
+/* Absolute positioned grid items */
+.grid-item[style*="position: absolute"] {
+    margin: 0 !important;
+}
+
+/* Ensure proper stacking in edit mode */
+.edit-mode .grid-item {
+    z-index: 1;
+}
+
+.edit-mode .grid-item:hover {
+    z-index: 10;
+}
+
+/* Grid item selection highlight */
+.edit-mode .grid-item:focus-within {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+/* Help text for edit mode */
+.edit-mode::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* Improved card appearance in edit mode */
+.edit-mode .grid-item .card {
+    height: 100%;
+    overflow: hidden;
+}
+
+/* Handle overflow for resized cards */
+.grid-item .card-body {
+    overflow: auto;
+}
+
+/* Ensure charts resize properly */
+.grid-item .card-body canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+/* Tooltip for edit mode */
+.edit-mode .grid-item::after {
+    content: attr(data-grid-id);
+    position: absolute;
+    bottom: -20px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 10px;
+    color: var(--text-muted);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+.edit-mode .grid-item:hover::after {
+    opacity: 0.7;
+}
+
+/* Minimum heights for specific card types */
+.edit-mode .stat-card-grid .grid-item {
+    min-height: 80px;
+}
+
+.edit-mode .chart-card-grid .grid-item {
+    min-height: 250px;
+}

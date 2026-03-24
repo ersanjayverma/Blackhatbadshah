@@ -1,17 +1,16 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System.Security.Claims;
+using backend.Common;
 using backend.Data;
 using backend.Data.Entities;
 using shared.Dto;
 
 namespace backend.Controllers;
 
-[ApiController]
 [Route("api/bookmarks")]
 [Authorize]
-public class BookmarksController : ControllerBase
+public class BookmarksController : BaseApiController
 {
     private readonly AppDbContext _db;
 
@@ -20,33 +19,20 @@ public class BookmarksController : ControllerBase
         _db = db;
     }
 
-    private string? GetUserId() =>
-        User.FindFirstValue(ClaimTypes.NameIdentifier) ??
-        User.FindFirstValue("sub");
-
     /// <summary>
     /// Get all bookmarks for the current user
     /// </summary>
     [HttpGet]
     public async Task<IActionResult> GetBookmarks()
     {
-        var userId = GetUserId();
-        if (userId == null) return Unauthorized();
+        if (!TryGetUserId(out var userId))
+            return Unauthorized();
 
         var bookmarks = await _db.LogBookmarks
             .Include(b => b.Log)
             .Where(b => b.UserId == userId)
             .OrderByDescending(b => b.CreatedAt)
-            .Select(b => new BookmarkDto
-            {
-                Id = b.Id,
-                LogId = b.LogId,
-                FileName = b.Log.FileName,
-                SizeBytes = b.Log.SizeBytes,
-                Note = b.Note,
-                BookmarkedAt = b.CreatedAt,
-                LogCreatedAt = b.Log.CreatedAt
-            })
+            .Select(b => b.ToDto())
             .ToListAsync();
 
         return Ok(bookmarks);
@@ -58,16 +44,16 @@ public class BookmarksController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> AddBookmark([FromBody] CreateBookmarkRequest request)
     {
-        var userId = GetUserId();
-        if (userId == null) return Unauthorized();
+        if (!TryGetUserId(out var userId))
+            return Unauthorized();
 
         var log = await _db.Logs.FirstOrDefaultAsync(l => l.Id == request.LogId && l.UserId == userId);
-        if (log == null) return NotFound(new { error = "Log not found" });
+        if (log == null)
+            return NotFoundWithError(ErrorMessages.LogNotFound);
 
-        // Check if already bookmarked
         var existing = await _db.LogBookmarks.FirstOrDefaultAsync(b => b.LogId == request.LogId && b.UserId == userId);
         if (existing != null)
-            return Conflict(new { error = "Log is already bookmarked" });
+            return ConflictWithError(ErrorMessages.AlreadyBookmarked);
 
         var bookmark = new LogBookmark
         {
@@ -81,16 +67,7 @@ public class BookmarksController : ControllerBase
         _db.LogBookmarks.Add(bookmark);
         await _db.SaveChangesAsync();
 
-        return Ok(new BookmarkDto
-        {
-            Id = bookmark.Id,
-            LogId = bookmark.LogId,
-            FileName = log.FileName,
-            SizeBytes = log.SizeBytes,
-            Note = bookmark.Note,
-            BookmarkedAt = bookmark.CreatedAt,
-            LogCreatedAt = log.CreatedAt
-        });
+        return Ok(bookmark.ToDto(log));
     }
 
     /// <summary>
@@ -99,28 +76,20 @@ public class BookmarksController : ControllerBase
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> UpdateBookmark(Guid id, [FromBody] UpdateBookmarkRequest request)
     {
-        var userId = GetUserId();
-        if (userId == null) return Unauthorized();
+        if (!TryGetUserId(out var userId))
+            return Unauthorized();
 
         var bookmark = await _db.LogBookmarks
             .Include(b => b.Log)
             .FirstOrDefaultAsync(b => b.Id == id && b.UserId == userId);
 
-        if (bookmark == null) return NotFound();
+        if (bookmark == null)
+            return NotFound();
 
         bookmark.Note = request.Note;
         await _db.SaveChangesAsync();
 
-        return Ok(new BookmarkDto
-        {
-            Id = bookmark.Id,
-            LogId = bookmark.LogId,
-            FileName = bookmark.Log.FileName,
-            SizeBytes = bookmark.Log.SizeBytes,
-            Note = bookmark.Note,
-            BookmarkedAt = bookmark.CreatedAt,
-            LogCreatedAt = bookmark.Log.CreatedAt
-        });
+        return Ok(bookmark.ToDto());
     }
 
     /// <summary>
@@ -129,11 +98,12 @@ public class BookmarksController : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> RemoveBookmark(Guid id)
     {
-        var userId = GetUserId();
-        if (userId == null) return Unauthorized();
+        if (!TryGetUserId(out var userId))
+            return Unauthorized();
 
         var bookmark = await _db.LogBookmarks.FirstOrDefaultAsync(b => b.Id == id && b.UserId == userId);
-        if (bookmark == null) return NotFound();
+        if (bookmark == null)
+            return NotFound();
 
         _db.LogBookmarks.Remove(bookmark);
         await _db.SaveChangesAsync();
@@ -147,11 +117,12 @@ public class BookmarksController : ControllerBase
     [HttpPost("toggle/{logId:guid}")]
     public async Task<IActionResult> ToggleBookmark(Guid logId, [FromBody] UpdateBookmarkRequest? request = null)
     {
-        var userId = GetUserId();
-        if (userId == null) return Unauthorized();
+        if (!TryGetUserId(out var userId))
+            return Unauthorized();
 
         var log = await _db.Logs.FirstOrDefaultAsync(l => l.Id == logId && l.UserId == userId);
-        if (log == null) return NotFound(new { error = "Log not found" });
+        if (log == null)
+            return NotFoundWithError(ErrorMessages.LogNotFound);
 
         var existing = await _db.LogBookmarks.FirstOrDefaultAsync(b => b.LogId == logId && b.UserId == userId);
 
@@ -161,31 +132,20 @@ public class BookmarksController : ControllerBase
             await _db.SaveChangesAsync();
             return Ok(new { bookmarked = false });
         }
-        else
+
+        var bookmark = new LogBookmark
         {
-            var bookmark = new LogBookmark
-            {
-                Id = Guid.NewGuid(),
-                UserId = userId,
-                LogId = logId,
-                Note = request?.Note,
-                CreatedAt = DateTime.UtcNow
-            };
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            LogId = logId,
+            Note = request?.Note,
+            CreatedAt = DateTime.UtcNow
+        };
 
-            _db.LogBookmarks.Add(bookmark);
-            await _db.SaveChangesAsync();
+        _db.LogBookmarks.Add(bookmark);
+        await _db.SaveChangesAsync();
 
-            return Ok(new { bookmarked = true, bookmark = new BookmarkDto
-            {
-                Id = bookmark.Id,
-                LogId = bookmark.LogId,
-                FileName = log.FileName,
-                SizeBytes = log.SizeBytes,
-                Note = bookmark.Note,
-                BookmarkedAt = bookmark.CreatedAt,
-                LogCreatedAt = log.CreatedAt
-            }});
-        }
+        return Ok(new { bookmarked = true, bookmark = bookmark.ToDto(log) });
     }
 
     /// <summary>
@@ -194,8 +154,8 @@ public class BookmarksController : ControllerBase
     [HttpGet("check/{logId:guid}")]
     public async Task<IActionResult> IsBookmarked(Guid logId)
     {
-        var userId = GetUserId();
-        if (userId == null) return Unauthorized();
+        if (!TryGetUserId(out var userId))
+            return Unauthorized();
 
         var bookmarked = await _db.LogBookmarks.AnyAsync(b => b.LogId == logId && b.UserId == userId);
         return Ok(new { bookmarked });

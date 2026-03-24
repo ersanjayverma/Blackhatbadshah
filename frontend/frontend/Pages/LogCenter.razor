@@ -17,11 +17,15 @@
 @inject IJSRuntime JS
 @inject ToastService Toast
 @inject NavigationManager Navigation
+@inject LayoutService LayoutService
 @implements IAsyncDisposable
 
 <AuthorizeView>
     <Authorized>
         <div class="container-fluid px-4 py-4">
+
+            <!-- DYNAMIC GRID CONTAINER -->
+            <div id="logCenterGrid" class="dynamic-grid-container @(_editMode ? "edit-mode" : "")">
 
             <!-- HEADER ROW -->
             <div class="d-flex justify-content-between align-items-center mb-3">
@@ -42,7 +46,8 @@
             </div>
 
             <!-- CONTROLS ROW -->
-            <div class="card modern-card shadow-sm mb-3">
+            <div class="grid-item mb-3" data-grid-id="controls-row" style="width: 100%;">
+            <div class="card modern-card shadow-sm">
                 <div class="card-body py-3">
                     <div class="row g-3 align-items-end">
                         <div class="col-md-3">
@@ -119,10 +124,11 @@
                     </div>
                 </div>
             </div>
+            </div>
 
             <!-- UPLOAD & PULL ROW -->
             <div class="row g-3 mb-3">
-                <div class="col-md-5">
+                <div class="col-md-5 grid-item" data-grid-id="upload-logs">
                     <div class="card modern-card shadow-sm h-100">
                         <div class="card-header py-2">
                             <span class="fw-bold"><i class="bi bi-cloud-upload me-2"></i>Upload Logs</span>
@@ -145,7 +151,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="col-md-7">
+                <div class="col-md-7 grid-item" data-grid-id="pull-logs">
                     <div class="card modern-card shadow-sm h-100">
                         <div class="card-header py-2">
                             <span class="fw-bold"><i class="bi bi-download me-2"></i>Pull Logs from Worker</span>
@@ -218,7 +224,7 @@
             <!-- MAIN CONTENT: STREAM & LOGS -->
             <div class="row g-3">
                 <!-- LIVE STREAM -->
-                <div class="col-lg-7">
+                <div class="col-lg-7 grid-item" data-grid-id="live-stream">
                     <div class="card modern-card shadow-sm">
                         <div class="card-header py-2 d-flex justify-content-between align-items-center">
                             <div class="d-flex align-items-center gap-3">
@@ -299,7 +305,7 @@
                 </div>
 
                 <!-- UPLOADED LOGS -->
-                <div class="col-lg-5">
+                <div class="col-lg-5 grid-item" data-grid-id="uploaded-logs">
                     <div class="card modern-card shadow-sm">
                         <div class="card-header py-2 d-flex justify-content-between align-items-center">
                             <span class="fw-bold"><i class="bi bi-list-ul me-2"></i>Uploaded Logs (@_logs.Count)</span>
@@ -362,6 +368,7 @@
                     </div>
                 </div>
             </div>
+            </div> <!-- End of dynamic-grid-container -->
         </div>
 
         <!-- LOG VIEWER MODAL -->
@@ -531,6 +538,42 @@
             </div>
         }
 
+                <!-- EDIT MODE INDICATOR -->
+                <div class="edit-mode-indicator">
+                    <i class="bi bi-pencil-square"></i>
+                    <span>Edit Mode - Drag and resize cards</span>
+                </div>
+
+                <!-- EDIT MODE TOGGLE BUTTON -->
+                <button class="edit-mode-toggle @(_editMode ? "active" : "")" @onclick="ToggleEditMode">
+                    @if (_editMode)
+                    {
+                        <i class="bi bi-check-lg"></i>
+                        <span>Done Editing</span>
+                    }
+                    else
+                    {
+                        <i class="bi bi-layout-wtf"></i>
+                        <span>Customize Layout</span>
+                    }
+                </button>
+
+                <!-- EDIT CONTROLS PANEL -->
+                <div class="edit-controls @(_editMode ? "visible" : "")">
+                    <button @onclick="ResetLayout" class="danger">
+                        <i class="bi bi-arrow-counterclockwise"></i>
+                        Reset Layout
+                    </button>
+                    <button @onclick="ExportLayout">
+                        <i class="bi bi-download"></i>
+                        Export Layout
+                    </button>
+                    <button @onclick="ImportLayout">
+                        <i class="bi bi-upload"></i>
+                        Import Layout
+                    </button>
+                </div>
+
     </Authorized>
     <NotAuthorized>
         <div class="container mt-5">
@@ -559,6 +602,8 @@
 @code {
     // State
     private string _selectedModel = "claude-sonnet-4-5";
+    private bool _editMode = false;
+    private DotNetObjectReference<LogCenter>? _dotNetRef;
 
     // Analysis Modal State
     private bool _showAnalysisModal = false;
@@ -653,6 +698,14 @@
         await InitializeSignalR();
         await RefreshWorkers();
         await LoadSavedWorkerIdAndLogPath();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await InitializeGrid();
+        }
     }
 
     // ==================== UPLOAD METHODS ====================
@@ -1395,6 +1448,125 @@
         return Markdown.ToHtml(markdown, pipeline);
     }
 
+    // ==================== GRID LAYOUT METHODS ====================
+
+    private const string PAGE_ID = "log-center";
+
+    private async Task InitializeGrid()
+    {
+        try
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("initDynamicGrid", _dotNetRef, "logCenterGrid", PAGE_ID);
+
+            // Load layout from server
+            try
+            {
+                var layout = await LayoutService.GetLayoutAsync(PAGE_ID);
+                if (!string.IsNullOrEmpty(layout.LayoutJson) && layout.LayoutJson != "{}")
+                {
+                    await JS.InvokeVoidAsync("applyServerLayout", layout.LayoutJson);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to load server layout: {ex.Message}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Grid initialization failed: {ex.Message}");
+        }
+    }
+
+    private async Task ToggleEditMode()
+    {
+        _editMode = !_editMode;
+        try
+        {
+            await JS.InvokeVoidAsync("toggleGridEditMode", _editMode);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Toggle edit mode failed: {ex.Message}");
+        }
+    }
+
+    private async Task ResetLayout()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("resetGridLayout");
+            Toast.ShowSuccess("Layout reset to default!");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Reset layout failed: {ex.Message}");
+            Toast.ShowError($"Reset failed: {ex.Message}");
+        }
+    }
+
+    private async Task ExportLayout()
+    {
+        try
+        {
+            var layoutJson = await JS.InvokeAsync<string>("exportGridLayout");
+            var fileName = $"logcenter-layout-{DateTime.Now:yyyyMMdd-HHmmss}.json";
+            var bytes = System.Text.Encoding.UTF8.GetBytes(layoutJson);
+            var base64 = Convert.ToBase64String(bytes);
+            await JS.InvokeVoidAsync("downloadFileFromBase64", fileName, "application/json", base64);
+            Toast.ShowSuccess("Layout exported successfully!");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Export layout failed: {ex.Message}");
+            Toast.ShowError($"Export failed: {ex.Message}");
+        }
+    }
+
+    private async Task ImportLayout()
+    {
+        Toast.ShowInfo("Import feature coming soon! For now, layouts are auto-saved.");
+    }
+
+    [JSInvokable]
+    public void OnGridEvent(string eventName, object data)
+    {
+        Console.WriteLine($"Grid event: {eventName}");
+        if (eventName == "layoutReset")
+        {
+            InvokeAsync(StateHasChanged);
+        }
+    }
+
+    [JSInvokable]
+    public async Task SaveLayoutToServer(string pageId, string layoutJson)
+    {
+        try
+        {
+            await LayoutService.SaveLayoutAsync(pageId, layoutJson);
+            Console.WriteLine($"Layout saved to server for page: {pageId}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to save layout to server: {ex.Message}");
+        }
+    }
+
+    [JSInvokable]
+    public async Task ResetLayoutOnServer(string pageId)
+    {
+        try
+        {
+            await LayoutService.ResetLayoutAsync(pageId);
+            Console.WriteLine($"Layout reset on server for page: {pageId}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to reset layout on server: {ex.Message}");
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         _logCreatedSub?.Dispose();
@@ -1411,6 +1583,7 @@
         _analysisFailedSub?.Dispose();
         _pullCts?.Cancel();
         _pullCts?.Dispose();
+        _dotNetRef?.Dispose();
 
         await SafeStopStream();
         if (_isSubscribed && !string.IsNullOrEmpty(_subscribedWorkerId))

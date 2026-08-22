@@ -1,37 +1,55 @@
 # Contributing to Blackhatbadshah
 
-Blackhatbadshah is built around practical engineering: reproduce the failure, understand the root cause, make the smallest sound change, and document what changed.
+Thanks for taking the work seriously.
 
-## What is welcome
+Blackhatbadshah values technically useful contributions over activity for its own sake.
 
-- bug fixes
-- reproducible diagnostics
-- performance improvements
-- tests
-- documentation
-- observability integrations
-- developer tooling
-- architecture and reliability improvements
+## Before opening an issue
+
+- Search existing issues and documentation.
+- Confirm the problem is reproducible when possible.
+- Include environment, version/commit, expected behavior, actual behavior, and relevant logs.
+- Remove secrets and private data from all reports.
 
 ## Before opening a pull request
 
-1. Search existing issues and pull requests.
-2. Keep the change focused.
-3. Do not commit secrets, credentials, personal information, customer data, or real production logs.
-4. Add or update tests when behavior changes.
-5. Document operational or configuration changes.
-6. Include evidence for performance or reliability claims.
+1. Keep the change focused.
+2. Explain the problem and why the change is correct.
+3. Add or update tests when behavior changes.
+4. Document non-obvious architectural decisions.
+5. Do not include credentials, tokens, private logs, or unrelated formatting churn.
+6. Preserve existing contracts unless the PR explicitly changes the contract.
 
-## Pull request standard
+## Good contributions
 
-A strong pull request explains:
+Examples include:
 
-- **Problem** — what is broken or missing?
-- **Evidence** — how was it reproduced or measured?
-- **Change** — what was changed and why?
-- **Validation** — what tests or checks were run?
-- **Risk** — what could regress?
+- reproducible bug fixes
+- kernel and systems research
+- tests and regression coverage
+- performance measurements with methodology
+- documentation that explains difficult behavior
+- diagnostics and observability improvements
+- security fixes
 
-## Engineering principle
+## Commit quality
 
-Prefer a correct, observable solution over a clever workaround.
+Prefer concise, specific commit messages:
+
+```text
+fix: preserve user stack alignment during ELF entry
+```
+
+rather than:
+
+```text
+update stuff
+```
+
+## Technical claims
+
+If a PR makes a performance, compatibility, security, or correctness claim, provide evidence where practical: tests, logs, benchmarks, reproductions, or references.
+
+## Community standard
+
+Be direct, technical, and respectful. Challenge ideas with evidence. Give credit to prior work. Do not spam related projects or communities with promotional links.

@@ -1,62 +1,41 @@
 # Security Policy
 
-## Scope
-
-Blackhatbadshah is intended to be developed in public wherever the material is non-personal, non-confidential, and safe to disclose.
-
-Do not publish customer data, private logs, credentials, access tokens, private infrastructure details, personal information, or proprietary incident data.
-
-## Secrets
-
-Secrets must never be committed to source control.
-
-Use environment variables or a dedicated secret manager for:
-
-- database connection strings
-- API keys and LLM credentials
-- cloud credentials
-- payment credentials
-- Keycloak client secrets
-- SMTP credentials
-- vector database credentials
-- worker authentication tokens
-
-Tracked configuration files contain placeholders only.
-
-## If a secret was exposed
-
-Treat it as compromised even if the exposure was brief.
-
-1. Revoke or rotate the credential immediately.
-2. Replace the tracked value with a placeholder.
-3. Audit the affected service for unauthorized use.
-4. Review Git history and hosting logs.
-5. If necessary, rewrite repository history to remove the secret completely.
-
-Removing a secret from the latest commit is **not sufficient** because Git history may still contain the old value.
+Blackhatbadshah is developed publicly wherever the material is non-personal, non-confidential, and safe to disclose.
 
 ## Reporting a vulnerability
 
-For a suspected security vulnerability, avoid posting exploit details or sensitive evidence in a public issue.
+Do not publish exploitable details or sensitive evidence in a public issue before the maintainer has had a chance to assess the problem.
 
-Provide:
+Use GitHub's private vulnerability reporting/security-advisory mechanism when available. If private reporting is unavailable, open a minimal issue asking for maintainer attention without exploit details.
+
+When safe to share privately, include:
 
 - affected component
+- affected version or commit
 - impact
 - reproduction conditions
-- safe evidence
+- evidence
 - suggested mitigation, if known
 
-Do not include credentials, customer information, private logs, or production data.
+## Secrets and private data
 
-## Public-by-default rule
+Never commit:
 
-The project favors transparent engineering. Architecture, APIs, design decisions, benchmarks, sanitized diagnostics, and reproducible technical findings should be public when they contain no personal or confidential information.
-
-The following stay private:
-
-- credentials and secrets
+- credentials or API keys
+- access tokens
+- database connection strings
+- cloud credentials
 - customer or employee information
+- private production logs
 - private infrastructure access details
-- proprietary production data
-- security-sensitive material that could enable unauthorized access
+- proprietary incident data
+
+If a secret is exposed, treat it as compromised: revoke/rotate it, remove it from the working tree, audit use, and review Git history. Removing it only from the latest commit is not sufficient.
+
+## Security scope
+
+Security concerns include authentication or authorization flaws, unsafe parsing, memory-safety issues, privilege-boundary failures, process-isolation failures, secret exposure, and vulnerabilities in repository tooling or deployment configuration.
+
+## Disclosure principle
+
+The goal is responsible remediation and useful technical learning—not public blame or unnecessary exposure.

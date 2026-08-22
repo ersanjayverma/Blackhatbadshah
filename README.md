@@ -1,127 +1,158 @@
 # Blackhatbadshah
 
-Multi-service AI-powered log analysis platform with .NET backend/frontend, Python AI service, and cross-platform worker agent.
+> **We diagnose and fix invisible technical failures that cost companies money.**
+
+Blackhatbadshah is an engineering lab focused on **AI-powered observability, system diagnostics, developer tooling, and practical automation**.
+
+The flagship project is a production-oriented platform for turning application and infrastructure logs into actionable technical intelligence.
+
+## Why Blackhatbadshah?
+
+Most systems don't fail loudly. They degrade through slow requests, noisy logs, hidden dependency failures, resource pressure, and configuration drift.
+
+Blackhatbadshah is built around one principle:
+
+**Don't just collect telemetry. Explain what is actually going wrong.**
+
+## What we're building
+
+- 🔎 **AI-assisted diagnosis** — correlate logs and failures instead of searching them manually
+- 🧠 **Agentic analysis** — LangGraph-based reasoning workflows
+- ⚙️ **.NET-first engineering** — high-performance services and tooling
+- 📡 **Cross-platform telemetry** — lightweight worker/agent architecture
+- 🐳 **Containerized deployment** — reproducible local and server environments
+- 🔐 **Security-conscious operations** — secrets stay out of source control
 
 ## Architecture
 
-This application consists of:
+```text
+                 ┌──────────────────────┐
+                 │   Blazor Web UI      │
+                 │      .NET 10         │
+                 └──────────┬───────────┘
+                            │
+                            ▼
+                 ┌──────────────────────┐
+                 │    Backend API       │
+                 │      .NET 10         │
+                 └───────┬───────┬──────┘
+                         │       │
+              ┌──────────┘       └──────────┐
+              ▼                             ▼
+     ┌─────────────────┐          ┌─────────────────┐
+     │   AI Service    │          │  Worker Agent   │
+     │ Python +        │          │     .NET 8      │
+     │ LangGraph       │          │ Cross-platform  │
+     └─────────────────┘          └─────────────────┘
+```
 
-- **Frontend** (.NET 10.0 Blazor) - Web interface
-- **Backend** (.NET 10.0 API) - REST API with Azure SQL and Blob Storage
-- **AI Service** (Python FastAPI) - LangGraph-based AI agent with Claude integration
-- **Worker Agent** (.NET 8.0) - Cross-platform log streaming agent (see `worker/bhbworker`)
+## Technology
 
-## Prerequisites
+| Area | Technology |
+|---|---|
+| Frontend | .NET 10 / Blazor |
+| Backend | ASP.NET Core / .NET 10 |
+| AI | Python / FastAPI / LangGraph |
+| LLM | Anthropic Claude |
+| Worker | .NET 8 |
+| Database | Azure SQL |
+| Storage | Azure Blob Storage |
+| Document processing | AWS Textract |
+| Deployment | Docker |
 
-- .NET 10.0 SDK (backend/frontend)
-- .NET 8.0 SDK (worker agent)
-- Python 3.11 (AI service)
-- Valid credentials for:
-  - Anthropic API (Claude)
-  - AWS (Textract)
-  - Azure SQL Database
-  - Azure Blob Storage
-  - Razorpay (payments)
-  - Keycloak (auth)
+## Repository layout
 
-## Quick Start
+```text
+.
+├── backend/          # .NET 10 API
+├── frontend/         # .NET 10 Blazor application
+├── ai/               # AI analysis service
+├── worker/           # Cross-platform telemetry worker
+├── shared/           # Shared components
+├── infra/            # Docker and reverse-proxy configuration
+├── setup.sh          # Development setup
+├── SECURITY.md       # Security guidance
+└── PRIVACY.md        # Privacy documentation
+```
 
-1. Copy `.env.example` to `.env` and fill in your credentials
-2. Start backend, frontend, and AI service (see below)
-3. Register and install worker agent (see `worker/bhbworker/README.md`)
+## Quick start
 
-## Service Ports
+### Prerequisites
 
-- **Frontend**: http://localhost:7001
-- **Backend API**: http://localhost:5092
-- **AI Service**: http://localhost:8501
+- .NET 10 SDK
+- .NET 8 SDK
+- Python 3.11
+- Docker
+- Required service credentials
 
-## Configuration
+### Configure
 
-All sensitive configuration is managed via environment variables and config files:
-- `.env.example` - Template for required environment variables
-- `appsettings.json` (worker agent) - Stores API key and worker ID
-- See `SECURITY.md` for best practices
+```bash
+cp .env.example .env
+```
 
-## Development
+Add your credentials to `.env` and **never commit secrets**.
 
-### Backend (.NET)
+### Backend
+
 ```bash
 cd backend/backend
 dotnet restore
 dotnet run
 ```
 
-### Frontend (.NET)
+### Frontend
+
 ```bash
 cd frontend/frontend
 dotnet restore
 dotnet run
 ```
 
-### AI Service (Python)
+### AI service
+
 ```bash
 cd ai
 pip install -r requirements.txt
 uvicorn main:api --reload
 ```
 
-### Worker Agent (.NET)
-See `worker/bhbworker/README.md` for build, install, and configuration instructions.
+## Development philosophy
 
-## Security & Privacy
+Blackhatbadshah favors:
 
-- All credentials and secrets are managed via environment variables and config files
-- Never commit `.env` or secret config files to version control
-- See `SECURITY.md` for credential management and rotation
-- See `PRIVACY.md` for data handling and user privacy policy
+- measurable engineering over hype
+- root-cause analysis over symptom treatment
+- simple systems over unnecessary complexity
+- automation where it removes repetitive work
+- security and accountability by default
 
-## Project Structure
+## Roadmap
 
-```
-.
-├── backend/          # .NET 10.0 Backend API
-├── frontend/         # .NET 10.0 Blazor Frontend
-├── ai/               # Python FastAPI AI Service
-├── worker/           # .NET 8.0 Worker Agent (cross-platform)
-│   └── bhbworker/    # Worker agent source and install guide
-├── shared/           # Shared code
-├── infra/            # Infrastructure configs
-│   ├── dockerCompose/
-│   └── nginxConfs/
-├── setup.sh          # Automated setup script
-├── SECURITY.md       # Security documentation
-├── PRIVACY.md        # Privacy policy
-```
+- [ ] Stronger log-to-root-cause correlation
+- [ ] System health scoring
+- [ ] Cross-service incident timelines
+- [ ] More autonomous diagnostic workflows
+- [ ] Open-source developer utilities
+- [ ] Production-grade observability integrations
 
-## Technologies
+## Contributing
 
-- **.NET 10.0** - Backend and frontend
-- **Python 3.11** - AI service
-- **LangGraph** - AI agent orchestration
-- **Anthropic Claude** - Language model
-- **Azure SQL** - Database
-- **Azure Blob Storage** - File storage
-- **AWS Textract** - Document processing
-- **Docker** - Containerization
+Useful bug reports, diagnostic ideas, documentation improvements, and focused pull requests are welcome.
 
-## Troubleshooting
+If you find a real failure mode that deserves better tooling, open an issue and explain the problem, evidence, and expected behavior.
 
-### Services won't start
-- Check that all credentials are correctly set in `.env`
-- Verify Docker daemon is running
-- Check logs: `docker-compose logs -f`
+## Security
 
-### Database connection issues
-- Verify Azure SQL firewall rules allow your IP
-- Test connection string separately
-- Check that database user has proper permissions
+Do not publish credentials, API keys, private logs, customer data, or other sensitive material in issues or pull requests.
 
-### AI service errors
-- Verify Anthropic API key is valid
-- Check API quota limits
-- Review logs: `docker-compose logs blackhat-ai`
+See [SECURITY.md](SECURITY.md) for reporting and credential-handling guidance.
 
 ## License
 
-Private project - All rights reserved
+Private project — All rights reserved.
+
+---
+
+**Blackhatbadshah**  
+Engineering the tools that find the failures other tools miss.

@@ -2,41 +2,41 @@
 
 > **We diagnose and fix invisible technical failures that cost companies money.**
 
-**Blackhatbadshah** is an independent engineering lab by **Sanjay Verma** focused on systems engineering, AI, developer infrastructure, observability, diagnostics, and security-minded tooling.
+**Blackhatbadshah** is an independent engineering lab by **Sanjay Verma** focused on systems engineering, AI-assisted diagnostics, developer infrastructure, observability, and security-minded tooling.
 
-**Build difficult things. Measure what actually happens. Explain why systems fail.**
+> **Build difficult things. Measure what actually happens. Explain why systems fail.**
 
-## ⚡ Flagship Work
+## SAIOS — Flagship Systems Project
 
-### SAIOS — Self-Aware Intelligence Operating System
+**SAIOS (Self-Aware Intelligence Operating System)** is a research operating system built from the kernel upward.
 
-A research operating system built from the kernel upward, exploring:
+It explores:
 
-- x86_64 kernel and memory management
-- isolated process address spaces
-- ELF execution and Linux-compatible system calls
-- scheduling, interrupts, timers and process lifecycle
-- VFS, ext4, networking and device support
+- x86_64 kernel architecture, paging, and memory management
+- isolated process address spaces and user-mode execution
+- ELF loading and Linux-compatible syscall interfaces
+- scheduling, interrupts, timers, and process lifecycle
+- VFS, storage, networking, and device support
 - deterministic observability and flight-recording concepts
 - AI-assisted diagnosis of system behavior
 
 SAIOS is where Blackhatbadshah goes deepest: **systems software, operating systems, observability, and intelligent diagnostics in one project.**
 
-> The objective isn't to make another demo OS. The objective is to understand the machine well enough to explain its failures.
+> The objective is not to make another demo OS. The objective is to understand the machine well enough to explain its failures.
 
-## 🧠 Engineering Focus
+## Engineering Focus
 
 | Area | Focus |
 |---|---|
 | Systems | Kernels, memory, paging, processes, syscalls, ELF |
 | AI | Agents, reasoning workflows, diagnostics, automation |
 | Backend | C#, ASP.NET Core, .NET |
-| Frontend | Blazor / JavaScript |
+| Frontend | Blazor, JavaScript |
 | Observability | Telemetry, tracing, correlation, root-cause analysis |
 | Infrastructure | Linux, Docker, networking, storage |
 | Security | Secure engineering and failure analysis |
 
-## 🔬 What I Build
+## How We Work
 
 Traditional monitoring tells you **that** something is broken.
 
@@ -44,20 +44,23 @@ Blackhatbadshah focuses on the harder question:
 
 > **Why did it break?**
 
-That means connecting low-level evidence, application behavior, resource pressure, dependencies, and system state into a coherent explanation.
+Every substantial engineering investigation should aim for:
 
-### Engineering over hype
+```text
+Failure
+  -> Evidence
+  -> Minimal reproduction
+  -> Root cause
+  -> Fix
+  -> Regression test
+  -> Reusable explanation
+```
 
-- Root cause over symptoms
-- Evidence over assumptions
-- Reproducibility over demos
-- Measurable performance over benchmarks without context
-- Simple architecture over unnecessary abstraction
-- Security and accountability by default
+The repository is the source of truth. Claims should be backed by code, tests, logs, measurements, or architecture decisions.
 
-## 🚀 Selected Projects
+## Selected Projects
 
-| Project | What it represents |
+| Project | Purpose |
 |---|---|
 | **SAIOS** | Experimental intelligent operating system |
 | **Blackhatbadshah** | Engineering lab and diagnostics platform |
@@ -66,11 +69,11 @@ That means connecting low-level evidence, application behavior, resource pressur
 | **Blackhatbadshah-DSA** | Algorithms and engineering practice |
 | **h4cker** | Security and systems learning repository |
 
-## 📈 The Build Log
+## Build Logs & Technical Research
 
-The most useful thing I can publish is not motivational content. It is **evidence from real engineering**.
+The most useful content here is **evidence from real engineering**, not generic motivational content.
 
-Expect technical work covering:
+Topics include:
 
 - kernel failures and page faults
 - syscall compatibility
@@ -80,41 +83,46 @@ Expect technical work covering:
 - observability architecture
 - AI agents for technical diagnosis
 - .NET performance and architecture
-- infrastructure failures that are difficult to reproduce
+- difficult-to-reproduce infrastructure failures
 
-If something breaks, the failure becomes data.
+See [`docs/BUILD-LOG.md`](docs/BUILD-LOG.md), [`docs/DISCOVERY.md`](docs/DISCOVERY.md), and [`docs/TECHNICAL-CONTENT-QUEUE.md`](docs/TECHNICAL-CONTENT-QUEUE.md).
 
-If the failure teaches something useful, the lesson becomes an artifact.
+## Engineering Standards
 
-## 🌐 Blackhatbadshah
+- Root cause over symptoms
+- Evidence over assumptions
+- Reproducibility over demos
+- Measured performance over unsupported claims
+- Simple architecture over unnecessary abstraction
+- Security and accountability by default
+- Credit upstream work and prior art
+- No fabricated metrics, endorsements, stars, followers, or engagement
 
-**Website:** https://blackhatbadshah.com
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`SECURITY.md`](SECURITY.md).
 
-**GitHub:** https://github.com/ersanjayverma
+## Collaboration
 
-The name is intentionally memorable.
-The engineering has to make it credible.
+Serious technical collaboration is welcome around:
 
-## 🤝 Collaboration
-
-I'm interested in serious technical collaboration around:
-
-- operating systems
-- kernels and low-level systems
+- operating systems and kernels
+- low-level systems and memory management
 - AI agents for engineering
 - observability and diagnostics
 - .NET / C# infrastructure
 - developer tooling
 - security engineering
 
-If you have a difficult technical problem, bring **evidence, constraints, and the failure**.
+When reporting a difficult problem, bring **evidence, constraints, and the failure**.
 
-## 📌 Current Mission
+## Current Mission
 
 **Make Blackhatbadshah known for solving problems other engineers cannot easily see.**
 
-Not by manufactured popularity.
+Not through manufactured popularity.
 
-By building things worth finding.
+Through engineering that is difficult, useful, reproducible, and worth finding.
 
-> **Blackhatbadshah — Engineering the tools that find the failures other tools miss.**
+**Blackhatbadshah — Engineering the tools that find the failures other tools miss.**
+
+- Website: https://blackhatbadshah.com
+- GitHub: https://github.com/ersanjayverma

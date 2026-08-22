@@ -1,158 +1,120 @@
-# Blackhatbadshah
+# BLACKHATBADSHAH
 
 > **We diagnose and fix invisible technical failures that cost companies money.**
 
-Blackhatbadshah is an engineering lab focused on **AI-powered observability, system diagnostics, developer tooling, and practical automation**.
+**Blackhatbadshah** is an independent engineering lab by **Sanjay Verma** focused on systems engineering, AI, developer infrastructure, observability, diagnostics, and security-minded tooling.
 
-The flagship project is a production-oriented platform for turning application and infrastructure logs into actionable technical intelligence.
+**Build difficult things. Measure what actually happens. Explain why systems fail.**
 
-## Why Blackhatbadshah?
+## ⚡ Flagship Work
 
-Most systems don't fail loudly. They degrade through slow requests, noisy logs, hidden dependency failures, resource pressure, and configuration drift.
+### SAIOS — Self-Aware Intelligence Operating System
 
-Blackhatbadshah is built around one principle:
+A research operating system built from the kernel upward, exploring:
 
-**Don't just collect telemetry. Explain what is actually going wrong.**
+- x86_64 kernel and memory management
+- isolated process address spaces
+- ELF execution and Linux-compatible system calls
+- scheduling, interrupts, timers and process lifecycle
+- VFS, ext4, networking and device support
+- deterministic observability and flight-recording concepts
+- AI-assisted diagnosis of system behavior
 
-## What we're building
+SAIOS is where Blackhatbadshah goes deepest: **systems software, operating systems, observability, and intelligent diagnostics in one project.**
 
-- 🔎 **AI-assisted diagnosis** — correlate logs and failures instead of searching them manually
-- 🧠 **Agentic analysis** — LangGraph-based reasoning workflows
-- ⚙️ **.NET-first engineering** — high-performance services and tooling
-- 📡 **Cross-platform telemetry** — lightweight worker/agent architecture
-- 🐳 **Containerized deployment** — reproducible local and server environments
-- 🔐 **Security-conscious operations** — secrets stay out of source control
+> The objective isn't to make another demo OS. The objective is to understand the machine well enough to explain its failures.
 
-## Architecture
+## 🧠 Engineering Focus
 
-```text
-                 ┌──────────────────────┐
-                 │   Blazor Web UI      │
-                 │      .NET 10         │
-                 └──────────┬───────────┘
-                            │
-                            ▼
-                 ┌──────────────────────┐
-                 │    Backend API       │
-                 │      .NET 10         │
-                 └───────┬───────┬──────┘
-                         │       │
-              ┌──────────┘       └──────────┐
-              ▼                             ▼
-     ┌─────────────────┐          ┌─────────────────┐
-     │   AI Service    │          │  Worker Agent   │
-     │ Python +        │          │     .NET 8      │
-     │ LangGraph       │          │ Cross-platform  │
-     └─────────────────┘          └─────────────────┘
-```
-
-## Technology
-
-| Area | Technology |
+| Area | Focus |
 |---|---|
-| Frontend | .NET 10 / Blazor |
-| Backend | ASP.NET Core / .NET 10 |
-| AI | Python / FastAPI / LangGraph |
-| LLM | Anthropic Claude |
-| Worker | .NET 8 |
-| Database | Azure SQL |
-| Storage | Azure Blob Storage |
-| Document processing | AWS Textract |
-| Deployment | Docker |
+| Systems | Kernels, memory, paging, processes, syscalls, ELF |
+| AI | Agents, reasoning workflows, diagnostics, automation |
+| Backend | C#, ASP.NET Core, .NET |
+| Frontend | Blazor / JavaScript |
+| Observability | Telemetry, tracing, correlation, root-cause analysis |
+| Infrastructure | Linux, Docker, networking, storage |
+| Security | Secure engineering and failure analysis |
 
-## Repository layout
+## 🔬 What I Build
 
-```text
-.
-├── backend/          # .NET 10 API
-├── frontend/         # .NET 10 Blazor application
-├── ai/               # AI analysis service
-├── worker/           # Cross-platform telemetry worker
-├── shared/           # Shared components
-├── infra/            # Docker and reverse-proxy configuration
-├── setup.sh          # Development setup
-├── SECURITY.md       # Security guidance
-└── PRIVACY.md        # Privacy documentation
-```
+Traditional monitoring tells you **that** something is broken.
 
-## Quick start
+Blackhatbadshah focuses on the harder question:
 
-### Prerequisites
+> **Why did it break?**
 
-- .NET 10 SDK
-- .NET 8 SDK
-- Python 3.11
-- Docker
-- Required service credentials
+That means connecting low-level evidence, application behavior, resource pressure, dependencies, and system state into a coherent explanation.
 
-### Configure
+### Engineering over hype
 
-```bash
-cp .env.example .env
-```
+- Root cause over symptoms
+- Evidence over assumptions
+- Reproducibility over demos
+- Measurable performance over benchmarks without context
+- Simple architecture over unnecessary abstraction
+- Security and accountability by default
 
-Add your credentials to `.env` and **never commit secrets**.
+## 🚀 Selected Projects
 
-### Backend
+| Project | What it represents |
+|---|---|
+| **SAIOS** | Experimental intelligent operating system |
+| **Blackhatbadshah** | Engineering lab and diagnostics platform |
+| **ToonSharp** | .NET-oriented developer tooling |
+| **dockbox** | Infrastructure / container experimentation |
+| **Blackhatbadshah-DSA** | Algorithms and engineering practice |
+| **h4cker** | Security and systems learning repository |
 
-```bash
-cd backend/backend
-dotnet restore
-dotnet run
-```
+## 📈 The Build Log
 
-### Frontend
+The most useful thing I can publish is not motivational content. It is **evidence from real engineering**.
 
-```bash
-cd frontend/frontend
-dotnet restore
-dotnet run
-```
+Expect technical work covering:
 
-### AI service
+- kernel failures and page faults
+- syscall compatibility
+- memory-management bugs
+- scheduler failures
+- ELF loading and user-mode execution
+- observability architecture
+- AI agents for technical diagnosis
+- .NET performance and architecture
+- infrastructure failures that are difficult to reproduce
 
-```bash
-cd ai
-pip install -r requirements.txt
-uvicorn main:api --reload
-```
+If something breaks, the failure becomes data.
 
-## Development philosophy
+If the failure teaches something useful, the lesson becomes an artifact.
 
-Blackhatbadshah favors:
+## 🌐 Blackhatbadshah
 
-- measurable engineering over hype
-- root-cause analysis over symptom treatment
-- simple systems over unnecessary complexity
-- automation where it removes repetitive work
-- security and accountability by default
+**Website:** https://blackhatbadshah.com
 
-## Roadmap
+**GitHub:** https://github.com/ersanjayverma
 
-- [ ] Stronger log-to-root-cause correlation
-- [ ] System health scoring
-- [ ] Cross-service incident timelines
-- [ ] More autonomous diagnostic workflows
-- [ ] Open-source developer utilities
-- [ ] Production-grade observability integrations
+The name is intentionally memorable.
+The engineering has to make it credible.
 
-## Contributing
+## 🤝 Collaboration
 
-Useful bug reports, diagnostic ideas, documentation improvements, and focused pull requests are welcome.
+I'm interested in serious technical collaboration around:
 
-If you find a real failure mode that deserves better tooling, open an issue and explain the problem, evidence, and expected behavior.
+- operating systems
+- kernels and low-level systems
+- AI agents for engineering
+- observability and diagnostics
+- .NET / C# infrastructure
+- developer tooling
+- security engineering
 
-## Security
+If you have a difficult technical problem, bring **evidence, constraints, and the failure**.
 
-Do not publish credentials, API keys, private logs, customer data, or other sensitive material in issues or pull requests.
+## 📌 Current Mission
 
-See [SECURITY.md](SECURITY.md) for reporting and credential-handling guidance.
+**Make Blackhatbadshah known for solving problems other engineers cannot easily see.**
 
-## License
+Not by manufactured popularity.
 
-Private project — All rights reserved.
+By building things worth finding.
 
----
-
-**Blackhatbadshah**  
-Engineering the tools that find the failures other tools miss.
+> **Blackhatbadshah — Engineering the tools that find the failures other tools miss.**

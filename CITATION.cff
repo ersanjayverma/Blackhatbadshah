@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+title: "Blackhatbadshah"
+doi: ""
+type: software
+authors:
+  - family-names: "Verma"
+    given-names: "Sanjay"
+    website: "https://blackhatbadshah.com"
+repository-code: "https://github.com/ersanjayverma/Blackhatbadshah"
+url: "https://blackhatbadshah.com"
+abstract: >-
+  Blackhatbadshah is an independent engineering lab focused on systems
+  engineering, operating systems, observability, diagnostics, AI-assisted
+  engineering, developer infrastructure, and security-minded tooling.
+keywords:
+  - operating systems
+  - kernel
+  - systems engineering
+  - observability
+  - diagnostics
+  - artificial intelligence
+  - dotnet
+  - security
+license: MIT

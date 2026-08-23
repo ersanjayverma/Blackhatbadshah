@@ -4,7 +4,7 @@ A backlog for turning real engineering work into durable public artifacts.
 
 ## Priority 1 — Systems
 
-- [ ] SAIOS: isolated CR3 and page-fault investigation
+- [x] SAIOS: isolated CR3 and page-fault investigation
 - [ ] SAIOS: ELF entry-point / stack handoff failure
 - [ ] SAIOS: Linux syscall compatibility map
 - [ ] SAIOS: scheduler freeze investigation
@@ -38,6 +38,10 @@ Every published item should contain:
 6. **Validation** — regression test or reproducible verification.
 7. **Lesson** — what another engineer can reuse.
 8. **Source** — commit, file, or reproducible example.
+
+## Published research
+
+- [Why an Isolated CR3 Caused a Page Fault in SAIOS](research/isolated-cr3-page-fault.md)
 
 ## Distribution rule
 
